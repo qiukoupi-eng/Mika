@@ -260,6 +260,8 @@ object CapsuleSettingsCopy {
     val TITLE: String get() = tr(R.string.capsule_settings_title)
     val SUBTITLE: String get() = tr(R.string.capsule_settings_sub)
     val FOOTNOTE: String get() = tr(R.string.capsule_settings_foot)
+    /** 系统可能关掉后台的 App,胶囊跟着不见:请用户在系统设置里放行。 */
+    val BACKGROUND: String get() = tr(R.string.capsule_settings_background)
 
     fun label(mode: CapsuleMode): String = when (mode) {
         CapsuleMode.Off -> tr(R.string.capsule_mode_off)
@@ -287,6 +289,7 @@ fun CapsuleScreen(mode: CapsuleMode, onMode: (CapsuleMode) -> Unit, onBack: () -
             }
         }
         FooterNote(CapsuleSettingsCopy.FOOTNOTE)
+        FooterNote(CapsuleSettingsCopy.BACKGROUND)
     }
 }
 

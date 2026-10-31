@@ -68,6 +68,7 @@
     <string name="capsule_settings_title">Floating capsule</string>
     <string name="capsule_settings_sub">See task progress on screen while using other apps</string>
     <string name="capsule_settings_foot">The capsule is drawn using Mika’s accessibility service that’s already on, so no extra permission is needed. If that service is off or can’t draw, you’ll still get notifications.</string>
+    <string name="capsule_settings_background">Some phones close apps in the background. If the capsule disappears, allow Mika to run in the background and to start automatically in your phone’s system settings.</string>
     <string name="capsule_mode_off">Off</string>
     <string name="capsule_mode_tasks">During tasks</string>
     <string name="capsule_mode_always">Always</string>
