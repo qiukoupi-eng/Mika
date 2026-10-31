@@ -20,7 +20,7 @@ enum class SelfCheck(val key: String, val timeoutMs: Long) {
     /** 在自检页上点按、打英文和中文、滚动、返回,每一样都回读核对。 */
     ACTIONS("actions", 20_000),
     /** 自检页一直在动的十几秒里,虚拟屏的画面一直在变、控件树一直读得到。 */
-    STAYS_ALIVE("stays alive", 20_000),
+    STAYS_ALIVE("stays alive", 25_000),
     /** 主屏最上面的任务从头到尾没变。 */
     MAIN_SCREEN("main screen", 5_000),
     /** 内置浏览器打开一页本地网页(不联网),读出文字、点一下按钮再核对。 */

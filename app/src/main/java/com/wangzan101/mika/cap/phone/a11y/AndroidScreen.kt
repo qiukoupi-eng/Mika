@@ -665,6 +665,23 @@ class AndroidScreen(
     }
 
     /**
+     * 在 Mika 的屏上打开 Mika 自己不导出的一页([intent] 指明组件;只给兼容性自检用)。shell 启动不了别的 App 不导出的页面,
+     * 所以交给内置助手的是 Mika 自己做好的 PendingIntent:页面以 Mika 的身份打开,屏由助手指定(助手只认 Mika 自己的那一个动作)。
+     * 之后和 [openApp] 一样等它到 Mika 屏的最上面;第一次用时建屏。
+     */
+    suspend fun openOwnPage(intent: Intent): ActionResult = withContext(Dispatchers.IO) {
+        val before = if (opened) topWindowPackage().takeIf { it != chooserPackage } else null
+        val id = display.get().displayId
+        val asMika = PendingIntent.getActivity(a11y, OWN_PAGE_REQUEST, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        when (runCatching { shell.startSystemAction(id, intent, asMika) }.getOrDefault(ShellService.START_ERROR)) {
+            ShellService.START_OK -> Unit
+            ShellService.START_INVALID_LINK -> return@withContext ActionResult.Failed("own_page_not_allowed")
+            else -> return@withContext ActionResult.Failed("launch_failed")
+        }
+        awaitOpened(a11y.packageName, before, hint = null)
+    }
+
+    /**
      * 启动发出之后:等 [packageName] 到 Mika 屏的最上面,或系统先问打开哪一个([before] 是启动前最上面的窗口所在的包)。
      * [sharing]:这次是分享(App 有几个收分享的页面时系统问用哪一个,选项里不一定有 App 名):最上面换成了系统包的窗口也算在问。
      */
@@ -1752,6 +1769,7 @@ class AndroidScreen(
         const val ALARM_WAIT_MS = 3_000L
         const val ALARM_POLL_MS = 150L
         const val SYSTEM_ACTION_REQUEST = 0x5A
+        const val OWN_PAGE_REQUEST = 0x5B
         /** 拖滚轮的时长:不短于节奏里的慢拖时长,松手时已经停住。 */
         const val WHEEL_DRAG_MS = 1_000L
         /** 慢拖拖不动时快划一下的时长(像人手划滚轮)。 */

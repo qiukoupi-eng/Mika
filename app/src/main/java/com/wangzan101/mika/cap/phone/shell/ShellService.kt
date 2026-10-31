@@ -405,6 +405,8 @@ class ShellService(
      */
     override fun startSystemAction(displayId: Int, intent: Intent, asMika: android.app.PendingIntent?): Int = synchronized(launchLock) {
         if (!ownDisplay(displayId)) return START_ERROR
+        // Mika 自己不导出的自检页:shell 打不开,只发 Mika 自己做好的 PendingIntent,屏由这里指定
+        if (intent.action == SystemIntents.OWN_PAGE_ACTION) return startOwnPage(displayId, asMika)
         if (!SystemIntents.allowed(intent.action, intent.dataString)) return START_INVALID_LINK
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val candidates = activitiesFor(intent, intent.type) ?: return START_ERROR
@@ -441,6 +443,25 @@ class ShellService(
             START_OK
         } catch (t: Throwable) {
             Log.w(TAG, "sending ${intent.action} as Mika failed", t)
+            START_ERROR
+        }
+    }
+
+    /**
+     * 打开 Mika 自己不导出的一页(兼容性自检页)到这块屏:只认 Mika 自己做好的 [asMika](创建方的 uid 就是 Mika),
+     * 页面以 Mika 的身份打开、Mika 能开的才开得了;别人的 PendingIntent 一律不发。屏是这个服务自己建的,不碰主屏。
+     */
+    private fun startOwnPage(displayId: Int, asMika: android.app.PendingIntent?): Int {
+        if (asMika == null || asMika.creatorUid != allowedUid) return START_INVALID_LINK
+        val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            options.setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
+        }
+        return try {
+            asMika.send(context, 0, null, null, null, null, options.toBundle())
+            START_OK
+        } catch (t: Throwable) {
+            Log.w(TAG, "sending Mika's own page failed", t)
             START_ERROR
         }
     }

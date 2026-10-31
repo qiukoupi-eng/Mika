@@ -114,6 +114,22 @@ class ManifestProvidersTest {
         assertEquals("false", camera!!.getAttributeNS(androidNs, "required"))
     }
 
+    /** 兼容性自检的测试页只给 Mika 自己开:不导出、没有 intent-filter,别的 App 打不开;单独一个任务、不进最近任务。 */
+    @Test
+    fun selfCheckTargetIsPrivate() {
+        val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder().parse(File("src/main/AndroidManifest.xml"))
+        val activities = doc.getElementsByTagName("activity")
+        val a = (0 until activities.length).map { activities.item(it) as Element }
+            .single { it.getAttributeNS(androidNs, "name") == ".selfcheck.SelfCheckTargetActivity" }
+        assertEquals("false", a.getAttributeNS(androidNs, "exported"))
+        assertEquals("", a.getAttributeNS(androidNs, "permission"))
+        assertEquals(0, a.getElementsByTagName("intent-filter").length)
+        assertEquals("true", a.getAttributeNS(androidNs, "excludeFromRecents"))
+        assertTrue(a.hasAttributeNS(androidNs, "taskAffinity"))
+        assertEquals("", a.getAttributeNS(androidNs, "taskAffinity"))
+    }
+
     /** 内置助手进程按这个全名启动。 */
     @Test
     fun helperEntryClassExists() {
