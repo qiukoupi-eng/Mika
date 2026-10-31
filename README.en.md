@@ -26,7 +26,7 @@ It works on a hidden background screen, so you can keep using your phone.
 
 1. Download the latest APK from [Releases](https://github.com/wangzan101/Mika/releases/latest) and install it.
 2. Open the "Set up phone control" (设置手机操作) wizard in Mika's Settings and pair wireless debugging once ([setup guide](docs/setup-guide.en.md)).
-3. In "Models" (模型) in Settings, add a provider and enter your API key, or sign in with ChatGPT.
+3. In "Models" (模型) in Settings, add a provider and enter your API key, or sign in with a ChatGPT, xAI or OpenRouter account.
 
 Details for each step are in [Quick start](#quick-start) below.
 
@@ -214,9 +214,13 @@ Open "Models" (模型) in Settings (the app also walks you through this on first
 Presets for DeepSeek, 通义千问, Kimi, 智谱, 硅基流动, 火山方舟, MiniMax, 阶跃星辰, 腾讯混元, 百度千帆, OpenRouter, OpenCode Go, Anthropic, Gemini, OpenAI, xAI, Mistral, Groq, Ollama, LM Studio and more; for any other provider pick Custom (自定义), which takes any OpenAI-compatible, Anthropic, Gemini or OpenAI Responses endpoint.
 <!-- generated:providers:end -->
 
-You can also skip the API key and sign in with ChatGPT (Plus or Pro, uses your plan's usage): tap "Continue with ChatGPT" when adding a provider, sign in in the browser, then come back to Mika.
+You can also skip the API key and sign in with an account. At the top of "Add provider" is the group "Sign in with an account · no key needed". Tap one to read what happens, sign in in the browser, and come back to Mika to see the account and its models; you can set one as the main model right there.
 
-An xAI / Grok subscription can also sign in with a device code (check the short code in the browser). This sign-in reuses the public sign-in client of xAI's official command-line tool; it is not something xAI set up for Mika, and xAI may restrict this use. A notice comes first, and nothing starts until you tap "Continue". Requests go straight to xAI.
+- **ChatGPT** (Plus or Pro, uses your plan's usage): tap "Continue with ChatGPT" and sign in in the browser.
+- **xAI / Grok** (SuperGrok or X Premium+ subscription): the browser opens xAI's confirmation page; check that it shows the same short code as your phone, then approve. This sign-in borrows the public sign-in entry of xAI's official command-line tool; xAI did not set it up for Mika and may restrict this use. Some subscription tiers still can't make calls after signing in (403); use an xAI API key in that case.
+- **OpenRouter**: OpenRouter's official authorization for third-party apps. Once you approve, OpenRouter gives Mika a key of your own (named "Mika"), paid from your OpenRouter balance; to stop, delete it on OpenRouter's Keys page.
+
+Signing out only clears the sign-in on this phone.
 
 1. Add a provider: pick a preset, or pick Custom and enter the endpoint URL; enter your API key. For servers you run yourself, such as Ollama or LM Studio, the address is prefilled with the default port; change it to that machine’s address, and the key is optional.
 2. Tap "Test and save" (测试并保存). When you connect your first provider, a main model is picked automatically.

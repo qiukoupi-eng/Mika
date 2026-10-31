@@ -26,7 +26,7 @@
 
 1. 从 [Releases](https://github.com/wangzan101/Mika/releases/latest) 下载最新的 APK，安装。
 2. 打开 Mika 设置里的「设置手机操作」向导，配对一次无线调试（[设置指南](docs/setup-guide.md)）。
-3. 在设置里的「模型」添加服务商、填 API Key，或者用 ChatGPT 登录。
+3. 在设置里的「模型」添加服务商、填 API Key，或者用 ChatGPT、xAI、OpenRouter 账号登录。
 
 每一步的细节见下文的[快速开始](#快速开始)。
 
@@ -212,9 +212,13 @@ Mika 靠无障碍读界面、做点按。不用手动去开：下一步配对成
 内置 DeepSeek、通义千问、Kimi、智谱、硅基流动、火山方舟、MiniMax、阶跃星辰、腾讯混元、百度千帆、OpenRouter、OpenCode Go、Anthropic、Gemini、OpenAI、xAI、Mistral、Groq、Ollama、LM Studio 等服务商预设；其他服务商选「自定义」，OpenAI 兼容、Anthropic、Gemini、OpenAI Responses 接口都能接。
 <!-- generated:providers:end -->
 
-也可以不填 Key，直接用 ChatGPT 登录（Plus 或 Pro，用你的套餐额度）：在添加服务商那里点「使用 ChatGPT 继续」，在浏览器里登录后回到 Mika。
+也可以不填 Key，用账号登录：添加服务商最上面是「用账号登录 · 不用填 Key」一组，点一家先看说明，再去浏览器里登录，登录后回到 Mika，能看到账号、可用的模型，可以直接设为主模型。
 
-xAI / Grok 订阅也可以用账号登录（设备码，在浏览器里核对短码）。这项登录借用 xAI 官方命令行工具的公开登录入口，不是 xAI 专门给 Mika 开的，xAI 可能限制这种用法；登录前有说明，不点「继续登录」就不会登录。请求直接发给 xAI。
+- **ChatGPT**（Plus 或 Pro，用你的套餐额度）：点「使用 ChatGPT 继续」，在浏览器里登录。
+- **xAI / Grok**（SuperGrok 或 X Premium+ 订阅）：浏览器里打开 xAI 的确认页，核对手机上显示的短码后同意。这项登录借用 xAI 官方命令行工具的公开登录入口，不是 xAI 专门给 Mika 开的，xAI 可能限制这种用法；有的订阅档位登录后仍不能调用（提示 403），那时改用 xAI 的 API Key。
+- **OpenRouter**：OpenRouter 官方给第三方应用的授权。同意后 OpenRouter 给 Mika 一把属于你的 Key（名字是 Mika），用量从你的 OpenRouter 余额里扣；不想用了，在 OpenRouter 的 Keys 页面删掉它。
+
+退出登录只清这台手机上的登录信息。
 
 1. 添加服务商：选一个预设，或选「自定义」填接口地址；填 API Key。Ollama、LM Studio 这类自己机器上跑的服务，地址预填了默认端口，改成那台机器的地址即可，Key 可不填。
 2. 点「测试并保存」，连上第一家时会自动选一个主模型。

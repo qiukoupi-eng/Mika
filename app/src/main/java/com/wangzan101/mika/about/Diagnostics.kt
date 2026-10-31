@@ -144,7 +144,7 @@ object Diagnostics {
                 (f.code?.let { " (code $it)" } ?: "") + f.detail.takeIf { it.isNotBlank() }?.let { " — ${it.take(MAX_ERROR)}" }.orEmpty())
         }
         m.accountLastFailure?.let { f ->
-            line("subscription last sign-in failure", "${ago(s.generatedAtMs - f.atMs)}: ${f.kind}" +
+            line("account last sign-in failure", "${ago(s.generatedAtMs - f.atMs)}: ${f.kind}" +
                 (f.code?.let { " (code $it)" } ?: "") + f.detail.takeIf { it.isNotBlank() }?.let { " — ${it.take(MAX_ERROR)}" }.orEmpty())
         }
 

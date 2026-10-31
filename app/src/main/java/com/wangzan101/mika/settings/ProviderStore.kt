@@ -7,6 +7,7 @@ import com.wangzan101.mika.core.chatgpt.ChatGptTokens
 import com.wangzan101.mika.core.oauth.AccountSession
 import com.wangzan101.mika.core.oauth.AccountTokens
 import com.wangzan101.mika.core.oauth.OauthTokenResult
+import com.wangzan101.mika.core.oauth.OpenRouterAuth
 import com.wangzan101.mika.core.oauth.XaiAuth
 import com.wangzan101.mika.core.model.AnthropicModel
 import com.wangzan101.mika.core.model.BearerToken
@@ -114,6 +115,11 @@ data class Provider(
     val models: List<ListedModel>? = null,
     val sessionHeader: String? = null,
     val verifiedModels: Set<String> = emptySet(),
+    /**
+     * Key 是怎么来的:用账号授权换来的(目前只有 [ProviderStore.OPENROUTER_SIGN_IN])为那一家的标记,用户自己填的为 null。
+     * 标了的服务商详情里是账号登录的样子(退出登录、到对方页面删 Key),不是「更换 Key」。
+     */
+    val signIn: String? = null,
 ) {
     val key: String get() = ProviderConnection.keyOf(kind, baseUrl, name)
 }
@@ -228,6 +234,8 @@ class ProviderStore(
     val chatGptAuth: ChatGptAuth = defaultChatGptAuth,
     /** xAI 订阅登录(设备码、刷新)。 */
     val xaiAuth: XaiAuth = defaultXaiAuth,
+    /** OpenRouter 账号授权(换 Key)。 */
+    val openRouterAuth: OpenRouterAuth = defaultOpenRouterAuth,
     /**
      * 建可调用的模型:配置、Key、服务商列表里给这个模型单独指定的接口(没有为 null,按配置的接口类型和地址)、请求头等。
      * 为 null 时用内置的适配器(测试里换成假的)。
@@ -301,15 +309,17 @@ class ProviderStore(
      * 「测试并保存」连上了一个服务商:存下它(名字、接口类型、地址、Key)和列出的模型。
      * 接口类型、地址和名字都相同的服务商已经有了,就更新那一个(换 Key、换列表),不重复添加。
      * [apiKey] 为 null 时不改已存的 Key。[verified] 是这次试调用得到回复的模型名,记进 [Provider.verifiedModels]。
+     * [signIn] 是 Key 的来历(见 [Provider.signIn]):用户自己填 Key 连上的为 null,原先授权来的标记随之去掉。
      */
     @Synchronized
     fun connect(
         name: String, kind: ProviderConfig.Kind, baseUrl: String, apiKey: String?, models: List<ListedModel>,
         sessionHeader: String? = ProviderPresets.forBaseUrl(baseUrl)?.sessionHeader,
         verified: Set<String> = emptySet(),
+        signIn: String? = null,
     ): Provider {
         val found = findOrAddProvider(name, kind, baseUrl)
-        val p = found.copy(models = models, sessionHeader = sessionHeader, verifiedModels = found.verifiedModels + verified)
+        val p = found.copy(models = models, sessionHeader = sessionHeader, verifiedModels = found.verifiedModels + verified, signIn = signIn)
         _providers.value = _providers.value.map { if (it.id == p.id) p else it }
         if (apiKey != null) setKey(p.id, apiKey)
         writeConfig()
@@ -596,6 +606,25 @@ class ProviderStore(
         }
     }
 
+    // ---------- 用 OpenRouter 账号登录 ----------
+
+    /** 用 OpenRouter 账号授权连上的那一家;没有为 null。 */
+    fun openRouterAccount(): Provider? = _providers.value.firstOrNull { it.signIn == OPENROUTER_SIGN_IN }
+
+    /**
+     * 授权换到了 Key:按 OpenRouter 预设存成一家普通的 OpenAI 兼容服务商(Key 照常加密),标上是授权来的。
+     * 已经有填 Key 的 OpenRouter 就更新那一家(换成这把 Key),不重复添加。
+     */
+    @Synchronized
+    fun connectOpenRouter(apiKey: String, models: List<ListedModel>): Provider =
+        connect(OPENROUTER_NAME, ProviderConfig.Kind.OpenAiCompat, OpenRouterAuth.API_BASE, apiKey, models, signIn = OPENROUTER_SIGN_IN)
+
+    /** 退出 OpenRouter 登录:删掉这台手机上的 Key;服务商、模型和用途留着。OpenRouter 那边的 Key 要用户到 Keys 页面删。 */
+    @Synchronized
+    fun signOutOpenRouter(providerId: String) {
+        if (provider(providerId)?.signIn == OPENROUTER_SIGN_IN && providerId in keys) setKey(providerId, "")
+    }
+
     private fun accountTokensFor(providerId: String): AccountTokens = synchronized(accountTokens) {
         accountTokens.getOrPut(providerId) {
             AccountTokens(
@@ -738,6 +767,7 @@ class ProviderStore(
         baseUrl = o.str("baseUrl"),
         // 旧版本存下的没有这一项:按地址对得上的预设补上(读入后写回文件时记进去)
         sessionHeader = o["sessionHeader"]?.jsonPrimitive?.content ?: ProviderPresets.forBaseUrl(o.str("baseUrl"))?.sessionHeader,
+        signIn = o["signIn"]?.jsonPrimitive?.content,
         verifiedModels = o["verifiedModels"]?.jsonArray?.map { it.jsonPrimitive.content }?.toSet().orEmpty(),
         models = o["models"]?.jsonArray?.map { e ->
             val m = e.jsonObject
@@ -807,6 +837,7 @@ class ProviderStore(
                     addJsonObject {
                         put("id", p.id); put("name", p.name); put("kind", p.kind.name); put("baseUrl", p.baseUrl)
                         p.sessionHeader?.let { put("sessionHeader", it) }
+                        p.signIn?.let { put("signIn", it) }
                         if (p.verifiedModels.isNotEmpty()) putJsonArray("verifiedModels") { p.verifiedModels.forEach { add(it) } }
                         p.models?.let { models ->
                             putJsonArray("models") {
@@ -897,12 +928,16 @@ class ProviderStore(
         private val catalog by lazy { ModelCatalog(OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()) }
 
         private val defaultChatGptAuth by lazy { ChatGptAuth(OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()) }
+        private val defaultOpenRouterAuth by lazy { OpenRouterAuth(OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()) }
         private val defaultXaiAuth by lazy { XaiAuth(OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()) }
 
         /** ChatGPT 服务商的名字(品牌名,不随界面语言变)。 */
         const val CHATGPT_NAME = "ChatGPT"
         /** 用 xAI 账号登录的服务商的名字(品牌名,不随界面语言变)。和填 Key 的「xAI」预设不是同一家。 */
         const val XAI_NAME = "xAI / Grok"
+        /** 用 OpenRouter 账号授权的服务商:名字和预设一样,[Provider.signIn] 标成这个。 */
+        const val OPENROUTER_NAME = "OpenRouter"
+        const val OPENROUTER_SIGN_IN = "openrouter"
         /** 出错说明里怎么称呼这家的登录。 */
         private const val XAI_ACCOUNT = "xAI"
 

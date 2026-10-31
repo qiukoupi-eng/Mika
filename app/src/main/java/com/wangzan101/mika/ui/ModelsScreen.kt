@@ -280,10 +280,12 @@ class ProviderDetailActions(
     val showAll: () -> Unit = {},
     /** 在用、没核实过的手填模型再试调用一次(见 [ModelSetupUi.unverified])。 */
     val retest: () -> Unit = {},
-    /** ChatGPT 服务商:再登录、退出登录、打开 ChatGPT 的用量页。 */
+    /** 用账号登录的服务商(ChatGPT、xAI、OpenRouter):再登录、退出登录、打开对方的用量或账号页。 */
     val signIn: () -> Unit = {},
     val signOut: () -> Unit = {},
     val manageUsage: () -> Unit = {},
+    /** 把这家默认的模型设为主模型(账号登录的详情里那一行)。 */
+    val useAsMain: () -> Unit = {},
 )
 
 /**
@@ -302,7 +304,7 @@ fun ProviderDetailContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetail
         GroupLabel(ModelsCopy.CONNECTION)
         if (p.kind == ProviderConfig.Kind.ChatGpt) {
             ChatGptConnection(ui, state, actions)
-        } else if (p.kind == ProviderConfig.Kind.Xai) {
+        } else if (p.kind == ProviderConfig.Kind.Xai || p.signIn == ProviderStore.OPENROUTER_SIGN_IN) {
             AccountConnection(ui, p, state, actions)
         } else {
             GroupCard {
@@ -434,15 +436,20 @@ private fun ChatGptConnection(ui: ModelSetupUi, state: ListState?, actions: Prov
     (ui.chatGptSignIn as? ListState.Failed)?.let { FooterNote(it.message, color = c.bad) }
 }
 
-/** xAI 的连接:账号、退出或再登录、打开 xAI 的账号页。退出只清这台手机上的令牌。 */
+/**
+ * 用 xAI 或 OpenRouter 账号登录的连接:账号、状态、设为主模型、打开对方的账号页(OpenRouter 是 Keys 页面)、退出或再登录。
+ * 退出只清这台手机上的登录信息(xAI 的令牌、OpenRouter 换来的 Key),服务商、模型和用途都留着。
+ */
 @Composable
 private fun AccountConnection(ui: ModelSetupUi, p: Provider, state: ListState?, actions: ProviderDetailActions) {
     val c = MikaTheme.colors
-    val account = ui.xaiAccount
+    val kind = if (p.kind == ProviderConfig.Kind.Xai) SignInKind.Xai else SignInKind.OpenRouter
+    val account = if (kind == SignInKind.Xai) ui.xaiAccount else ui.openRouterAccount
     val signedIn = account?.signedIn == true
-    val waiting = ui.accountSignIn.running && ui.accountSignIn.provider == AccountProvider.Xai
+    val (_, waiting, failure) = ui.signInState(kind)
     GroupCard {
-        ListRow(null, ModelsCopy.STATUS, first = true) {
+        account?.label?.takeIf { it.isNotEmpty() }?.let { label -> ListRow(null, ModelsCopy.CHATGPT_ACCOUNT, first = true) { RowValue(label) } }
+        ListRow(null, ModelsCopy.STATUS, first = account?.label.isNullOrEmpty()) {
             when {
                 !signedIn -> RowValue(ModelsCopy.CHATGPT_SIGNED_OUT, ValueTone.Warn)
                 state == ListState.Running -> RowValue(ModelsCopy.LISTING)
@@ -450,19 +457,23 @@ private fun AccountConnection(ui: ModelSetupUi, p: Provider, state: ListState?, 
                 else -> RowValue(ModelsCopy.CHATGPT_SIGNED_IN, ValueTone.Ok)
             }
         }
-        account?.label?.takeIf { it.isNotEmpty() }?.let { label -> ListRow(null, ModelsCopy.CHATGPT_ACCOUNT) { RowValue(label) } }
-        ListRow(null, ModelsCopy.ACCOUNT_MANAGE, titleColor = c.accent, onClick = actions.manageUsage) { RowChevron() }
+    }
+    GroupCard {
+        // 主模型已经在这家就不放这一行
+        val isMain = ui.configFor(ModelRole.Main)?.providerId == p.id
+        if (signedIn && !isMain && ui.options(p).isNotEmpty()) {
+            ListRow(null, ModelsCopy.SET_MAIN, ModelsCopy.SET_MAIN_NOTE, first = true, onClick = actions.useAsMain) { RowChevron() }
+        }
+        ListRow(null, ModelsCopy.accountManage(kind), titleColor = c.accent, first = !(signedIn && !isMain && ui.options(p).isNotEmpty()), onClick = actions.manageUsage) { RowChevron() }
         if (signedIn) {
-            ListRow(null, ModelsCopy.CHATGPT_SIGN_OUT, titleColor = c.bad, onClick = actions.signOut)
+            ListRow(null, ModelsCopy.CHATGPT_SIGN_OUT, ModelsCopy.SIGN_OUT_NOTE, titleColor = c.bad, onClick = actions.signOut)
         } else {
-            ListRow(null, if (waiting) ModelsCopy.ACCOUNT_WAITING else ModelsCopy.ACCOUNT_XAI_CONTINUE, titleColor = c.accent, onClick = actions.signIn)
+            ListRow(null, if (waiting) ModelsCopy.SIGN_IN_RUNNING else ModelsCopy.signInStart(kind), titleColor = c.accent, onClick = actions.signIn)
         }
     }
-    FooterNote(if (signedIn) ModelsCopy.ACCOUNT_SIGNED_IN_NOTE else ModelsCopy.ACCOUNT_SIGNED_OUT_NOTE)
-    if (!signedIn && waiting && ui.accountSignIn.userCode.isNotBlank()) {
-        FooterNote(ModelsCopy.accountCode(ui.accountSignIn.userCode))
-    }
-    ui.accountSignIn.failure?.takeIf { ui.accountSignIn.provider == AccountProvider.Xai }?.let { FooterNote(it, color = c.bad) }
+    FooterNote(ModelsCopy.accountNote(kind, signedIn))
+    if (signedIn && kind == SignInKind.Xai) FooterNote(ModelsCopy.XAI_403_NOTE, Modifier.testTag("account-403-note"), color = c.warn)
+    failure?.let { FooterNote(it, color = c.bad) }
 }
 
 /**
@@ -641,16 +652,76 @@ object ModelsCopy {
         SignInFailure.Network -> tr(R.string.chatgpt_fail_network)
     }
 
-    val ACCOUNT_TITLE: String get() = tr(R.string.account_signin_title)
-    val ACCOUNT_XAI_TITLE: String get() = tr(R.string.account_signin_xai_title)
-    val ACCOUNT_XAI_BODY: String get() = tr(R.string.account_signin_xai_body)
-    val ACCOUNT_XAI_CONTINUE: String get() = tr(R.string.account_signin_xai_continue)
-    val ACCOUNT_COPY: String get() = tr(R.string.account_signin_copy)
-    val ACCOUNT_OPEN: String get() = tr(R.string.account_signin_open)
-    val ACCOUNT_WAITING: String get() = tr(R.string.account_signin_waiting)
-    val ACCOUNT_SIGNED_OUT_NOTE: String get() = tr(R.string.account_signed_out_note)
+    // ---------- 用账号登录(xAI、OpenRouter;ChatGPT 的在上面) ----------
 
-    fun accountCode(code: String) = tr(R.string.account_signin_code, code)
+    val SIGN_IN_GROUP: String get() = tr(R.string.signin_group)
+    val KEY_GROUP: String get() = tr(R.string.signin_key_group)
+    val SIGN_IN_RUNNING: String get() = tr(R.string.signin_running)
+    val SIGN_IN_USE_KEY: String get() = tr(R.string.signin_use_key)
+    val XAI_CODE_TITLE: String get() = tr(R.string.signin_xai_code_title)
+    val XAI_CODE_BODY: String get() = tr(R.string.signin_xai_code_body)
+    val XAI_CODE_COPY_REOPEN: String get() = tr(R.string.signin_xai_code_copy_reopen)
+    val XAI_CODE_WAITING: String get() = tr(R.string.signin_xai_code_waiting)
+    val XAI_403_NOTE: String get() = tr(R.string.signin_xai_403_note)
+    val SET_MAIN: String get() = tr(R.string.signin_set_main)
+    val SET_MAIN_NOTE: String get() = tr(R.string.signin_set_main_note)
+    val SIGN_OUT_NOTE: String get() = tr(R.string.signin_sign_out_note)
+    /** xAI 的账号页。 */
+    const val ACCOUNT_MANAGE_URL = "https://accounts.x.ai"
+
+    fun codeValid(minutes: Int) = tr(R.string.signin_xai_code_valid, minutes)
+
+    /** 「用账号登录」一组里每家下面那一行小字。 */
+    fun signInRowLine(kind: SignInKind) = when (kind) {
+        SignInKind.ChatGpt -> tr(R.string.signin_row_chatgpt)
+        SignInKind.Xai -> tr(R.string.signin_row_xai)
+        SignInKind.OpenRouter -> tr(R.string.signin_row_openrouter)
+    }
+
+    fun signInTitle(kind: SignInKind) = when (kind) {
+        SignInKind.ChatGpt -> CHATGPT_TITLE
+        SignInKind.Xai -> tr(R.string.signin_xai_title)
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_title)
+    }
+
+    fun signInBody(kind: SignInKind) = when (kind) {
+        SignInKind.ChatGpt -> CHATGPT_BODY
+        SignInKind.Xai -> tr(R.string.signin_xai_body)
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_body)
+    }
+
+    /** 登录前要先说清的风险(黄底);没有为 null。 */
+    fun signInRisk(kind: SignInKind): String? = if (kind == SignInKind.Xai) tr(R.string.signin_xai_risk) else null
+
+    /** 登录前的补充说明(灰底);没有为 null。 */
+    fun signInInfo(kind: SignInKind): String? = when (kind) {
+        SignInKind.ChatGpt -> null
+        SignInKind.Xai -> tr(R.string.signin_stored_note)
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_note)
+    }
+
+    fun signInStart(kind: SignInKind) = when (kind) {
+        SignInKind.ChatGpt -> CHATGPT_CONTINUE
+        SignInKind.Xai -> tr(R.string.signin_continue)
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_authorize)
+    }
+
+    fun signInWaiting(kind: SignInKind) = when (kind) {
+        SignInKind.ChatGpt -> CHATGPT_WAITING
+        SignInKind.Xai -> tr(R.string.signin_xai_starting)
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_waiting)
+    }
+
+    fun accountManage(kind: SignInKind) = when (kind) {
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_manage)
+        else -> tr(R.string.account_manage_xai)
+    }
+
+    /** 账号登录详情下面的说明:在用什么、退出后怎样。 */
+    fun accountNote(kind: SignInKind, signedIn: Boolean) = when (kind) {
+        SignInKind.OpenRouter -> tr(if (signedIn) R.string.signin_openrouter_signed_in_note else R.string.signin_openrouter_signed_out_note)
+        else -> tr(if (signedIn) R.string.account_signed_in_note_xai else R.string.account_signed_out_note)
+    }
 
     fun accountFailure(e: AccountSignInException): String = when (e.reason) {
         AccountSignInFailure.Denied -> tr(R.string.account_fail_denied)
@@ -661,10 +732,6 @@ object ModelsCopy {
         AccountSignInFailure.Network -> tr(R.string.account_fail_network)
         AccountSignInFailure.BadIssuer -> tr(R.string.account_fail_issuer)
     }
-
-    val ACCOUNT_SIGNED_IN_NOTE: String get() = tr(R.string.account_signed_in_note_xai)
-    val ACCOUNT_MANAGE: String get() = tr(R.string.account_manage_xai)
-    const val ACCOUNT_MANAGE_URL = "https://accounts.x.ai"
 
     /** 用途卡上的一行:[title] 是模型名([isModel])、「用主模型」「不用」或「未设置」([unset]),[subtitle] 是补充说明。 */
     data class RoleLine(val title: String, val subtitle: String, val isModel: Boolean = false, val unset: Boolean = false)
