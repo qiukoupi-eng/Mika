@@ -98,10 +98,7 @@ enum class AppRunKind(val wire: String) { Done("done"), Bumpy("bumpy"), NotDone(
  * 把一次运行在某个 App 里的经过,写成对这个 App 知识补充的修订:请一次模型(不带工具),交给它这个 App 的内置说明、
  * 在用的补充、结局和精简的动作清单(带出错码、界面变没变),要回补充改完以后的全文;没有值得补的(最常见)什么也不产出。
  *
- * 防泄漏和起草个人技能用同一套([SkillRedactor]):请求里目标的值、输入的文字、数字换掉;交回的补充里再把目标的值、
- * 输入的文字、点过的内容元素(目标里点名的、列表里的条目,即联系人、商品名这类)和网页上的元素名当具体值换掉,
- * 照抄了这些原文的整份丢掉;内置说明和在用的补充里本来就有的字(界面上的名字)不算。回答和失败原因常在讲界面
- * (「在『我发布的』里找到了」),不拆成具体值,只在照抄了一整句时整份丢掉。换不干净(还带着具体值)或写成规定的那几条去掉。
+ * 交回的补充里目标的值换成占位、数字换掉(内置说明、App 名字里自带的除外),写了密码、验证码这类东西的整份不收。
  */
 class AppKnowledgeDrafter(private val model: ChatModel) {
     suspend fun draft(run: AppRunInput, app: KnowledgeEntry, builtIn: String?, current: AppKnowledgeDraft?, id: String, atMs: Long): AppKnowledgeDraft? {
@@ -117,19 +114,10 @@ class AppKnowledgeDrafter(private val model: ChatModel) {
             else -> return null
         }
         val existing = current?.let { facts(it.markdown) }
-        // 本来就可以出现的字:内置说明、在用的补充、App 的名字
-        val known = listOfNotNull(builtIn, existing, app.display, app.name).plus(app.aliases).joinToString("\n")
-        val knownNorm = SkillRedactor.norm(known)
-        val keepDigits = (app.packages + known).flatMap { Regex("\\d{2,}").findAll(it).map { m -> m.value }.toList() }.toSet()
-        val typed = ActionDigest.typed(run.events, run.tools)
-        val goal = SkillRedactor.norm(run.goal)
-        // 点过的内容是这一次的具体内容:目标里点名的(给「妈妈」发消息时点的「妈妈」)、列表里的条目(「回复最新的消息」时点的联系人)、
-        // 网页上的元素名;内置说明、在用的补充里有的名字是界面上的,不算
-        val named = lines.mapNotNull { l ->
-            l.target?.takeIf { t -> l.fromPage || (t.length >= 2 && goal.contains(SkillRedactor.norm(t))) || (l.content && !knownNorm.contains(SkillRedactor.norm(t))) }
-        }
-        val goalLiterals = SkillRedactor.literals(run.goal, emptyList())
-        val request = SkillRedactor.scrubNumbers(SkillRedactor.redact(Prompts.fill(INPUT, mapOf(
+        // 内置说明、在用的补充、App 的名字和包名里自带的数字(如铁路 App 的名字)保留
+        val keepDigits = (app.packages + listOfNotNull(builtIn, existing, app.display, app.name) + app.aliases)
+            .flatMap { Regex("\\d{2,}").findAll(it).map { m -> m.value }.toList() }.toSet()
+        val request = Prompts.fill(INPUT, mapOf(
             "app" to app.display + " (" + app.packages.joinToString(", ") + ")",
             "outcome" to kind.wire,
             "goal" to run.goal,
@@ -137,23 +125,18 @@ class AppKnowledgeDrafter(private val model: ChatModel) {
             "built_in" to builtIn.orEmpty(),
             "current" to existing.orEmpty(),
             "actions" to ActionDigest.render(lines),
-        )), goalLiterals + SkillRedactor.textLiterals(typed)), keepDigits)
+        ))
         val reply = try {
             model.complete(PROMPT, listOf(Message(Role.User, listOf(Part.Text(request)), Author.Mika)), emptyList())
         } catch (e: CancellationException) { throw e }
         catch (_: Exception) { return null }
         val raw = SkillDrafter.stripFence(reply.parts.filterIsInstance<Part.Text>().joinToString("") { it.text })
         if (raw.isEmpty() || raw.equals(NOTHING, ignoreCase = true)) return null
-        // 格式和上限按模型交回的原样查:换掉具体值之后再去掉的几条不该让超长的回复混过去
         if (!valid(raw, run.tools)) return null
-        val literals = (goalLiterals + SkillRedactor.textLiterals(typed + named)).filterNot { knownNorm.contains(SkillRedactor.norm(it)) }.toSet()
-        val redacted = SkillRedactor.redact(raw, literals)
-        // 先按原样查:写了密码、卡号这类东西说明起草走偏了,数字换掉也不收
+        val redacted = SkillRedactor.redact(raw, SkillRedactor.literals(run.goal, emptyList()))
+        // 写了密码、卡号这类东西说明起草走偏了,数字换掉也不收
         if (SensitiveFilter.hit(redacted) != null) return null
-        if (SkillRedactor.leaks(redacted, typed + named, known) ||
-            SkillRedactor.copiesSentence(redacted, listOf(said), known, ANSWER_LEAK_WINDOW, ANSWER_MIN_SENTENCE)) return null
         val kept = SkillRedactor.scrubNumbers(redacted, keepDigits).lines().map { it.trim() }.filter { it.isNotEmpty() }
-            .filterNot { SkillRedactor.PLACEHOLDER in it || ruleLike(it) }
         val facts = kept.joinToString("\n")
         if (kept.isEmpty() || facts == existing) return null
         return AppKnowledgeDraft(id, app.name, app.packages.first(), facts, run.runId, AppKnowledgeStage.Draft, atMs,
@@ -172,13 +155,6 @@ class AppKnowledgeDrafter(private val model: ChatModel) {
         /** 补充至多这么多条、这么多字:注入时附在说明后面,不该比说明本身还长。 */
         const val MAX_FACTS = 12
         const val MAX_CHARS = 1500
-        /**
-         * 照抄回答按一整句、或长句里连着这么多个字(英文按词)算:回答本来就在讲界面(「找不到『我发布的』入口」),
-         * 短片段和事实重合是常事;一整句原样搬进补充才说明把这一次的结果当成了事实。
-         */
-        const val ANSWER_LEAK_WINDOW = 12
-        /** 短于这么多个字(英文按词)的一句不算照抄(「已查看」「Done」)。 */
-        const val ANSWER_MIN_SENTENCE = 6
         /** 模型说「没有值得补的」时只回这个词。 */
         const val NOTHING = "NONE"
 
@@ -186,22 +162,6 @@ class AppKnowledgeDrafter(private val model: ChatModel) {
         private val INPUT: String by lazy { Prompts.role("app_knowledge_input") }
 
         private val TOOL_MENTION = Regex("`([a-z][a-z0-9_]*)`")
-        /**
-         * 写成做法或规定的说法(知识只写现象,见 docs/knowledge-format.md):劝怎么做(应该、建议、最好、尽量、记得、避免、
-         * 「先……再……」、should、always、make sure……)和禁止(不要点、别点、切勿、请勿、never、don't……)。
-         * 只收几乎不会出现在界面名字里的词和搭配,免得误伤事实:「不要」可能是按钮上的字,所以只在「不要点、不要用……」里算。
-         */
-        private val RULE = Regex("应该|应当|必须|务必|切勿|请勿|一定要|建议|最好|记得|避免|尽量|先[^。]{1,12}再|" +
-            "不要(?:点|用|选|进|去|再)|别(?:点|用|选)|\\b(?:should|must|do not|never|always|avoid|make sure|try to)\\b|\\bdon['’]t\\b",
-            RegexOption.IGNORE_CASE)
-        /** 引号里是屏幕上的原文(按钮、提示):「请勿重复提交」是界面上的字,不是我们写的规定。 */
-        private val QUOTED = Regex("「[^」]*」|『[^』]*』|“[^”]*”|\"[^\"]*\"")
-        /** 「必须……才……」讲的是 App 自己的要求(必须先登录才能看私信),是事实。 */
-        private val REQUIREMENT = Regex("必须[^。,;]*才")
-
-        /** 这一行是规定不是事实:去掉引号里的屏幕原文和「必须……才……」这种 App 的要求之后,还有规定的说法。 */
-        fun ruleLike(line: String): Boolean = RULE.containsMatchIn(REQUIREMENT.replace(QUOTED.replace(line, ""), ""))
-
         /**
          * 一份补充的事实行:去掉头部、标题和空行,不是「- 」开头的补上。旧版本起草的是整份 APP.md,
          * 这样也能接着修订、比较改了哪些行。

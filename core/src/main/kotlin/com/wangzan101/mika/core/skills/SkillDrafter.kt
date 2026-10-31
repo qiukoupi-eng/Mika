@@ -24,8 +24,6 @@ import kotlinx.serialization.json.contentOrNull
 import com.wangzan101.mika.core.tool.ToolIndex
 import com.wangzan101.mika.core.tool.Verb
 import com.wangzan101.mika.core.net.UrlHost
-import com.wangzan101.mika.core.uistate.ScreenContent
-import com.wangzan101.mika.core.uistate.UiElement
 
 /**
  * 起草技能的全部输入:[events] 是这次运行的事件,[toolNames] 是 Mika 当前的工具名,
@@ -72,17 +70,15 @@ object Eligibility {
 /**
  * 动作清单的一行:只有工具、目标元素名字、所在 App 或网站([where],网站写成「网站 主机名」)、是否生效、错误码。
  * [fromPage]:目标名字取自网页读屏,是网页内容(可能带个人信息),起草时当原文查泄漏。[typed]:这一步是输入文字。
- * [content]:目标是手机屏上列表里的条目([ScreenContent.content]:联系人、消息、商品这类),不是页面的固定框架。
  */
 data class ActionLine(
     val step: Int, val tool: String, val target: String?, val where: String?, val changed: Boolean?, val error: String?,
-    val fromPage: Boolean = false, val typed: Boolean = false, val content: Boolean = false,
+    val fromPage: Boolean = false, val typed: Boolean = false,
 )
 
 /** 从运行事件里取精简的动作清单。不取屏幕全文;`type_text` 的文字不取(渲染成 `<输入内容>`)。 */
 object ActionDigest {
-    private val ELEMENT = Regex("\"ref\":\"(@e\\d+)\",\"role\":\"([^\"]*)\",\"name\":(\"(?:[^\"\\\\]|\\\\.)*\")" +
-        "(?:,\"center\":\\{[^}]*\\})?(?:,\"bounds\":\\[(\\d+),(\\d+),(\\d+),(\\d+)])?")
+    private val ELEMENT = Regex("\"ref\":\"(@e\\d+)\",\"role\":\"[^\"]*\",\"name\":(\"(?:[^\"\\\\]|\\\\.)*\")")
     private val CURRENT_APP = Regex("\"currentApp\":\"([^\"]+)\"")
     private val CURRENT_SITE = Regex("\"currentSite\":\"([^\"]+)\"")
     private val READS = setOf(Verb.Observe, Verb.ListElements)
@@ -90,8 +86,6 @@ object ActionDigest {
     fun of(events: List<RunEvent>, tools: ToolIndex, maxLines: Int = 60): List<ActionLine> {
         val args = HashMap<Int, JsonObject>()
         var names = emptyMap<String, String>()
-        // 上一次读屏里是列表条目的那些编号
-        var contentRefs = emptySet<String>()
         var namesFromPage = false
         // 手机上在哪个 App、网页上在哪个站点;onWeb 是此刻在哪一边
         var app: String? = null
@@ -111,12 +105,7 @@ object ActionDigest {
                     // 读屏结果可能被截短成不完整的 JSON,逐个元素按文本取 ref→名字,只用来给目标命名
                     val verb = tools.verb(e.tool)
                     if (verb in READS) {
-                        val read = ELEMENT.findAll(e.resultJson).map { m ->
-                            val b = (4..7).mapNotNull { m.groupValues[it].toIntOrNull() }
-                            UiElement(m.groupValues[1], m.groupValues[2], unquote(m.groupValues[3]), 0, 0, b, null, false, false, false)
-                        }.toList()
-                        names = read.associate { it.ref to it.name }
-                        contentRefs = read.filter { ScreenContent.content(it, read) }.map { it.ref }.toSet()
+                        names = ELEMENT.findAll(e.resultJson).associate { m -> m.groupValues[1] to unquote(m.groupValues[2]) }
                         CURRENT_APP.find(e.resultJson)?.let { app = it.groupValues[1]; onWeb = false }
                         CURRENT_SITE.find(e.resultJson)?.let { site = it.groupValues[1]; onWeb = true }
                         namesFromPage = onWeb
@@ -131,7 +120,6 @@ object ActionDigest {
                     if (verb == Verb.LaunchApp || verb == Verb.ShareText) arg("package")?.let { app = it; onWeb = false }
                     if (verb == Verb.Navigate) arg("url")?.let(UrlHost::of)?.let { site = it; onWeb = true }
                     val fromRead = verb !in NO_REF_TARGET
-                    val ref = arg("ref")
                     val target = when (verb) {
                         // 只记分享给了哪个 App,不记文字:可能带个人信息
                         Verb.LaunchApp, Verb.ShareText -> arg("package")
@@ -141,27 +129,19 @@ object ActionDigest {
                         Verb.Tabs -> arg("action")
                         // 命令、路径、上传的文件可能带个人信息:不记
                         Verb.RunCommand, Verb.RunBundledScript, Verb.WriteFile, Verb.ShareFile, Verb.Upload -> null
-                        else -> ref?.let { names[it] }?.takeIf { it.isNotBlank() }
+                        else -> arg("ref")?.let { names[it] }?.takeIf { it.isNotBlank() }
                     }
                     val result = parse(e.resultJson)
                     val error = (result?.get("error") as? JsonPrimitive)?.contentOrNull
                     val where = if (onWeb) site?.let { "网站 $it" } else app
                     out += ActionLine(e.step, e.tool, target, where, e.changed, error, fromPage = fromRead && namesFromPage && onWeb && target != null,
-                        typed = verb == Verb.TypeText, content = fromRead && !onWeb && target != null && ref in contentRefs)
+                        typed = verb == Verb.TypeText)
                 }
                 else -> Unit
             }
         }
         return out
     }
-
-    /** 这次 type_text 输入的文字(密码框的已在记录里换成 ***)。 */
-    fun typed(events: List<RunEvent>, tools: ToolIndex): List<String> = events.filterIsInstance<RunEvent.ModelReply>()
-        .filter { tools.verb(it.tool) == Verb.TypeText }
-        .mapNotNull { e ->
-            val o = try { Json.parseToJsonElement(e.argsJson ?: return@mapNotNull null) as? JsonObject } catch (x: Exception) { null }
-            (o?.get("text") as? JsonPrimitive)?.contentOrNull?.takeIf { it != "***" }
-        }
 
     /** 目标不取自读屏的动作。 */
     private val NO_REF_TARGET = setOf(Verb.LaunchApp, Verb.ShareText, Verb.PressKey, Verb.Navigate, Verb.Tabs, Verb.RunCommand, Verb.RunBundledScript, Verb.WriteFile, Verb.ShareFile, Verb.Upload)
@@ -207,12 +187,12 @@ class SkillDrafter(private val model: ChatModel) {
     suspend fun draft(input: DraftInput, existing: PersonalSkills, catalog: GuideCatalog): DraftResult {
         val goalLiterals = SkillRedactor.literals(input.goal, listOf(input.answer))
         // 发给模型的请求:目标和回答里的值、这次输入的文字换掉,数字一律换掉;回答整段只在草稿里换
-        val typed = SkillRedactor.textLiterals(ActionDigest.typed(input.events, input.tools))
+        val typed = SkillRedactor.textLiterals(typedTexts(input.events, input.tools))
         val keepDigits = catalogDigits(catalog)
         val request = SkillRedactor.scrubNumbers(SkillRedactor.redact(request(input), goalLiterals + typed), keepDigits)
         // 网页上点到的元素名字是网页内容,和输入的文字、回答一样当原文查泄漏
         val pageTargets = ActionDigest.of(input.events, input.tools).filter { it.fromPage }.mapNotNull { it.target }
-        val sources = ActionDigest.typed(input.events, input.tools) + input.answer + pageTargets
+        val sources = typedTexts(input.events, input.tools) + input.answer + pageTargets
         val literals = goalLiterals + typed + SkillRedactor.textLiterals(sources)
         val reply = try {
             model.complete(PROMPT, listOf(Message(Role.User, listOf(Part.Text(request)), Author.Mika)), emptyList())
@@ -225,7 +205,7 @@ class SkillDrafter(private val model: ChatModel) {
         // 先按原样查一遍:草稿里写了密码、卡号这类东西,说明起草走偏了,数字换掉也不收
         if (SensitiveFilter.hit(redacted) != null) return DraftResult.Dropped("sensitive")
         // 替换没换干净:草稿里还留着屏幕原文或输入文字的片段(4 个字以上、目标和技能目录里都没有的)
-        if (SkillRedactor.leaks(redacted, sources, known(input.goal, catalog))) return DraftResult.Dropped("screen_text_leak")
+        if (leaks(redacted, sources, input.goal, catalog)) return DraftResult.Dropped("screen_text_leak")
         val md = SkillRedactor.scrubNumbers(redacted, keepDigits)
 
         validate(md, input.toolNames, input.tools.nameOf(Verb.RunBundledScript), catalog.runnableScripts())?.let { return DraftResult.Dropped(it) }
@@ -263,9 +243,28 @@ class SkillDrafter(private val model: ChatModel) {
         }?.name
     }
 
-    /** 目标和内置技能目录里本来就有的字:草稿里出现不算照抄。 */
-    private fun known(goal: String, catalog: GuideCatalog): String = goal + "\n" +
-        catalog.items.filter { it.kind != PERSONAL_KIND }.joinToString("\n") { (listOf(it.name, it.display, it.description) + it.aliases).joinToString("\n") }
+    private fun leaks(draft: String, sources: List<String>, goal: String, catalog: GuideCatalog): Boolean {
+        if (sources.isEmpty()) return false
+        val g = SkillRedactor.norm(goal)
+        val known by lazy {
+            catalog.items.filter { it.kind != PERSONAL_KIND }
+                .joinToString("\n") { (listOf(it.name, it.display, it.description) + it.aliases).joinToString("\n") }.let(SkillRedactor::norm)
+        }
+        return sources.map(SkillRedactor::norm).any { t ->
+            (0..t.length - LEAK_WINDOW).any { i ->
+                val w = t.substring(i, i + LEAK_WINDOW)
+                w.isNotBlank() && draft.contains(w) && !g.contains(w) && !known.contains(w)
+            }
+        }
+    }
+
+    /** 这次 type_text 输入的文字(密码框的已在记录里换成 ***)。 */
+    private fun typedTexts(events: List<RunEvent>, tools: ToolIndex): List<String> = events.filterIsInstance<RunEvent.ModelReply>()
+        .filter { tools.verb(it.tool) == Verb.TypeText }
+        .mapNotNull { e ->
+            val o = try { Json.parseToJsonElement(e.argsJson ?: return@mapNotNull null) as? JsonObject } catch (x: Exception) { null }
+            (o?.get("text") as? JsonPrimitive)?.contentOrNull?.takeIf { it != "***" }
+        }
 
     /** 内置技能名字、显示名、别名里自带的数字(如铁路 App 的名字),草稿里保留。 */
     private fun catalogDigits(catalog: GuideCatalog): Set<String> =
@@ -327,6 +326,7 @@ class SkillDrafter(private val model: ChatModel) {
             if (SensitiveFilter.hit(md) != null) return "sensitive"
             return null
         }
+        private const val LEAK_WINDOW = 4
         val SECTIONS = listOf("入口", "步骤", "容易出错的地方", "怎样算办成", "什么时候停下交给用户")
         /** 反引号里形如工具名的标识符。 */
         private val TOOL_MENTION = Regex("`([a-z][a-z0-9_]*)`")
