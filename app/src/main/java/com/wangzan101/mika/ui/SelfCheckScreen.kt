@@ -219,11 +219,11 @@ fun SelfCheckContent(
             GroupLabel(stringResource(R.string.selfcheck_report))
             val c = MikaTheme.colors
             Box(
-                Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 360.dp)
+                Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 360.dp).testTag("selfcheck-report")
                     .background(c.fill, RoundedCornerShape(12.dp)).verticalScroll(rememberScrollState())
                     .horizontalScroll(rememberScrollState()).padding(12.dp),
             ) {
-                Text(text, Modifier.testTag("selfcheck-report"), fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp, color = c.ink2)
+                Text(text, fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp, color = c.ink2)
             }
             Row(Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MikaButton(stringResource(R.string.selfcheck_copy), onCopy, Modifier.weight(1f).testTag("selfcheck-copy"))
