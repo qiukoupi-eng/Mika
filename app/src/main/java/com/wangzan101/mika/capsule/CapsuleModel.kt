@@ -247,6 +247,19 @@ class CapsuleModel(private val reasonLabel: (String) -> String? = { null }) {
         }
     }
 
+    /**
+     * 单独一件事在卡片里的样子(不经 [update]、不排先后):别处只跟着一件事时用(浏览器页上那一页的对话面板)。
+     * 已结束的按结束的说法;等接管的排位用它自带的队列位置。
+     */
+    fun cardRunOf(r: CapsuleRun): CardRun {
+        if (r.state.ended()) {
+            val (kind, text) = endedLine(r.state)
+            return CardRun(r, kind, text)
+        }
+        val line = describe(r)
+        return CardRun(r, line.kind, line.text, ahead = r.queueAhead.coerceAtLeast(0), behind = r.queueBehind)
+    }
+
     /** 要紧的在前;同样要紧的,接管队里排在前面的在前,再按开始的先后。 */
     private val order = compareBy<Pair<CapsuleRun, Line>>(
         { it.second.kind.ordinal }, { spot(it.first)?.first ?: Int.MAX_VALUE }, { firstSeen[it.first.key] ?: 0L },
