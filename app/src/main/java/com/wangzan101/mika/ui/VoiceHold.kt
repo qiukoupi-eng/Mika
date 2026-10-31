@@ -387,9 +387,9 @@ internal fun VoiceBarCover(vh: VoiceHold, state: HoldToTalk.State, reduceMotion:
     }
 }
 
-/** 波形:14 根细条,高低跟着音量走;关了动画时只跟音量,不自己摆。 */
+/** 波形:14 根细条,高低跟着音量走;关了动画时只跟音量,不自己摆。输入栏和悬浮胶囊的说话面板共用。 */
 @Composable
-private fun VoiceWave(level: Float, flat: Boolean, reduceMotion: Boolean, color: Color) {
+internal fun VoiceWave(level: Float, flat: Boolean, reduceMotion: Boolean, color: Color) {
     val loud by animateFloatAsState(if (flat) 0f else level.coerceIn(0f, 1f), if (reduceMotion) snap() else tween(120), label = "wave-level")
     val phase = if (reduceMotion || flat) 0f else rememberInfiniteTransition(label = "wave").animateFloat(
         0f, (2 * Math.PI).toFloat(), infiniteRepeatable(tween(1000, easing = LinearEasing), RepeatMode.Restart), label = "wave-phase",

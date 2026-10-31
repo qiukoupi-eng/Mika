@@ -155,4 +155,21 @@ class CapsuleContentTest {
         compose.runOnIdle { actions.first { it.label == CapsuleCopy.SWAP_SIDE }.action() }
         assertEquals(1, swapped)
     }
+
+    /** 读屏时多一个「说话」代替长按;长按说话中胶囊亮蓝边。 */
+    @Test fun talkActionAndHoldingRing() {
+        var talked = 0
+        compose.setContent {
+            MikaTheme(dark = false, reduceMotion = true) {
+                CapsuleContent(
+                    CapsuleView.Shown(CapsuleKind.Idle, ""), {}, {}, {},
+                    holding = true, onTalk = { talked++ }, talkLabel = "说话",
+                )
+            }
+        }
+        compose.onNodeWithTag("capsule-holding", useUnmergedTree = true).assertIsDisplayed()
+        val actions = compose.onNodeWithTag("capsule-ball").fetchSemanticsNode().config[SemanticsActions.CustomActions]
+        compose.runOnIdle { actions.first { it.label == "说话" }.action() }
+        assertEquals(1, talked)
+    }
 }

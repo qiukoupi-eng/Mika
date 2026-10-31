@@ -32,4 +32,24 @@
     <string name="voice_permission_title">要允许录音才能按住说话</string>
     <string name="voice_permission_body">按住说话时要录音才能听到你。之前没有允许，手机不会再问了：到系统设置里 Mika 的权限页，打开「麦克风」就能用。</string>
     <string name="voice_permission_open">去设置</string>
+    <!-- 悬浮胶囊:长按说话 -->
+    <string name="capsule_voice_talk">说话</string>
+    <string name="capsule_voice_send">发出</string>
+    <string name="capsule_voice_answer_title">回答 Mika</string>
+    <string name="capsule_voice_continue_title">接着「%1$s」说</string>
+    <string name="capsule_voice_cancel">取消</string>
+    <string name="capsule_voice_edit">改一改</string>
+    <string name="capsule_voice_foot_send_up">松开发送 · 拖到上面取消或改一改</string>
+    <string name="capsule_voice_foot_send_down">松开发送 · 拖到下面取消或改一改</string>
+    <string name="capsule_voice_foot_convert_up">松开转成文字后发送 · 拖到上面取消或改一改</string>
+    <string name="capsule_voice_foot_convert_down">松开转成文字后发送 · 拖到下面取消或改一改</string>
+    <string name="capsule_voice_foot_edit">松开 · 打开卡片，字在输入框里</string>
+    <string name="capsule_voice_foot_cancel">松开 · 这段不要了</string>
+    <string name="capsule_voice_foot_a11y">说完后在胶囊的操作里选「发出」</string>
+    <string name="capsule_voice_steered">已插话：%1$s</string>
+    <string name="capsule_voice_answered">已回答：%1$s</string>
+    <string name="capsule_voice_sent">已发出：%1$s</string>
+    <string name="capsule_voice_need_mic">点这里到 Mika 允许录音</string>
+    <string name="capsule_voice_not_ready">还不能语音输入 · 点这里</string>
+    <string name="capsule_voice_open">打开 Mika</string>
 </resources>

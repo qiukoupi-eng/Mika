@@ -33,4 +33,24 @@
     <string name="voice_permission_title">Mika needs the microphone</string>
     <string name="voice_permission_body">To hear you while you hold to talk, Mika needs to record audio. It was denied before, so the phone won’t ask again. Turn on the microphone on Mika’s permission page in system settings.</string>
     <string name="voice_permission_open">Open settings</string>
+    <!-- Floating capsule: long press to talk -->
+    <string name="capsule_voice_talk">Talk</string>
+    <string name="capsule_voice_send">Send</string>
+    <string name="capsule_voice_answer_title">Answering Mika</string>
+    <string name="capsule_voice_continue_title">Continuing “%1$s”</string>
+    <string name="capsule_voice_cancel">Cancel</string>
+    <string name="capsule_voice_edit">Edit</string>
+    <string name="capsule_voice_foot_send_up">Let go to send · drag up to cancel or edit</string>
+    <string name="capsule_voice_foot_send_down">Let go to send · drag down to cancel or edit</string>
+    <string name="capsule_voice_foot_convert_up">Let go to convert and send · drag up to cancel or edit</string>
+    <string name="capsule_voice_foot_convert_down">Let go to convert and send · drag down to cancel or edit</string>
+    <string name="capsule_voice_foot_edit">Let go · the card opens with the words in the box</string>
+    <string name="capsule_voice_foot_cancel">Let go · discard this</string>
+    <string name="capsule_voice_foot_a11y">When you’re done, choose “Send” in the capsule’s actions</string>
+    <string name="capsule_voice_steered">Told the task: %1$s</string>
+    <string name="capsule_voice_answered">Answered: %1$s</string>
+    <string name="capsule_voice_sent">Sent: %1$s</string>
+    <string name="capsule_voice_need_mic">Tap to allow the mic in Mika</string>
+    <string name="capsule_voice_not_ready">Voice input isn’t ready · tap</string>
+    <string name="capsule_voice_open">Open Mika</string>
 </resources>

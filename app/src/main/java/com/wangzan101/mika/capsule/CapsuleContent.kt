@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.unit.Density
@@ -87,6 +88,10 @@ private const val FLASH_ALPHA = 0.8f
 private const val FLASH_MS = 320
 /** 一颗展开成胶囊、缩回一颗的时长。 */
 private const val MORPH_MS = 260
+/** 长按说话时放大多少、外圈多粗、变过去多久。 */
+private const val HOLD_SCALE = 0.06f
+private val HoldRing = 3.dp
+private const val HOLD_MS = 180
 /** 干活中的圈转一周的时长。 */
 private const val SPIN_MS = 1_200
 private val CapsuleText = TextStyle(fontSize = 13.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.Medium)
@@ -121,6 +126,8 @@ object CapsuleCopy {
  * [onSwapSide] 给了时读屏软件多一个「移到屏幕另一边」,代替拖动。[alpha] 只淡底和图标,外圈和角标保持实色。
  * 双击由调用方从两次 [onTap] 认出来;读屏软件的双击就是点按,所以 [onSendScreen] 给了时另有一个「把此刻的屏幕发给 Mika」。
  * [flash] 每加一,一颗上闪一下(截到了屏幕)。
+ * [holding] 时是长按说话中:胶囊稍微放大、外面一圈蓝边。[onTalk] 给了时读屏软件多一个说话的操作([talkLabel]),代替长按:
+ * 点一下开始、再点一下发出。
  */
 @Composable
 fun CapsuleContent(
@@ -135,6 +142,9 @@ fun CapsuleContent(
     alpha: Float = 1f,
     onSendScreen: (() -> Unit)? = null,
     flash: Int = 0,
+    holding: Boolean = false,
+    onTalk: (() -> Unit)? = null,
+    talkLabel: String = "",
 ) {
     // 淡下去、恢复都慢慢来;关了动画时直接换
     val shown = if (MikaTheme.reduceMotion) alpha else animateFloatAsState(alpha, tween(FADE_MS), label = "fade").value
@@ -142,18 +152,22 @@ fun CapsuleContent(
         customActions = listOfNotNull(
             onSwapSide?.let { f -> CustomAccessibilityAction(CapsuleCopy.SWAP_SIDE) { f(); true } },
             onSendScreen?.let { f -> CustomAccessibilityAction(ScreenCopy.SEND_SCREEN) { f(); true } },
+            onTalk?.let { f -> CustomAccessibilityAction(talkLabel) { f(); true } },
         )
     }
     Box(modifier.padding(CapsuleShadowRoom)) {
         if (view.kind == CapsuleKind.HandedOver) TakeoverBar(view, onStop, onHandBack)
-        else Capsule(view, side == DockSide.Right, onTap, tapLabel, a11y, shown, flash)
+        else Capsule(view, side == DockSide.Right, onTap, tapLabel, a11y, shown, flash, holding)
     }
 }
 
 /** 一颗或展开的胶囊:同一块玻璃底,看得见的宽度在两者之间慢慢变(只在画的时候变,见 [Morph]);[end] 时贴右边(图标在右)。 */
 @Composable
-private fun Capsule(view: CapsuleView.Shown, end: Boolean, onTap: () -> Unit, tapLabel: String, a11y: Modifier, alpha: Float, flash: Int) {
+private fun Capsule(view: CapsuleView.Shown, end: Boolean, onTap: () -> Unit, tapLabel: String, a11y: Modifier, alpha: Float, flash: Int, holding: Boolean) {
     val c = MikaTheme.colors
+    // 长按说话中:放大一点、外面一圈蓝边(画在阴影边里,窗口大小不变)
+    val press = if (MikaTheme.reduceMotion) (if (holding) 1f else 0f)
+        else animateFloatAsState(if (holding) 1f else 0f, tween(HOLD_MS), label = "hold").value
     val need = view.kind.needsYou || view.needCount > 0
     // 截到屏幕:白光从亮到无,和截图时屏幕闪一下一个意思;关了动画时不闪
     val glow = remember { Animatable(0f) }
@@ -164,7 +178,20 @@ private fun Capsule(view: CapsuleView.Shown, end: Boolean, onTap: () -> Unit, ta
         glow.snapTo(FLASH_ALPHA)
         glow.animateTo(0f, tween(FLASH_MS))
     }
-    Box {
+    Box(
+        Modifier.graphicsLayer {
+            scaleX = 1f + HOLD_SCALE * press
+            scaleY = 1f + HOLD_SCALE * press
+        }.drawBehind {
+            if (press <= 0f) return@drawBehind
+            val ring = HoldRing.toPx()
+            val r = size.height / 2 + ring / 2
+            drawRoundRect(
+                c.accent.copy(alpha = press), Offset(-ring / 2, -ring / 2), Size(size.width + ring, size.height + ring),
+                CornerRadius(r, r), style = Stroke(ring),
+            )
+        }.then(if (holding) Modifier.testTag("capsule-holding") else Modifier),
+    ) {
         Box(
             Modifier.testTag(if (view.pill) "capsule" else "capsule-ball")
                 .morphGlass(morph, end, c, need, alpha)
