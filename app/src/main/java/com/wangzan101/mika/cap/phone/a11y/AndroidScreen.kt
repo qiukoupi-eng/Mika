@@ -1,5 +1,6 @@
 package com.wangzan101.mika.cap.phone.a11y
 
+import android.accounts.AccountManager
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.ComponentName
@@ -1145,7 +1146,7 @@ class AndroidScreen(
 
     /**
      * 冒到主屏上的是要用户亲手处理的弹窗(登录验证、账号确认、付款确认一类):不挪,留在用户屏上。
-     * 判据:顶层窗口不是整屏(对话框、底部弹层),窗口里有密码框,或页面本身不进最近任务(excludeFromRecents)。
+     * 判据:系统账号登录服务(登记了账号认证器、没有桌面图标的包)的页面,顶层窗口不是整屏(对话框、底部弹层),窗口里有密码框,或页面本身不进最近任务(excludeFromRecents)。
      * 这类窗口挪到 Mika 的屏上就从用户眼前消失,用户也就没法在主屏上点确认。不是为 null。
      * noHistory 不算:很多 App 的开屏页带着它,算进来就把普通 App 当成了弹窗。
      */
@@ -1154,6 +1155,7 @@ class AndroidScreen(
 
     /** 主屏上这个任务的顶层窗口是不是一个要用户亲手处理的弹窗(见 [leavePopup])。最多多等两次 [POPUP_SETTLE_MS]。 */
     private suspend fun needsUserWindow(a: MainScreenSpill.Arrival, pkg: String): Boolean {
+        if (isAuthenticatorUi(pkg)) return true
         val activity = a.topActivity?.let {
             runCatching { a11y.packageManager.getActivityInfo(ComponentName(pkg, it), 0) }.getOrNull()
         }
@@ -1176,6 +1178,22 @@ class AndroidScreen(
 
     private fun topWindowOf(pkg: String): AccessibilityWindowInfo? =
         ScreenReader.contentWindows(a11y.windowsOn(Display.DEFAULT_DISPLAY)).firstOrNull { it.root?.packageName?.toString() == pkg }
+
+    /**
+     * 这个包是不是系统的账号登录服务:登记了账号认证器(AccountManager.authenticatorTypes,平台数据),自己又没有桌面图标
+     * (没有 LAUNCHER 入口)。这种包没有自己的首页,冒到主屏上的只会是加账号、登录、验证、验证码一类页面,本身就是用户的事,
+     * 整屏、没有密码框也不能挪到 Mika 的屏上。有桌面图标的认证器包(同步联系人的聊天 App、邮箱 App 等)不算,
+     * 它们的会话、分享、写信页照常挪回。认证器表每次现读:新装的认证器也认得出,这一步只在有页面冒到主屏时才走。
+     */
+    private fun isAuthenticatorUi(pkg: String): Boolean {
+        val authenticators = runCatching { AccountManager.get(a11y).authenticatorTypes.mapNotNull { it.packageName }.toSet() }
+            .getOrDefault(emptySet())
+        if (pkg !in authenticators) return false
+        // 有桌面图标的包对 Mika 一定看得见(清单里查了 LAUNCHER);查不到才算没有
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage(pkg)
+        val hasLauncher = runCatching { a11y.packageManager.queryIntentActivities(launcher, 0).isNotEmpty() }.getOrDefault(true)
+        return MainScreenSpill.authenticatorUi(pkg, authenticators, hasLauncher)
+    }
 
     /** 窗口没有遮住整块屏:对话框、底部弹层、悬浮窗一类。 */
     private fun isNarrow(window: AccessibilityWindowInfo, metrics: android.util.DisplayMetrics): Boolean {

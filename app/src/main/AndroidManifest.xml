@@ -58,6 +58,10 @@
             <action android:name="android.intent.action.INSERT" />
             <data android:mimeType="vnd.android.cursor.dir/event" />
         </intent>
+        <!-- 账号认证器所在的包:没有桌面图标的系统账号登录服务也要看得见,它的登录页冒到主屏上时留给用户处理 -->
+        <intent>
+            <action android:name="android.accounts.AccountAuthenticator" />
+        </intent>
     </queries>
 
     <application
