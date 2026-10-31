@@ -189,6 +189,100 @@ class HoldToTalkTest {
     }
 
     @Test
+    fun earlyFinalWaitsForReleaseThenAppliesOnce() {
+        // 手机自带识别在手还按着时自己结束了:先不交出去,手指离开才算数
+        val session = pressed()
+        now = 2_000
+        hold.onEvent(SpeechEvent.Final("帮我订票"))
+        val s = hold.state.value as HoldToTalk.State.Listening
+        assertTrue(s.ended)
+        assertEquals("帮我订票", s.stable)
+        now = 3_000
+        hold.tick()
+        assertTrue(hold.state.value is HoldToTalk.State.Listening)
+        hold.release()
+        assertEquals(HoldToTalk.State.Done("帮我订票"), hold.state.value)
+        // 会话已经结束,不再去收尾;再松开一次也不重复交出
+        assertEquals(0, session.released)
+        hold.reset()
+        hold.release()
+        assertEquals(HoldToTalk.State.Idle, hold.state.value)
+    }
+
+    @Test
+    fun earlyFinalWithCancelArmedIsDropped() {
+        val session = pressed()
+        now = 2_000
+        hold.drag(100f, 80f)
+        hold.onEvent(SpeechEvent.Final("帮我订票"))
+        assertTrue(hold.state.value is HoldToTalk.State.Listening)
+        hold.release()
+        assertEquals(HoldToTalk.State.Idle, hold.state.value)
+        assertEquals(0, session.released)
+    }
+
+    @Test
+    fun earlyFinalThenDragToCancelIsDropped() {
+        pressed()
+        now = 2_000
+        hold.onEvent(SpeechEvent.Final("帮我订票"))
+        hold.drag(100f, 80f)
+        assertTrue((hold.state.value as HoldToTalk.State.Listening).cancelArmed)
+        hold.release()
+        assertEquals(HoldToTalk.State.Idle, hold.state.value)
+    }
+
+    @Test
+    fun earlyFinalThenDragBackOffCancelIsApplied() {
+        pressed()
+        now = 2_000
+        hold.drag(100f, 80f)
+        hold.onEvent(SpeechEvent.Final("帮我订票"))
+        hold.drag(10f, 80f)
+        hold.release()
+        assertEquals(HoldToTalk.State.Done("帮我订票"), hold.state.value)
+    }
+
+    @Test
+    fun earlyFailureWithCancelArmedIsDropped() {
+        pressed()
+        now = 2_000
+        hold.armCancel(true)
+        hold.onEvent(SpeechEvent.Failed(SpeechFailure.Busy))
+        assertTrue((hold.state.value as HoldToTalk.State.Listening).ended)
+        hold.release()
+        assertEquals(HoldToTalk.State.Idle, hold.state.value)
+    }
+
+    @Test
+    fun earlyFinalAppliedWhenTimeRunsOut() {
+        pressed()
+        now = 2_000
+        hold.onEvent(SpeechEvent.Final("好"))
+        now = 60_000
+        hold.tick()
+        assertEquals(HoldToTalk.State.Done("好"), hold.state.value)
+    }
+
+    @Test
+    fun pressWhileConvertingDropsTheOldSession() {
+        // 服务商转写卡住时用户重新按:旧的那段取消,新的一段照常听、照常出结果
+        val first = pressed(live = false)
+        now = 2_000
+        hold.release()
+        assertEquals(HoldToTalk.State.Converting, hold.state.value)
+        val second = pressed()
+        assertEquals(1, first.cancelled)
+        assertEquals(0, second.cancelled)
+        assertTrue(hold.state.value is HoldToTalk.State.Listening)
+        now = 4_000
+        hold.release()
+        assertEquals(1, second.released)
+        hold.onEvent(SpeechEvent.Final("新的"))
+        assertEquals(HoldToTalk.State.Done("新的"), hold.state.value)
+    }
+
+    @Test
     fun joinRules() {
         assertEquals("你好", HoldToTalk.join("", "你好"))
         assertEquals("帮我订票", HoldToTalk.join("帮我", "订票"))

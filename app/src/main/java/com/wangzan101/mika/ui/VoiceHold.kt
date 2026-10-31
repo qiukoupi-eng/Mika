@@ -201,10 +201,12 @@ internal class VoiceHold(private val voice: VoiceSource, private val scope: Coro
     internal var haptic: () -> Unit = {}
     private var collector: Job? = null
 
-    /** 长按到时:先看能不能用、有没有权限,都行才开始听。 */
+    /**
+     * 长按到时:先看能不能用、有没有权限,都行才开始听。
+     * 上一段松开后还在转(服务商卡住、或自带识别在收尾)也可以重新按:上一段不要了,由 [HoldToTalk.press] 取消。
+     */
     fun begin() {
-        val now = hold.state.value
-        if (now is HoldToTalk.State.Listening || now is HoldToTalk.State.Converting) return
+        if (holding) return
         toast = null
         hold.reset()
         val spec = voice.spec()

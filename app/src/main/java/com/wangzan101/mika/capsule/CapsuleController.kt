@@ -952,7 +952,7 @@ class CapsuleController(
 
     /** 读屏的「说话」:没在说就开始(没有手指,只能发出),在说就发出。 */
     private fun toggleTalk() {
-        if (talk.active && !talk.byTouch) talk.finish(CapsuleVoice.Drop.Send)
+        if (talk.active && !talk.byTouch && !talk.released) talk.finish(CapsuleVoice.Drop.Send)
         else beginTalk(byTouch = false)
     }
 
@@ -962,7 +962,8 @@ class CapsuleController(
      */
     private fun beginTalk(byTouch: Boolean) {
         val v = view ?: return
-        if (capturing || talk.active || !canTalk()) return
+        // 松开后还在转时可以重新按:上一段由 talk.begin 丢掉
+        if (capturing || (talk.active && !talk.released) || !canTalk()) return
         tapJob?.cancel()
         taps.reset()
         wake()
@@ -970,6 +971,7 @@ class CapsuleController(
         val loading = if (v.kind == CapsuleKind.Idle) scope.async { loadIdle() } else null
         when (val b = talk.begin(CapsuleVoice.title(CapsuleCards.of(model.cardRuns(), follow, idle)), byTouch)) {
             CapsuleTalk.Begin.Started -> {
+                talkIdle?.cancel()
                 talkIdle = loading
                 loading?.let {
                     scope.launch {

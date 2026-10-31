@@ -127,7 +127,9 @@ object CapsuleVoice {
 /**
  * 胶囊上一次说话:开会话([begin])、收事件、按着时推计时、手指移动时算落点([move])、松开([finish])。
  * 用手指按着时([byTouch])落点跟着手指;读屏的「说话」没有手指,只会发出。说完([HoldToTalk.State.Done]、
- * [HoldToTalk.State.Problem])交给 [onResult],连同松开时的落点。只在主线程用。
+ * [HoldToTalk.State.Problem])交给 [onResult],连同松开时的落点。手还按着时会话先结束了,结果由 [HoldToTalk] 留着,
+ * 等手指离开按那时的落点处理(取消就丢掉、改一改打开卡片、其余发出);读屏没有手指,会话一结束就当「发出」。
+ * 松开后在转、手指又按下:旧的那段不要了,重新开始听。只在主线程用。
  */
 internal class CapsuleTalk(
     private val context: Context,
@@ -171,11 +173,13 @@ internal class CapsuleTalk(
 
     /** 能不能用、有没有录音权限:都行才开始听。胶囊不是 Activity,弹不了系统的权限框。 */
     fun begin(title: String, byTouch: Boolean): Begin {
-        if (active) return Begin.Started
+        if (active && !released) return Begin.Started
         val source = voice()
         val spec = source.spec()
         if (spec is SpeechEngineSpec.Unavailable) return Begin.Unavailable(spec.why)
         if (context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) return Begin.NoPermission
+        // 上一段松开后还在转(服务商卡住、或自带识别在收尾):用户重新按,上一段不要了;会话由 press 取消
+        if (active) stop()
         hold.reset()
         val session = source.start()
         this.title = title
@@ -192,6 +196,8 @@ internal class CapsuleTalk(
         collector = scope.launch { session.events.collect { hold.onEvent(it) } }
         watcher = scope.launch {
             hold.state.collect { s ->
+                // 读屏没有手指可等:会话自己结束了就当按了「发出」
+                if (s is HoldToTalk.State.Listening && s.ended && !this@CapsuleTalk.byTouch) finish(CapsuleVoice.Drop.Send)
                 if (s is HoldToTalk.State.Done || s is HoldToTalk.State.Problem) {
                     val d = drop ?: aim
                     stop()
@@ -214,6 +220,8 @@ internal class CapsuleTalk(
     fun move(x: Float, y: Float, slopPx: Int) {
         if (!active || released || !byTouch) return
         aim = CapsuleVoice.drop(x, y, cancelAt, editAt, slopPx)
+        // 状态机也要知道手指在不在取消上:会话在按着时出错,停在取消上就不提示
+        hold.armCancel(aim == CapsuleVoice.Drop.Cancel)
     }
 
     /** 松开(或读屏的「发出」):取消就丢掉,否则收尾等字。 */
@@ -226,6 +234,7 @@ internal class CapsuleTalk(
         aim = at
         drop = at
         released = true
+        hold.armCancel(false)
         hold.release()
     }
 

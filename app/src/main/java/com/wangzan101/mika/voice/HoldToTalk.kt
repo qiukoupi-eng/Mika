@@ -8,13 +8,18 @@ import kotlinx.coroutines.flow.asStateFlow
  * 按住说话的状态机:按下、上滑取消、松开、到点收尾、收会话的事件,算出界面此刻该显示什么。
  * 不碰界面也不碰手势,对话输入栏和悬浮胶囊共用;会话由调用方开好再交进来([press]),
  * 事件由调用方收了转进来([onEvent]),[tick] 由调用方按住时定时调(计时、到 [maxMs] 收尾)。
+ * 手还按着时会话自己先结束了(手机自带识别一段说完不再重开、中途出错但已听到字):结果先留着,
+ * 等手指离开再按那时的落点处理——停在取消上就丢掉,否则才交出去;这样不会在用户想取消时把字发出去。
  * 只在一个线程(主线程)上调。
  */
 class HoldToTalk(private val clock: () -> Long, private val maxMs: Long = 60_000, private val minMs: Long = 500) {
     sealed interface State {
         data object Idle : State
 
-        /** 按着(或刚松开、手机自带识别还在收尾):[stable] 已经定下的字,[tail] 末尾还可能变的几个字。 */
+        /**
+         * 按着(或刚松开、手机自带识别还在收尾):[stable] 已经定下的字,[tail] 末尾还可能变的几个字。
+         * [ended]:手还按着,会话却已经结束、结果留着等松开。
+         */
         data class Listening(
             val stable: String,
             val tail: String,
@@ -22,6 +27,7 @@ class HoldToTalk(private val clock: () -> Long, private val maxMs: Long = 60_000
             val elapsedMs: Long,
             val cancelArmed: Boolean,
             val live: Boolean,
+            val ended: Boolean = false,
         ) : State
 
         /** 服务商:松开后在转文字。 */
@@ -41,6 +47,8 @@ class HoldToTalk(private val clock: () -> Long, private val maxMs: Long = 60_000
     private var startedAt = 0L
     /** 已经松开(或到点)交给会话收尾;之后再松开、再到点都不重复调。 */
     private var released = false
+    /** 手还按着时会话已经给出的结果(Done 或 Problem(null)),等松开再交出去。 */
+    private var pending: State? = null
 
     fun press(session: SpeechSession) {
         // 还有上一段没收完(很少见,例如上一段还在转):用户这次重新按,上一段不要了
@@ -48,34 +56,46 @@ class HoldToTalk(private val clock: () -> Long, private val maxMs: Long = 60_000
         this.session = session
         startedAt = clock()
         released = false
+        pending = null
         _state.value = State.Listening("", "", 0f, 0, cancelArmed = false, live = session.live)
     }
 
     /** 手指从按下处往上移了 [upPx];超过 [thresholdPx] 就是「松开取消」,移回来又恢复。 */
-    fun drag(upPx: Float, thresholdPx: Float) {
+    fun drag(upPx: Float, thresholdPx: Float) = armCancel(upPx > thresholdPx)
+
+    /** 手指此刻在不在「取消」上;悬浮胶囊的落点不是上滑距离,由它直接告诉这里。 */
+    fun armCancel(armed: Boolean) {
         val s = _state.value as? State.Listening ?: return
         if (released) return
-        val armed = upPx > thresholdPx
         if (armed != s.cancelArmed) _state.value = s.copy(cancelArmed = armed)
     }
 
     fun release() {
         val s = _state.value as? State.Listening ?: return
-        val current = session ?: return
         if (released) return
+        val early = pending
+        val current = session
+        if (current == null && early == null) return
         when {
             s.cancelArmed -> {
-                current.cancel()
+                current?.cancel()
                 session = null
+                pending = null
                 _state.value = State.Idle
             }
             // 按得太短多半是误触:不去转(服务商的还要花额度),当没听清
             clock() - startedAt < minMs -> {
-                current.cancel()
+                current?.cancel()
                 session = null
+                pending = null
                 _state.value = State.Problem(null)
             }
-            else -> {
+            // 会话在手还按着时已经结束:现在才把留着的结果交出去
+            early != null -> {
+                pending = null
+                _state.value = early
+            }
+            current != null -> {
                 released = true
                 current.release()
                 // 服务商的:录音器停下要一小会儿,Converting 事件才到;松开当下就显示在转,免得输入框先闪回占位
@@ -87,7 +107,7 @@ class HoldToTalk(private val clock: () -> Long, private val maxMs: Long = 60_000
     /** 按着时定时调:更新用时;到 [maxMs] 当松开处理——录音到点会自己停、不另外通知,不收尾字就丢了。 */
     fun tick() {
         val s = _state.value as? State.Listening ?: return
-        if (released || session == null) return
+        if (released || (session == null && pending == null)) return
         val elapsed = clock() - startedAt
         if (elapsed >= maxMs) {
             _state.value = s.copy(elapsedMs = maxMs)
@@ -108,11 +128,25 @@ class HoldToTalk(private val clock: () -> Long, private val maxMs: Long = 60_000
             is SpeechEvent.Final -> {
                 session = null
                 val text = e.text.trim()
-                _state.value = if (text.isEmpty()) State.Problem(null) else State.Done(text)
+                val result = if (text.isEmpty()) State.Problem(null) else State.Done(text)
+                if (released || now !is State.Listening) {
+                    _state.value = result
+                } else {
+                    // 手还按着:先留着,界面照旧显示听到的字;松开时停在取消上就丢掉,否则才交出去
+                    pending = result
+                    _state.value = now.copy(stable = text, tail = "", level = 0f, ended = true)
+                }
             }
             is SpeechEvent.Failed -> {
                 session = null
-                _state.value = State.Problem(e.why)
+                val result = State.Problem(e.why)
+                // 出错不必等松开(再按着也不会有字了);只有手停在取消上时先留着,松开在取消上就不再提示
+                if (!released && now is State.Listening && now.cancelArmed) {
+                    pending = result
+                    _state.value = now.copy(level = 0f, ended = true)
+                } else {
+                    _state.value = result
+                }
             }
         }
     }
@@ -122,6 +156,7 @@ class HoldToTalk(private val clock: () -> Long, private val maxMs: Long = 60_000
         session?.cancel()
         session = null
         released = false
+        pending = null
         _state.value = State.Idle
     }
 
