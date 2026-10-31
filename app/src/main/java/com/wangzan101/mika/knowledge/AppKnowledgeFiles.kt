@@ -44,14 +44,19 @@ class AppKnowledgeFiles(dir: File) : AppKnowledgeDraftStore {
     @Synchronized override fun approve(id: String): Boolean {
         val rows = all()
         val old = rows.firstOrNull { it.id == id && it.stage == AppKnowledgeStage.Draft } ?: return false
-        if (stale(old, rows)) return false
+        if (stale(old, rows)) {
+            save(old.copy(stage = AppKnowledgeStage.Archived))
+            return false
+        }
         save(old.copy(stage = AppKnowledgeStage.Trial))
+        archiveStale(old.appName)
         return true
     }
 
     @Synchronized override fun reject(id: String): Boolean {
         val old = all().firstOrNull { it.id == id && it.stage != AppKnowledgeStage.Archived } ?: return false
         save(old.copy(stage = AppKnowledgeStage.Archived))
+        archiveStale(old.appName)
         return true
     }
 
@@ -64,6 +69,7 @@ class AppKnowledgeFiles(dir: File) : AppKnowledgeDraftStore {
             it.appName == appName && it.id != old.id && (it.stage == AppKnowledgeStage.Trial || it.stage == AppKnowledgeStage.Verified)
         }.forEach { save(it.copy(stage = AppKnowledgeStage.Archived)) }
         save(next)
+        archiveStale(appName)
         return next
     }
 
@@ -77,6 +83,16 @@ class AppKnowledgeFiles(dir: File) : AppKnowledgeDraftStore {
     /** 修订起草时对着的那份已经不是现在注入的了(另一份修订先收下了):收下它会丢掉那一份。 */
     private fun stale(draft: AppKnowledgeDraft, rows: List<AppKnowledgeDraft>) =
         draft.revises != AppKnowledgeTrial.inUse(rows, draft.appName)?.id
+
+    /**
+     * 在用的那份变了(收下、归档、试用改了阶段)之后,对着别的那份起草的待确认修订再也收不下:归档,
+     * 免得它一直占着「每个 App 至多一份待确认的」,挡住这个 App 往后的草稿。
+     */
+    private fun archiveStale(appName: String) {
+        val rows = all()
+        rows.filter { it.appName == appName && it.stage == AppKnowledgeStage.Draft && stale(it, rows) }
+            .forEach { save(it.copy(stage = AppKnowledgeStage.Archived)) }
+    }
 
     private fun save(row: AppKnowledgeDraft) {
         val d = File(root, row.id)

@@ -70,11 +70,36 @@ class AppKnowledgeFilesTest {
         // 两次运行都对着 d1 起草;先收下的那份在用之后,另一份过时了
         assertTrue(files.putPending(draft("r1", "- 一。", revises = "d1"))); assertTrue(files.approve("r1"))
         assertFalse(files.putPending(draft("r2", "- 二。", revises = "d1")))
-        // 已经存下的过时修订也收不下
-        files.putPending(draft("r3", "- 三。", revises = "r1"))
+        // 已经存下的修订过时了(它修订的那份被归档):收不下,当场归档,不再挡这个 App 的新草稿
+        assertTrue(files.putPending(draft("r3", "- 三。", revises = "r1")))
         files.reject("r1")
+        assertEquals(AppKnowledgeStage.Archived, files.all().single { it.id == "r3" }.stage)
         assertFalse(files.approve("r3"))
         assertEquals("d1", files.inUse("qq")?.id)
+        assertTrue(files.putPending(draft("r4", "- 四。", revises = "d1")))
+    }
+
+    @Test fun badTrialArchivesDraftsThatRevisedIt() {
+        val files = verifiedD1()
+        files.putPending(draft("r1", "- 一。", revises = "d1")); files.approve("r1")
+        assertTrue(files.putPending(draft("r2", "- 二。", revises = "r1")))
+        // 试用不灵,r1 归档、换回 d1:对着 r1 起草的 r2 过时了
+        assertEquals(AppKnowledgeStage.Archived, files.recordTrial("qq", false)?.stage)
+        assertEquals(AppKnowledgeStage.Archived, files.all().single { it.id == "r2" }.stage)
+        assertFalse(files.approve("r2"))
+        assertTrue(files.putPending(draft("r3", "- 三。", revises = "d1")))
+        assertTrue(files.approve("r3"))
+        assertEquals("r3", files.inUse("qq")?.id)
+    }
+
+    @Test fun goodTrialKeepsDraftsThatStillMatch() {
+        val files = AppKnowledgeFiles(tmp.root)
+        files.putPending(draft("a1")); files.approve("a1")
+        assertTrue(files.putPending(draft("a2", revises = "a1")))
+        // 转正式不换在用的那份:a2 照旧待确认、收得下
+        assertEquals(AppKnowledgeStage.Verified, files.recordTrial("qq", true)?.stage)
+        assertEquals(AppKnowledgeStage.Draft, files.all().single { it.id == "a2" }.stage)
+        assertTrue(files.approve("a2"))
     }
 
     @Test fun failedTrialIsArchivedAndNeverInjected() {

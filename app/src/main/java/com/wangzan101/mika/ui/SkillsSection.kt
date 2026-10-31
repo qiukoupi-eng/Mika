@@ -120,10 +120,10 @@ internal fun SkillsSection(vm: MemoryViewModel, ui: SkillsUi, pending: Boolean) 
     }
 }
 
-/** 一条 App 知识:点开看全文;草稿可收下试用,没核实的可归档。 */
+/** 一条 App 知识:点开看全文;草稿可收下试用,没核实的可归档;被试用中的修订暂时顶替的那份只看不动。 */
 @Composable
 private fun AppKnowledgeItem(vm: MemoryViewModel, row: AppKnowledgeRow, first: Boolean, expanded: Boolean, onToggle: () -> Unit) {
-    val stage = when (row.stage) {
+    val stage = if (row.replaced) tr(R.string.skills_app_replaced) else when (row.stage) {
         AppKnowledgeStage.Draft -> tr(if (row.revision) R.string.skills_app_revision else R.string.skills_app_addition)
         AppKnowledgeStage.Trial -> stringResource(R.string.skills_trial)
         AppKnowledgeStage.Verified -> tr(R.string.skills_verified)
@@ -135,7 +135,7 @@ private fun AppKnowledgeItem(vm: MemoryViewModel, row: AppKnowledgeRow, first: B
         RowActions {
             MikaButton(if (expanded) stringResource(R.string.skills_hide_full) else stringResource(R.string.skills_view_full), onToggle, kind = ButtonKind.Tonal, size = ButtonSize.Small)
             if (row.stage == AppKnowledgeStage.Draft) MikaButton(stringResource(R.string.skills_accept_try), { vm.approveAppDraft(row.id) }, size = ButtonSize.Small)
-            if (row.stage != AppKnowledgeStage.Verified) MikaButton(stringResource(R.string.skills_archive), { vm.rejectAppDraft(row.id) }, kind = ButtonKind.Tonal, size = ButtonSize.Small)
+            if (row.stage != AppKnowledgeStage.Verified && !row.replaced) MikaButton(stringResource(R.string.skills_archive), { vm.rejectAppDraft(row.id) }, kind = ButtonKind.Tonal, size = ButtonSize.Small)
         }
     }
 }

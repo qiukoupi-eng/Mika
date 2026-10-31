@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.replay
 
+import com.wangzan101.mika.core.uistate.ScreenContent
 import com.wangzan101.mika.core.uistate.ScreenSnapshot
 import com.wangzan101.mika.core.uistate.UiElement
 import kotlinx.serialization.Serializable
@@ -76,26 +77,20 @@ object RouteAnchors {
     private const val MAX_LEN = 12
     /** 数字、时间、金额一类每次都可能变,不当锚点。 */
     private val VOLATILE = Regex("[0-9０-９¥￥$€£%]")
-    private val LIST_ROLES = setOf("list", "grid", "recycler", "scroll")
 
     fun stable(text: String): Boolean {
         val t = text.trim()
         return t.length in 1..MAX_LEN && !VOLATILE.containsMatchIn(t)
     }
 
-    private fun container(e: UiElement) = e.scrollable || e.role.lowercase() in LIST_ROLES
-
-    private fun inside(e: UiElement, c: UiElement) = e !== c && e.bounds.size == 4 && c.bounds.size == 4 &&
-        e.bounds[0] >= c.bounds[0] && e.bounds[1] >= c.bounds[1] && e.bounds[2] <= c.bounds[2] && e.bounds[3] <= c.bounds[3]
-
     /**
      * 可当锚点的文字,按屏上顺序去重,有资源 ID 的排前面。列表、可滚动区里的条目是内容(联系人、消息、商品),
      * 输入框里的字是用户写的,都不算——只取页面的固定框架(标题栏、标签、按钮)。
      */
     fun texts(s: ScreenSnapshot): List<String> {
-        val boxes = s.elements.filter(::container)
+        val boxes = s.elements.filter(ScreenContent::container)
         return s.elements
-            .filter { e -> !e.editable && !container(e) && boxes.none { inside(e, it) } && stable(e.name) }
+            .filter { e -> !e.editable && !ScreenContent.container(e) && boxes.none { ScreenContent.inside(e, it) } && stable(e.name) }
             .sortedBy { it.resourceId == null }
             .map { it.name.trim() }.distinct()
     }

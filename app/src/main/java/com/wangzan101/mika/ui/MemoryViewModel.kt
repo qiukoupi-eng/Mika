@@ -18,6 +18,7 @@ import com.wangzan101.mika.core.skills.SkillStatus
 import com.wangzan101.mika.core.knowledge.AppKnowledgeDraftStore
 import com.wangzan101.mika.core.knowledge.AppKnowledgeDrafter
 import com.wangzan101.mika.core.knowledge.AppKnowledgeStage
+import com.wangzan101.mika.core.knowledge.AppKnowledgeTrial
 import com.wangzan101.mika.settings.MemorySettings
 import com.wangzan101.mika.settings.MemorySwitches
 import kotlinx.coroutines.CoroutineScope
@@ -208,9 +209,10 @@ class MemoryViewModel(
 /**
  * 一份 App 知识补充。待确认的:[revision] 为 true 是对在用那份的修订,否则是第一次补充;
  * [changedLines] 是相对在用那份(第一次补充时相对空白)加了、去掉的行。
+ * [replaced]:收下的修订正在试用,暂时顶替了这一份(不注入;修订被归档就换回来)。
  */
 data class AppKnowledgeRow(val id: String, val name: String, val markdown: String, val stage: AppKnowledgeStage,
-    val revision: Boolean = false, val changedLines: List<String> = emptyList())
+    val revision: Boolean = false, val changedLines: List<String> = emptyList(), val replaced: Boolean = false)
 
 /** 技能分段的内容:待收下的草稿和已收下的个人技能(在用的在前)。 */
 
@@ -227,7 +229,7 @@ data class SkillsUi(val drafts: List<SkillRow> = emptyList(), val installed: Lis
             val byId = all.associateBy { it.id }
             val appRows = all.filter { it.stage != AppKnowledgeStage.Archived }.map { d ->
                 val row = AppKnowledgeRow(d.id, d.appName, d.markdown, d.stage)
-                if (d.stage != AppKnowledgeStage.Draft) row
+                if (d.stage != AppKnowledgeStage.Draft) row.copy(replaced = AppKnowledgeTrial.inUse(all, d.appName)?.id != d.id)
                 else row.copy(revision = d.revises != null,
                     changedLines = changedLines(d.revises?.let { byId[it] }?.markdown?.let(AppKnowledgeDrafter::facts).orEmpty(), d.markdown))
             }

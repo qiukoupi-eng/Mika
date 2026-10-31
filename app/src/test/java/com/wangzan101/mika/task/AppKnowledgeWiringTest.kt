@@ -5,6 +5,7 @@ import com.wangzan101.mika.core.agent.FailKind
 import com.wangzan101.mika.core.agent.RunOutcome
 import com.wangzan101.mika.core.agent.TaskState
 import com.wangzan101.mika.core.assembly.knownTools
+import com.wangzan101.mika.core.knowledge.AppKnowledgeDraft
 import com.wangzan101.mika.core.knowledge.AppKnowledgeDrafter
 import com.wangzan101.mika.core.knowledge.AppKnowledgeStage
 import com.wangzan101.mika.core.knowledge.KnowledgeStore
@@ -17,6 +18,7 @@ import com.wangzan101.mika.settings.MemorySwitches
 import com.wangzan101.mika.ui.SkillsUi
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -82,6 +84,18 @@ class AppKnowledgeWiringTest {
         val idle = TextModel()
         learning(files, idle).learn(aftermath(runEvents()))
         assertTrue(idle.requests.isEmpty())
+    }
+
+    @Test fun versionShadowedByARevisionOnTrialIsShownAsReplaced() {
+        val files = AppKnowledgeFiles(tmp.root)
+        files.putPending(AppKnowledgeDraft("v1", "xianyu", "p", facts, "r", AppKnowledgeStage.Draft, 1))
+        files.approve("v1"); files.recordTrial("xianyu", true)
+        files.putPending(AppKnowledgeDraft("v2", "xianyu", "p", more, "r", AppKnowledgeStage.Draft, 2, revises = "v1"))
+        assertTrue(SkillsUi.of(MapSkills(), files).appKnowledge.none { it.replaced })
+        files.approve("v2")
+        val rows = SkillsUi.of(MapSkills(), files).appKnowledge.associateBy { it.id }
+        assertTrue(rows.getValue("v1").replaced)
+        assertFalse(rows.getValue("v2").replaced)
     }
 
     @Test fun notLearnedWhenOffCancelledOrNotFromChat() = runBlocking {

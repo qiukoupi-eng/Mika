@@ -72,6 +72,7 @@
     <string name="skills_edit_title">改一改再试用</string>
     <string name="skills_app_addition">补充，还没用上</string>
     <string name="skills_app_revision">修订，还没用上</string>
+    <string name="skills_app_replaced">暂时由试用中的修订顶替</string>
     <string name="skills_verified">用它办成过事</string>
     <string name="skills_archived">已归档</string>
     <string name="skills_archive">归档</string>

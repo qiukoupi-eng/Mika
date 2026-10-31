@@ -34,7 +34,6 @@ import com.wangzan101.mika.cap.phone.PhoneServices
 import com.wangzan101.mika.cap.phone.a11y.launchableApps
 import com.wangzan101.mika.confirm.ConfirmationNotifier
 import com.wangzan101.mika.MikaApp
-import com.wangzan101.mika.core.userscreen.UserScreenMessage
 import com.wangzan101.mika.core.action.ConfirmChoice
 import com.wangzan101.mika.core.agent.AgentLoop
 import com.wangzan101.mika.core.agent.SystemPrompt
@@ -887,8 +886,8 @@ class TaskRun(
                 .onFailure { Log.w(TAG, "could not save run outcome", it) }
         }
         k.agent.noteOutcome(judged.outcome)
-        // 只有办成的才记成路线([LearnGate]);从落盘的运行事件里取。带着用户屏幕的话意思在屏幕上,不按字记路线
-        if (k.routesOn && LearnGate.done(end, judged.outcome) && runId != null && !UserScreenMessage.has(goal)) k.runStore?.let { s ->
+        // 只有办成的才记成路线;从落盘的运行事件里取
+        if (runId != null && LearnGate.shouldSaveRoute(k.routesOn, end, judged.outcome, runId, goal)) k.runStore?.let { s ->
             saveRoute(goal, withContext(Dispatchers.IO) { s.events(runId) }, k.dispatcher.index)
         }
         return judged

@@ -80,6 +80,25 @@ object SkillRedactor {
 
     const val LEAK_WINDOW = 4
 
+    /**
+     * 草稿照抄了 [sources](回答这类成句的话)的一句:按「、。,;!?」和换行分句,一句整句,或长句里连着 [window] 个单位,
+     * 原样出现在草稿里、又不在 [known] 里。单位是一个汉字或一个英文词(忽略大小写、空白和标点),英文和中文按同样的长短算;
+     * 短于 [minUnits] 的句子(「已查看」)不查。
+     */
+    fun copiesSentence(draft: String, sources: List<String>, known: String, window: Int, minUnits: Int): Boolean {
+        val d = joined(units(draft))
+        val k = joined(units(known))
+        return sources.flatMap { norm(it).split(CLAUSE) }.map(::units).filter { it.size >= minUnits }.any { u ->
+            val n = minOf(window, u.size)
+            (0..u.size - n).any { i -> joined(u.subList(i, i + n)).let { w -> d.contains(w) && !k.contains(w) } }
+        }
+    }
+
+    private val UNIT = Regex("[\\p{IsLatin}\\p{Nd}_]+|[^\\s\\p{P}\\p{S}]")
+    private val CLAUSE = Regex("[,.;!?、。,;!?\\n]+")
+    private fun units(t: String) = UNIT.findAll(norm(t).lowercase()).map { it.value }.toList()
+    private fun joined(u: List<String>) = u.joinToString("\u0001", "\u0001", "\u0001")
+
     private fun numbers(t: String) = AMOUNT.findAll(t).map { it.value.trim() } + DIGITS.findAll(t).map { it.value }
 
     // 一个字的值换掉会把正文搅乱(「妈」「号」);纯数字不受此限

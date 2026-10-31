@@ -72,6 +72,7 @@
     <string name="skills_edit_title">Edit, then try</string>
     <string name="skills_app_addition">New notes, not in use yet</string>
     <string name="skills_app_revision">Revision, not in use yet</string>
+    <string name="skills_app_replaced">Temporarily replaced by the revision on trial</string>
     <string name="skills_verified">Worked in a task</string>
     <string name="skills_archived">Archived</string>
     <string name="skills_archive">Archive</string>

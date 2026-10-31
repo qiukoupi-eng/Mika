@@ -1,5 +1,7 @@
 package com.wangzan101.mika.core.agent
 
+import com.wangzan101.mika.core.userscreen.UserScreenMessage
+
 /**
  * 一次运行能不能当成「办成了」来学:个人技能和 App 知识的起草、经验路线的记录与成功计数、
  * 试用的技能和 App 知识转正式,都只问这一处。
@@ -10,4 +12,11 @@ package com.wangzan101.mika.core.agent
 object LearnGate {
     fun done(end: TaskState, outcome: RunOutcome): Boolean =
         end is TaskState.Succeeded && outcome == RunOutcome.Done && end.unconfirmed.isEmpty() && !end.doubtful
+
+    /**
+     * 这次运行记不记成经验路线:开着路线、办成了([done])、有运行编号(路线从落盘的事件里取)。
+     * 目标带着用户屏幕的不记:意思在屏幕上,按字记的路线下次对不上。
+     */
+    fun shouldSaveRoute(routesOn: Boolean, end: TaskState, outcome: RunOutcome, runId: String?, goal: String): Boolean =
+        routesOn && done(end, outcome) && runId != null && !UserScreenMessage.has(goal)
 }
