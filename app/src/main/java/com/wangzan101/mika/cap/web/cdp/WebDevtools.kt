@@ -335,8 +335,8 @@ class WebDevtools(private val relay: ((String) -> ParcelFileDescriptor?)?) {
     }
 
     /**
-     * 用户在 Mika 里选定的语言对应的 Accept-Language;跟随系统为 null。标签补全成带地区的(en → en-Latn-US,
-     * zh-Hans → zh-Hans-CN)再写成请求头。
+     * 用户在 Mika 里选定的语言对应的 Accept-Language;跟随系统为 null。标签先按 ICU 的常见写法补全
+     * (en → en-Latn-US)再写成请求头。
      */
     private fun chosenAcceptLanguage(): String? {
         val tag = appContext?.let { runCatching { AppLanguage.current(it).tag }.getOrNull() } ?: return null

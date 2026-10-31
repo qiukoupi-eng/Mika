@@ -40,7 +40,7 @@
     <string name="about_author">由 王赞 开发 · © 2026</string>
     <string name="about_license_title">Apache-2.0 许可证</string>
     <string name="about_update_download">从 GitHub 下载</string>
-    <string name="about_update_mirror">国内备用下载</string>
+    <string name="about_update_mirror">备用下载</string>
     <string name="about_update_later">以后再说</string>
     <string name="about_no_browser">没有能打开链接的浏览器</string>
     <string name="about_version">版本 %1$s</string>

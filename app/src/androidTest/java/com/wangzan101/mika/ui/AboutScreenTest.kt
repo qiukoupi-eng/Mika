@@ -201,7 +201,7 @@ class AboutScreenTest {
         compose.onNodeWithText("检查更新").performClick()
         compose.awaitOne("发现新版本 0.2.0")
         compose.onNodeWithText("当前 0.1.0 Beta · 2026-11-05 发布").assertExists()
-        compose.onNodeWithText("国内备用下载").assertExists()
+        compose.onNodeWithText("备用下载").assertExists()
         compose.onNodeWithText("以后再说").assertExists()
         compose.onNodeWithText("从 GitHub 下载").performClick()
         compose.waitForIdle()
@@ -215,7 +215,7 @@ class AboutScreenTest {
         about(UpdateState(latest = r, update = r))
         compose.onNodeWithText("检查更新").performClick()
         compose.awaitOne("发现新版本 0.2.0")
-        compose.onAllNodesWithText("国内备用下载").assertCountEquals(0)
+        compose.onAllNodesWithText("备用下载").assertCountEquals(0)
     }
 
     @Test

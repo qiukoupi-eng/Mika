@@ -152,7 +152,7 @@ class UpdateChecker(
     }
 
     companion object {
-        /** 国内连 GitHub 时快时慢:超时放短,失败就换备用来源。 */
+        /** 有的网络连 GitHub 时快时慢:超时放短,失败就换备用来源。 */
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
