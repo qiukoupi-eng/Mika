@@ -50,7 +50,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 class WebTab(
     context: Context,
     val id: String,
-    val ownerTaskId: String,
+    ownerTaskId: String,
     private val assetLoaders: List<WebViewAssetLoader> = emptyList(),
     /** 这个标签的 DevTools 会话入口;默认是进程里那一份。 */
     val devtools: WebDevtools = WebDevtools.of(context),
@@ -85,6 +85,10 @@ class WebTab(
     /** 页面弹了选择框、却没有待交的文件(被取消)的次数。 */
     var choosersRefused: Int = 0
         private set
+
+    /** 这个标签属于哪个任务(用户自己的浏览器页是它自己的编号);用户关掉借给任务的页面、任务收下它时改成那个任务。 */
+    var ownerTaskId: String = ownerTaskId
+        internal set
 
     val view: WebView = WebView(context)
 

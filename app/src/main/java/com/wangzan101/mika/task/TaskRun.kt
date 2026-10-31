@@ -102,6 +102,9 @@ import com.wangzan101.mika.cap.web.LazyWebPort
 import com.wangzan101.mika.cap.web.WebHandover
 import com.wangzan101.mika.cap.web.WebSites
 import com.wangzan101.mika.cap.web.WebStack
+import com.wangzan101.mika.cap.web.WebTab
+import com.wangzan101.mika.browser.PageLoans
+import com.wangzan101.mika.browser.UserBrowser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -266,7 +269,13 @@ class TaskRun(
         }
     }
 
-    fun resume() { gate?.resume() }
+    fun resume() {
+        val g = gate ?: return
+        val wasOnPage = g.userOnPagePending
+        g.resume()
+        // 用户在页面上操作的那种暂停:循环可能还没走到关卡(还在想),按它此刻的状态重新显示,不再写着暂停
+        if (wasOnPage) loop?.state?.value?.takeIf { it is TaskState.Running }?.let(::publish)
+    }
     fun takeOver(waitKey: Int?) { takeover?.let { t -> scope.launch { t.handOver(waitKey) } } }
     fun handBack(waitKey: Int?) { takeover?.let { t -> scope.launch { t.handBack(waitKey) } } }
     fun finishedMyself(waitKey: Int?) { takeover?.let { t -> scope.launch { t.finishedMyself(waitKey) } } }
@@ -418,6 +427,8 @@ class TaskRun(
         sideScope = side
         try {
             val model = env.modelFactory(service, session) ?: return TaskState.Failed(tr(R.string.fail_no_main_model), FailKind.Environment)
+            // 用户在浏览器页上对着一页问的:那一页借给这个任务当当前网页标签(见 PageLoans);开跑时页面还开着才借得到
+            val pageLoan = if (provenance.origin == RunOrigin.Ui) withContext(Dispatchers.Main) { UserBrowser.existing()?.claim(conversationId, key) } else null
             val light = env.lightModelFactory(service, session)
             val vision = env.visionModelFactory(service, session)
 
@@ -561,7 +572,8 @@ class TaskRun(
                             _frames.value = null
                             last = surface
                         }
-                        val show = WebPreview.of(onWeb = surface == WEB, hasTab = stack.hasVisibleTab, handedOver = stack.handedOver)
+                        // 当前标签是借来的那一页时它就在用户眼前,和接管中一样不放画面
+                        val show = WebPreview.of(onWeb = surface == WEB, hasTab = stack.hasVisibleTab, handedOver = stack.handedOver || stack.onBorrowedTab)
                         when (show) {
                             WebPreview.Frames -> withContext(Dispatchers.IO) { stack.host.latestFrame() }?.let { _frames.value = it }
                             WebPreview.Hidden, WebPreview.NoPage -> _frames.value = null
@@ -573,6 +585,21 @@ class TaskRun(
                 stack.screen
             }
             if (conditionCheck && !webInstalled) return TaskState.Failed(tr(R.string.fail_no_web), FailKind.Environment)
+            // 借来的页面:开局就建好网页这一套,把它当当前标签借进去;用户摸了它就暂停(此刻正在手机屏上操作时不算)
+            if (pageLoan != null && web != null && web.prepare()) webStack?.let { stack ->
+                withContext(Dispatchers.Main) {
+                    stack.borrowedTouches = { pageLoan.touches }
+                    UserBrowser.existing()?.loans?.bind(pageLoan, object : PageLoans.Borrower<WebTab> {
+                        override fun take(tab: WebTab) = stack.borrow(tab)
+                        override fun giveBack(tab: WebTab) = stack.giveBack(tab)
+                        override fun swap(prev: WebTab, next: WebTab) = stack.swapBorrowed(prev, next)
+                        override fun adopt(tab: WebTab) = stack.adopt(tab)
+                        override fun touched() {
+                            if (stack.onBorrowedTab && !(phoneScreen.acquired && dispatcher?.surface != WEB)) userOnPage()
+                        }
+                    })
+                }
+            }
             // 这个对话里用户发来的屏幕(跟着对话存在工作区里)
             val userScreens = (service.application as MikaApp).userScreens.source(conversationId)
             val runSpec = RunSpec(RunId(key), goal, conversationId,
@@ -738,7 +765,7 @@ class TaskRun(
             side.launch {
                 agent.state.collect {
                     if (it == TaskState.Idle) return@collect
-                    if (it is TaskState.Running && it.preview != null && gate?.movedAwayPending == true) return@collect
+                    if (it is TaskState.Running && it.preview != null && (gate?.movedAwayPending == true || gate?.userOnPagePending == true)) return@collect
                     val previous = _state.value as? TaskState.Running
                     if (it is TaskState.Running && previous != null && previous.preview != it.preview &&
                         previous.copy(preview = it.preview) == it) {
@@ -779,6 +806,8 @@ class TaskRun(
             takeover = null
             handoverRef = null
             sideScope = null
+            // 借来的页面还回浏览器页(在关掉网页这一套之前)
+            withContext(Dispatchers.Main + NonCancellable) { runCatching { UserBrowser.existing()?.loans?.end(key) } }
             withContext(Dispatchers.IO + NonCancellable) {
                 // 前面哪步抛错,屏和网页显示也照放(按建的反序)
                 try {
@@ -845,6 +874,17 @@ class TaskRun(
                 }
             }
         }
+    }
+
+    /**
+     * 用户在浏览器页上亲手摸了借给这个任务的页面:正在干活时马上显示暂停,下一个会改动屏幕的工具之前停下,
+     * 用户点「继续」再接着做(见 [TaskGate.onUserOnPage])。等用户回答、接管中等别的状态不动。主线程。
+     */
+    private fun userOnPage() {
+        if (_state.value !is TaskState.Running) return
+        val g = gate ?: return
+        g.onUserOnPage()
+        publish(_state.value)
     }
 
     /** 任务收尾后判结局、学东西要用的;[execute] 里填上。 */
@@ -970,7 +1010,12 @@ class TaskRun(
         // 被挪走后到 gate 拦下之前,循环可能还在推理:对外先显示暂停
         // 循环自己报的终态不往外发:终态只由 [end] 在记好运行编号之后写,否则界面先收到结束、拿不到编号
         if (!TaskService.loopMayPublish(state)) return
-        val shown = if (state is TaskState.Running && gate?.movedAwayPending == true) TaskState.Held(TaskGate.paused(TaskGate.MOVED_AWAY)) else state
+        val shown = when {
+            state is TaskState.Running && gate?.movedAwayPending == true -> TaskState.Held(TaskGate.paused(TaskGate.MOVED_AWAY))
+            // 用户在借出的页面上操作:到关卡之前也先显示暂停
+            state is TaskState.Running && gate?.userOnPagePending == true -> TaskState.Held(TaskGate.paused(TaskGate.USER_ON_PAGE))
+            else -> state
+        }
         synchronized(publishLock) {
             if (ended) return
             setState(shown)
