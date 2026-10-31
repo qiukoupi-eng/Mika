@@ -119,11 +119,11 @@ class MemoryViewModelTest {
     @Test fun switchesPersist() = runTest {
         val vm = vm()
         assertTrue(vm.ui.value.switches.useMemory && vm.ui.value.switches.autoRemember)
-        assertFalse(vm.ui.value.switches.learnSkills)
-        vm.setSwitches { it.copy(autoRemember = false, learnSkills = true) }; runCurrent()
+        assertTrue(vm.ui.value.switches.learnSkills)
+        vm.setSwitches { it.copy(autoRemember = false, learnSkills = false) }; runCurrent()
         assertFalse(vm.ui.value.switches.autoRemember)
         val reread = MemorySettings(settingsFile).switches.value
-        assertFalse(reread.autoRemember); assertTrue(reread.learnSkills); assertTrue(reread.useMemory)
+        assertFalse(reread.autoRemember); assertFalse(reread.learnSkills); assertTrue(reread.useMemory)
     }
 
     private fun skillMd(name: String, body: String) = "---\nname: $name\ndisplay: 发微信\ndescription: 给联系人发微信\n---\n$body"

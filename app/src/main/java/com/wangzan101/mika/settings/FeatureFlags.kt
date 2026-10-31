@@ -16,17 +16,20 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 /** 功能开关。提速开关存成 [SpeedFlags.describe] 的格式,评测跑器可用参数覆盖。 */
 class FeatureFlags(private val prefs: SharedPreferences) {
-    /** 旧设置升级一次后启用分级读屏和连续操作；升级之后用户手动关掉就保持关闭。 */
+    /** 还没做过的默认值升级(见 [SPEED_UPGRADES])各做一次;升级之后用户手动关掉就保持关闭。 */
     fun speedFlags(): SpeedFlags {
         val flags = prefs.getString(SPEED_FLAGS, null)?.let { runCatching { SpeedFlags.parse(it) }.getOrNull() } ?: SpeedFlags.OFF
-        if (prefs.getBoolean(SPEED_DEFAULTS_APPLIED, false)) return flags
-        val upgraded = flags.copy(inlineScreen = true, batchSteps = true, adaptiveVision = true)
-        prefs.edit().putString(SPEED_FLAGS, upgraded.describe()).putBoolean(SPEED_DEFAULTS_APPLIED, true).commit()
+        val pending = SPEED_UPGRADES.filter { (key, _) -> !prefs.getBoolean(key, false) }
+        if (pending.isEmpty()) return flags
+        val upgraded = pending.fold(flags) { f, (_, upgrade) -> upgrade(f) }
+        setSpeed(upgraded)
         return upgraded
     }
 
     fun setSpeed(flags: SpeedFlags) {
-        prefs.edit().putString(SPEED_FLAGS, flags.describe()).putBoolean(SPEED_DEFAULTS_APPLIED, true).commit()
+        val edit = prefs.edit().putString(SPEED_FLAGS, flags.describe())
+        SPEED_UPGRADES.forEach { (key, _) -> edit.putBoolean(key, true) }
+        edit.commit()
     }
 
     /** 并行任务时最多同时跑几个(用户设定,1–3);真正的上限还要看设备,见 ParallelCapability。 */
@@ -98,7 +101,14 @@ class FeatureFlags(private val prefs: SharedPreferences) {
     companion object {
         private const val PREFS = "feature_flags"
         private const val SPEED_FLAGS = "speed_flags"
-        private const val SPEED_DEFAULTS_APPLIED = "speed_defaults_applied_v2"
+        /**
+         * 提速开关默认值的升级,按先后各做一次(键记下做过没有):v2 打开分级读屏、连续操作、按需看图;
+         * v3 打开经验回放(学习改看结局判定之后路线才记得下来)。
+         */
+        private val SPEED_UPGRADES: List<Pair<String, (SpeedFlags) -> SpeedFlags>> = listOf(
+            "speed_defaults_applied_v2" to { f -> f.copy(inlineScreen = true, batchSteps = true, adaptiveVision = true) },
+            "speed_defaults_applied_v3" to { f -> f.copy(replay = true) },
+        )
         private const val PARALLEL_MAX = "parallel_max"
         private const val KEEP_SCREEN_ON = "keep_screen_on"
         private const val MUTE_TARGET = "mute_target"

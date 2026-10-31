@@ -36,7 +36,7 @@ class FeatureFlagsCapsuleTest {
     }
 
     /** 内存里的设置,改动时同步通知监听者(和系统实现一样在写入后回调)。 */
-    private class MemoryPrefs : SharedPreferences {
+    internal class MemoryPrefs : SharedPreferences {
         private val values = HashMap<String, Any?>()
         private val listeners = mutableSetOf<SharedPreferences.OnSharedPreferenceChangeListener>()
 
