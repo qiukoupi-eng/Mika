@@ -152,7 +152,7 @@ Not sure your phone is up to it? Run Settings › Recovery & repair › **Compat
 
 **Where do updates come from?** Only from this repository's [Releases](https://github.com/wangzan101/Mika/releases); you can also upgrade in the app from About › Check for updates.
 
-More answers are in [features in detail](docs/features.en.md#faq).
+More answers are in the [FAQ](docs/faq.en.md).
 
 </details>
 

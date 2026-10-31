@@ -146,7 +146,7 @@
 
 **更新从哪来？** 只从本仓库的 [Releases](https://github.com/wangzan101/Mika/releases) 发布；App 里「关于 › 检查更新」也能直接升级。
 
-更多问答见[详细说明](docs/features.md#常见问题)。
+更多问答见[常见问题](docs/faq.md)。
 
 </details>
 

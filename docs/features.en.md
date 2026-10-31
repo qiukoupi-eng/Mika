@@ -106,22 +106,4 @@ An empty conversation shows a few examples you can tap, edit and send. Or try so
 
 ## FAQ
 
-**Wireless debugging turned itself off?**
-Stock Android turns off wireless debugging when Wi-Fi disconnects or the phone reboots. "Turn on Wireless debugging automatically" (自动打开无线调试) under "Recovery & repair" (恢复与修复) in Settings is on by default: when needed, Mika turns it on and reconnects (this requires allowing Mika to modify system settings). The first time on a given Wi-Fi network, the system asks for permission; turn it on manually once and check "Always allow on this network". If it still cannot connect, go back to the "Set up phone control" (设置手机操作) wizard in Settings and pair again.
-
-**The accessibility service got turned off?**
-The system sometimes stops accessibility services (e.g. after the process is cleaned up). "Turn on accessibility for me" (替我打开无障碍) is on by default, so Mika turns it back on itself; if that fails, the Settings page prompts you to turn it on manually.
-
-**Some app screens cannot be read or captured?**
-Some screens (e.g. payment or password entry) block screenshots, so Mika cannot see them and will not try to read text on them. You need to take over on those screens and hand back to Mika when done.
-
-**Why recommend Android 14? What about older systems?**
-Mika operates apps on a separate background screen. Phone control is available from Android 12, but background work can affect main-screen focus on Android 12–13. From Android 14 the background screen has its own focus and does not interfere with your typing on the main screen, so it is recommended. Web, sandbox and chat also work on Android 11.
-
-**Can I use a model running on my own computer or LAN?**
-Yes; see [Models and sign-in](models.en.md#models-on-your-own-computer-or-lan).
-
-**Where do APK updates come from?**
-Only from this repository's [GitHub Releases](https://github.com/wangzan101/Mika/releases). Each release's notes list what changed. In the app, About › Check for updates can also download and install it directly.
-
-For more about phone control, see [Troubleshooting](setup-guide.en.md#troubleshooting) in the setup guide.
+The FAQ now has its own page: [FAQ](faq.en.md). For phone control, see [Troubleshooting](setup-guide.en.md#troubleshooting) in the setup guide.
