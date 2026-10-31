@@ -33,6 +33,7 @@ The debug build is not precompiled and its UI is several times slower; use the p
 
 - The repository has two modules: `:core` is pure Kotlin and holds the main loop, tools, prompts and knowledge, and can be run on a computer with unit tests and a fake model; `:app` is the Android host.
 - README sections between the `generated` markers are produced by `./gradlew updateReadme`; don't edit them by hand. Unit tests check that they are up to date.
+- The README comes in several languages. The Chinese `README.md` is the original; `README.en.md` is the English version (with the same generated sections); `README.zh-Hant.md`, `README.ja.md`, `README.ko.md` and `README.es.md` are translations, where the generated sections are replaced by one sentence pointing to the Chinese or English README. Each translation starts with `<!-- translated-from: README.md @ <fingerprint> -->`, where the fingerprint is the first 12 hex digits of the SHA-256 of README.md with the generated sections removed. After you change README.md, `ReadmeTranslationsTest` lists the stale translations and prints the new fingerprint: update the translations to match, then replace the fingerprint at the top. Translations must also keep the same number of `## ` sections and the same local images as README.md. Native speakers are welcome to improve a translation with a PR.
 - The sandbox's native binaries and bundled runtime are checked into the repository; to rebuild them see [`tools/sandbox/README.md`](tools/sandbox/README.md).
 - For on-device evaluation see [`eval/README.md`](eval/README.md).
 

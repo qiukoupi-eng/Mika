@@ -33,6 +33,7 @@
 
 - 仓库有两个模块：`:core` 是纯 Kotlin，主循环、工具、提示词、知识都在这里，可以在电脑上用单测和假模型跑；`:app` 是安卓宿主。
 - README 里夹在 `generated` 标记之间的段落由 `./gradlew updateReadme` 生成，不要手改；单元测试会检查它们没过期。
+- README 有几种语言：中文 `README.md` 是原文，`README.en.md` 是英文版（和中文版一样带生成段落），`README.zh-Hant.md`、`README.ja.md`、`README.ko.md`、`README.es.md` 是译文，生成段落换成一句指向中文或英文 README 的话。每份译文开头有 `<!-- translated-from: README.md @ <指纹> -->`，指纹是 README.md 去掉生成段落后的 SHA-256 前 12 位。改了 README.md 以后，`ReadmeTranslationsTest` 会列出过期的译文并给出新指纹：照着改动更新译文，再把开头的指纹换成新的。译文还要和 README.md 的 `## ` 小节数、本地图片保持一致。欢迎母语使用者直接提 PR 改进译文。
 - 沙箱的原生程序和自带运行环境已在仓库里；重新构建见 [`tools/sandbox/README.md`](tools/sandbox/README.md)。
 - 真机评测见 [`eval/README.md`](eval/README.md)。
 
