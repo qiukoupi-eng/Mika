@@ -1,8 +1,8 @@
 # Computer access (MCP): let AI tools on your computer hand tasks to Mika
 
-CLI and MCP are peer entry points into the same remote task service. For terminal or Skill-based use, see [CLI and Skill](cli.en.md); the CLI calls the ordinary task API and needs no MCP configuration.
-
 [简体中文](mcp.md) | English
+
+> Using Mika from a computer? Start with [Use Mika from a computer](computer.en.md): how to choose between CLI + Skill and MCP, and how to connect. For terminal or Skill-based use, see [CLI and Skill](cli.en.md).
 
 With "Computer access" on, Mika is an MCP server: an AI tool on your computer that speaks MCP (an MCP client) can hand Mika a job, and Mika does it on the phone its own way (operating apps, using the built-in browser, working with files), then hands back the result. The computer says what to get done; Mika on the phone decides how.
 

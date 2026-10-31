@@ -2,15 +2,12 @@
 
 [简体中文](computer-install.md) · [Connection and task commands](cli.en.md) · [MCP configuration](mcp.en.md)
 
-## Choose one: CLI + Skill or MCP
+The starting point for using Mika from a computer is [Use Mika from a computer](computer.en.md): pick CLI + Skill or MCP there, and USB or Wi-Fi / VPN. This page only covers installing, updating and removing the CLI and the Skill; if you use an MCP client, skip it and follow the [MCP guide](mcp.en.md).
 
-**Normally pick one; you do not need to set up both.** Both reach the same task service on the phone. You can use both if you need to connect different clients.
+## Before you start
 
-| Goal | What to install |
-| --- | --- |
-| Let a computer agent that can run commands and supports Skills use Mika | The [Skill](#skill-install). It includes its own CLI script, so you need neither a separate CLI install nor MCP configuration. |
-| Submit tasks from a terminal or script | The [CLI](#cli-install), which gives you the `mika` command. |
-| Use an MCP client | Skip this page and follow the [MCP guide](mcp.en.md). |
+- To let a computer agent that can run commands and supports Skills use Mika, install the [Skill](#skill-install). It includes its own CLI script, so no separate CLI install is needed.
+- To submit tasks from a terminal or script, install the [CLI](#cli-install), which gives you the `mika` command.
 
 On the phone: install the APK ([Releases](https://github.com/wangzan101/Mika/releases/latest)), open Mika once and add a model. **If Mika only needs to chat, browse the web and work with files, you can skip accessibility and the phone helper, and Android 11 works**; only phone app control needs the phone-control setup in the [setup guide](setup-guide.en.md) (Android 12+). Installing or updating the computer tools does not install or update the APK on the phone.
 

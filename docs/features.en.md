@@ -68,7 +68,7 @@ The apps and websites that already have usage knowledge are listed in the collap
 
 ## AI tools on your computer can use it (CLI / MCP)
 
-Computer AI tools can use **CLI + Skill or MCP** to hand Mika tasks, check progress and get results. Normally choose one; you don't need both, though you can use both to connect different clients. Both require the phone APK and use the same phone task service.
+Computer AI tools can use **CLI + Skill or MCP** to hand Mika tasks, check progress and get results. Normally choose one; you don't need both, though you can use both to connect different clients. Both require the phone APK and use the same phone task service. For how to choose and connect, see [Use Mika from a computer](computer.en.md).
 
 - **CLI + Skill** suits computer agents that support Skills and can run commands. The Skill includes its own CLI script, so you do not need a separate global CLI installation or MCP configuration. For terminal or script use alone, install just the CLI. See the [computer CLI / Skill guide](computer-install.en.md) for installation, updates and removal.
 - **MCP** offers a quick USB connection (ADB forwarding with token authentication) and direct Wi-Fi / private-network access, which must be enabled separately on the phone; see the [computer access guide](mcp.en.md). Confirmations such as payments still have to be handled on the phone.

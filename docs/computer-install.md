@@ -2,15 +2,12 @@
 
 [English](computer-install.en.md) · [连接与任务命令](cli.md) · [MCP 配置](mcp.md)
 
-## 先选入口：CLI + Skill 或 MCP，二选一
+从电脑使用 Mika 的总入口是[从电脑使用 Mika](computer.md)：在那里选好用 CLI + Skill 还是 MCP、经 USB 还是 Wi-Fi / VPN 连接。这一页只讲 CLI 和 Skill 怎么装、怎么升级和卸载；用 MCP 客户端的不用看本文，按 [MCP 指南](mcp.md)配置。
 
-**通常只选一种，无需两套都配置。** 两者接的是手机上同一份任务服务；需要同时接入不同客户端时，也可以并用。
+## 开始之前
 
-| 用途 | 装什么 |
-| --- | --- |
-| 让能执行命令、支持 Skill 的电脑 Agent 使用 Mika | [Skill](#skill安装)。它自带 CLI 脚本，不必另装 CLI，也不用配置 MCP。 |
-| 在终端或脚本里派任务 | [CLI](#cli安装)，使用 `mika` 命令。 |
-| 使用 MCP 客户端 | 不用看本文，按 [MCP 指南](mcp.md)配置。 |
+- 让能执行命令、支持 Skill 的电脑 Agent 用 Mika：装 [Skill](#skill安装)，它自带 CLI 脚本，不必另装 CLI。
+- 在终端或脚本里派任务：装 [CLI](#cli安装)，使用 `mika` 命令。
 
 手机端的前提：装好 APK（[Releases](https://github.com/wangzan101/Mika/releases/latest)）、打开过一次 Mika、配好模型。**只让 Mika 聊天、上网和处理文件时，可以不开无障碍、不启动手机助手，安卓 11 也能用**；要操作手机 App，才需要按[设置指南](setup-guide.md)完成手机操作设置（安卓 12+）。电脑端工具的安装和升级不会安装或更新手机上的 APK。
 

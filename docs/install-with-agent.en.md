@@ -241,7 +241,7 @@ For chat, web and files only, start with an ordinary question. If no task was ru
 
 ## Step 10 (optional): Use Mika from the computer (CLI + Skill or MCP)
 
-Do this only when the user requests computer access. **Normally choose CLI + Skill or MCP; do not set up both by default.** Keep the entry point and Skill location the user already specified; otherwise use the [installation guide](computer-install.en.md) to establish the choice.
+Do this only when the user requests computer access. **Normally choose CLI + Skill or MCP; do not set up both by default.** Keep the entry point and Skill location the user already specified; otherwise use the table in [Use Mika from a computer](computer.en.md) to establish the choice.
 
 - **CLI + Skill**: use the Skill installation section; no prior pipx or global CLI installation is needed. Complete its connection checks, then skip the MCP steps below. For terminal/script use alone, install just the CLI.
 - **MCP**: continue with the USB steps below; no CLI or Skill installation is needed. Access uses ADB forwarding; other connection methods are in the [MCP guide](mcp.en.md).

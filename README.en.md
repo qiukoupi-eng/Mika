@@ -87,7 +87,7 @@ Then try saying: "Set alarms for 9:40 and 10:00 tomorrow morning" or "Check the 
 | **Schedules and conditions** | "Remind me at 9 tomorrow", "do this every Friday"; runs on time in the original conversation |
 | **Jump in or stop anytime** | Keep talking while a task runs to add or correct things (long-press to withdraw or edit one Mika hasn't picked up yet); after a stop it reports where it got to, and "continue" picks up from there |
 | **Files and computing** | A Linux sandbox per conversation runs Python, Node and shell on the files you send (arm64) |
-| **From your computer** | AI tools on your computer can hand Mika tasks through CLI + Skill or MCP ([CLI / Skill](docs/computer-install.en.md) · [MCP](docs/mcp.en.md)) |
+| **From your computer** | AI tools on your computer can hand Mika tasks through CLI + Skill or MCP ([use Mika from a computer](docs/computer.en.md)) |
 
 By default Mika runs in **Ask mode**: it checks with you only before spending money (placing orders, paying) and just does everything else. You can switch to **Autonomous mode** instead. See [Ask and Autonomous](docs/modes.en.md).
 

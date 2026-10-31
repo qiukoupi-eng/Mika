@@ -241,7 +241,7 @@ adb shell settings get secure enabled_accessibility_services
 
 ## 第 10 步（可选）：从电脑使用 Mika（CLI + Skill 或 MCP）
 
-仅在用户要求电脑访问时执行。**CLI + Skill 与 MCP 通常二选一，无需两套都配置。** 沿用用户已指定的入口和 Skill 安装位置；尚未确定时，按[安装指南](computer-install.md)的用途表明确选择。
+仅在用户要求电脑访问时执行。**CLI + Skill 与 MCP 通常二选一，无需两套都配置。** 沿用用户已指定的入口和 Skill 安装位置；尚未确定时，按[从电脑使用 Mika](computer.md)的选择表明确选择。
 
 - **CLI + Skill**：按安装指南的 Skill 部分安装，无需先装 pipx 或全局 CLI；完成连接检查后跳过下面的 MCP 配置。只需终端／脚本时可单独安装 CLI。
 - **MCP**：继续下面的 USB 步骤，无需安装 CLI 或 Skill。手机经 ADB 转发连接；其他连接方式见[电脑连接（MCP）](mcp.md)。
