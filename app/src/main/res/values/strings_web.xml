@@ -25,4 +25,28 @@
     <string name="web_takeover_login">Sign in in Mika’s browser, then tap “Done”</string>
     <string name="web_takeover_waiting">Mika is waiting for you: %1$s</string>
     <string name="web_reason_security">Security check</string>
+    <!-- 任务结束后留在后台运行的那一页 -->
+    <string name="kept_notif_title">Web page running in the background</string>
+    <string name="kept_row_detail">%1$s · closes in %2$s</string>
+    <string name="kept_close">Close page</string>
+    <string name="kept_open_chat">Open chat</string>
+    <string name="kept_row_title">This page keeps running in the background</string>
+    <string name="kept_row_close">Close</string>
+    <string name="kept_closed_note">Background page closed (%1$s)</string>
+    <string name="kept_closed_plain">Background page closed</string>
+    <string name="kept_reason_expired">time is up</string>
+    <string name="kept_reason_memory">reclaimed by the system for memory</string>
+    <string name="kept_reason_crashed">the page crashed</string>
+    <string name="kept_reason_user">you closed it</string>
+    <string name="kept_reason_replaced">another page was kept</string>
+    <string name="kept_reason_app_exit">Mika quit</string>
+    <string name="kept_chat_sub">1 web page running in the background</string>
+    <string name="kept_capsule">Background page running</string>
+    <string name="kept_card_title">Background page</string>
+    <string name="kept_card_left">%1$s left</string>
+    <string name="kept_card_from">From the chat “%1$s”</string>
+    <string name="kept_card_live">Live view</string>
+    <string name="kept_hm">%1$d h %2$d min</string>
+    <string name="kept_h">%1$d h</string>
+    <string name="kept_m">%1$d min</string>
 </resources>

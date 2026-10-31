@@ -137,7 +137,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Runs a user-requested phone task on the app's own virtual display and shows its progress" />
+                android:value="Runs a user-requested phone task on the app's own virtual display and shows its progress; afterwards keeps the one web page the user asked to keep open running, for at most two hours" />
         </service>
 
         <!--

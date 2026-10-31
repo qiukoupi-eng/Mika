@@ -91,6 +91,7 @@ class LazyWebPort(private val create: suspend () -> WebPort) : WebPort {
     override suspend fun historyBack() = port?.historyBack() ?: NO_TAB
     override suspend fun setSiteMode(mobile: Boolean) = port?.setSiteMode(mobile)
     override suspend fun siteMode(): String? = port?.siteMode()
+    override suspend fun keepOpen(keep: Boolean, reason: String) = port?.keepOpen(keep, reason)
     override suspend fun idleScroll(fraction: Double): Boolean = port?.idleScroll(fraction) ?: false
     override suspend fun runScript(code: String, timeoutMs: Long, bridge: ScriptBridge): ScriptRun =
         port?.runScript(code, timeoutMs, bridge) ?: ScriptRun.Failed(NO_TAB_CODE, "No web page is open.")

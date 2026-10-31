@@ -32,6 +32,8 @@ import com.wangzan101.mika.ui.MainActivity
 import com.wangzan101.mika.ui.typeAndSend
 import com.wangzan101.mika.ui.awaitOne
 import com.wangzan101.mika.ui.appString
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import com.wangzan101.mika.R
 import com.wangzan101.mika.browser.PageAskModel
 import com.wangzan101.mika.browser.PageConversations
@@ -64,6 +66,9 @@ import com.wangzan101.mika.core.cap.phone.OperatingPace
  * - 跑任务:`-e liveGoal <目标> -e liveRun <记录目录名> [-e liveTimeoutSec 600] [-e liveOnTakeover cancel|handback]
  *   [-e livePace fast|standard|human] [-e liveMoveAwayAtStep N] [-e liveCancelAtStep N]`,运行 [runGoal]。经由真实界面:在输入框里写目标、点发送。
  *   liveCancelAtStep:到第 N 步时像点停止键一样停掉任务,再等停止后的交代记进对话(写进 result.txt 的 summary)。
+ *   `-e liveKeepCheckSec N`:任务结束后看有没有留在后台运行的那一页(web_keep_open),有就隔 N 秒读两次页面里的媒体播放进度
+ *   (video/audio 的 currentTime,同源的才读得到)和一个只计数的计时器,写进 result.txt 的 kept*(keptPage、keptMediaAdvanced、
+ *   keptTimerAdvanced、keptNotification),再存一张它的画面 kept-frame.png;那一页不关,留着给人看。
  *   livePace:在 App 里操作的节奏 fast / standard / human(缺省 fast,跑得快;不改设置里的),比较快慢时传 standard。
  *   liveMoveAwayAtStep:到第 N 步时把虚拟屏上的 App 挪到主屏(模拟用户在主屏打开了同一个 App),
  *   记下暂停状态和通知,几秒后像点通知上的「继续」一样恢复。
@@ -263,11 +268,53 @@ class LiveRunTest {
             note("learning settled=$settled")
             File(dir, "learned.txt").writeText(learned(memory))
         }
+        val keepSec = args.getString("liveKeepCheckSec")?.toLongOrNull() ?: 0
+        val kept = if (keepSec > 0) keptPageCheck(keepSec, dir, ::note) else ""
         File(dir, "result.txt").writeText(
             "model=${cfg.model}\ngoal=$goal\noutcome=$outcome\nsteps=${recorder.calls}\nmaxStep=$lastStep\n" +
                 "takeovers=$takeovers\npauses=$pausesHandled\nwallSec=$wall\ninputTokens=${recorder.inTokens}\noutputTokens=${recorder.outTokens}\n" +
-                "answer=$answer\n" + (summary?.let { "summary=$it\n" } ?: ""),
+                "answer=$answer\n" + (summary?.let { "summary=$it\n" } ?: "") + kept,
         )
+    }
+
+    /**
+     * 任务结束后留在后台的那一页还在不在跑:隔 [seconds] 秒读两次页面里媒体的播放进度和一个只计数的计时器(只为这次验收放进页面,
+     * 不碰页面自己的东西),存一张它那块显示的画面。返回写进 result.txt 的几行。
+     */
+    private fun keptPageCheck(seconds: Long, dir: File, note: (String) -> Unit): String {
+        val keeper = (context.applicationContext as MikaApp).pageKeeper
+        val page = keeper.page.value
+        val tab = keeper.keptTab()
+        if (page == null || tab == null) {
+            note("no kept page after the run")
+            return "keptPage=none\n"
+        }
+        val probe = "(function(){if(!window.__keepCheck){window.__keepCheck=0;setInterval(function(){window.__keepCheck++},200);}" +
+            "return JSON.stringify({timer:window.__keepCheck,media:Array.from(document.querySelectorAll('video,audio')).map(function(m){return {t:m.currentTime,paused:m.paused}})});})()"
+        fun read(): org.json.JSONObject? {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            var raw: String? = null
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                if (tab.destroyed) latch.countDown() else tab.view.evaluateJavascript(probe) { raw = it; latch.countDown() }
+            }
+            latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+            return raw?.let { r -> runCatching { org.json.JSONObject(org.json.JSONTokener(r).nextValue() as String) }.getOrNull() }
+        }
+        val first = read()
+        Thread.sleep(seconds * 1000)
+        val second = read()
+        note("kept page ${page.host}: before=$first after=$second")
+        fun times(o: org.json.JSONObject?) = o?.optJSONArray("media")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).optDouble("t") } }.orEmpty()
+        val before = times(first)
+        val after = times(second)
+        val mediaAdvanced = after.indices.any { i -> before.getOrNull(i)?.let { after[i] > it } == true }
+        val timerAdvanced = (second?.optInt("timer") ?: 0) > (first?.optInt("timer") ?: 0)
+        kotlinx.coroutines.runBlocking { kotlinx.coroutines.withTimeoutOrNull(5_000) { keeper.frames().filterNotNull().first() } }?.let { bmp ->
+            File(dir, "kept-frame.png").outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        val notified = mikaNotifications().contains(appString(R.string.kept_notif_title))
+        return "keptPage=${page.host}\nkeptUrl=${tab.view.url}\nkeptMedia=${before.size}\nkeptMediaAdvanced=$mediaAdvanced\n" +
+            "keptTimerAdvanced=$timerAdvanced\nkeptPageAlive=${!tab.destroyed && keeper.page.value?.id == page.id}\nkeptNotification=$notified\n"
     }
 
     @Test

@@ -1,6 +1,7 @@
 package com.wangzan101.mika.capsule
 
 import com.wangzan101.mika.R
+import com.wangzan101.mika.cap.web.KeptPage
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
 import com.wangzan101.mika.confirm.ConfirmationCopy
@@ -46,6 +47,9 @@ sealed interface CardView {
         /** 卡片里列哪个对话、发出去的话进哪个对话:空闲卡片的新对话时为 null(由调用方新开一个)。 */
         val target: String? get() = if (fresh) null else conversationId
     }
+
+    /** 留在后台运行的那一页:实时画面、还剩多久自动关、来自哪个对话,「打开对话」「关闭网页」。没有输入框。 */
+    data class Kept(val page: KeptPage) : CardView
 }
 
 /** 卡片底部输入框里的话交给谁:插话给在跑的任务、回答 Mika 的提问、同一个对话接着说、空闲时开始说。 */
@@ -88,12 +92,13 @@ object CapsuleCards {
      * 展开时显示哪一件(只一件,没有列表,也不在卡片里切换;同时有别的事,到 Mika 的对话页看):
      * 先是刚在卡片里发了话的那个对话([follow])的任务(进行中的优先),好让用户在卡片里看到回答;
      * 否则按 [runs] 的先后取第一件——[CapsuleModel.cardRuns] 已排成要你处理(接管、同意、回答)在前,再是进行中的,
-     * 最后是刚结束、还没消失的;一件都没有时是 [idle](为 null 就收起)。选出的那件是任务卡片还是对话卡片见 [taskCard]。
+     * 最后是刚结束、还没消失的;一件都没有时,任务结束后留下的那一页还在后台运行([kept])就是它的卡片,
+     * 再没有是 [idle](为 null 就收起)。选出的那件是任务卡片还是对话卡片见 [taskCard]。
      */
-    fun of(runs: List<CardRun>, follow: String? = null, idle: CardView.Chat? = null): CardView? {
+    fun of(runs: List<CardRun>, follow: String? = null, idle: CardView.Chat? = null, kept: KeptPage? = null): CardView? {
         val pick = follow?.let { f ->
             runs.firstOrNull { it.run.conversationId == f && it.kind.active } ?: runs.firstOrNull { it.run.conversationId == f }
-        } ?: runs.firstOrNull() ?: return idle
+        } ?: runs.firstOrNull() ?: return kept?.let(CardView::Kept) ?: idle
         return if (taskCard(pick)) CardView.Detail(pick, content(pick))
             else CardView.Chat(pick.run.conversationId, pick, content(pick))
     }
@@ -113,6 +118,7 @@ object CapsuleCards {
     fun input(card: CardView): CardInput? = when (card) {
         is CardView.Chat -> card.content?.let(::inputFor) ?: CardInput(HINT_START, CardInputKind.Start).takeIf { card.run == null }
         is CardView.Detail -> inputFor(card.content)
+        is CardView.Kept -> null
     }
 
     private fun inputFor(content: CardContent): CardInput? = when (content) {
@@ -129,6 +135,7 @@ object CapsuleCards {
     fun conversationOf(card: CardView): String? = when (card) {
         is CardView.Detail -> card.run.run.conversationId
         is CardView.Chat -> card.run?.run?.conversationId ?: card.target
+        is CardView.Kept -> card.page.conversationId
     }
 
     /** 任务还在进行(干活中、Mika 问你、等条件)时输入框右边的停止键停哪件;别的时候为 null。 */
@@ -136,6 +143,7 @@ object CapsuleCards {
         val (run, content) = when (card) {
             is CardView.Detail -> card.run to card.content
             is CardView.Chat -> (card.run ?: return null) to (card.content ?: return null)
+            is CardView.Kept -> return null
         }
         val live = content is CardContent.Working || content is CardContent.Question || content is CardContent.Held
         return run.run.key.takeIf { live }
@@ -189,6 +197,7 @@ object CapsuleCards {
         CapsuleKind.Done -> tr(R.string.capsule_done)
         CapsuleKind.Failed -> tr(R.string.capsule_failed)
         CapsuleKind.Cancelled -> tr(R.string.capsule_stopped)
+        CapsuleKind.KeptPage -> tr(R.string.kept_capsule)
         CapsuleKind.Idle -> "Mika"
     }
 

@@ -105,6 +105,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wangzan101.mika.R
+import com.wangzan101.mika.cap.web.KeptPage
 import com.wangzan101.mika.chat.SharedFile
 import com.wangzan101.mika.confirm.ConfirmationCopy
 import com.wangzan101.mika.settings.Prerequisites
@@ -165,6 +166,9 @@ fun ChatScreen(
 ) {
     val ui by vm.ui.collectAsState()
     val others by vm.otherRunning.collectAsState()
+    val keptAny by vm.keptPage.collectAsState()
+    // 只管这个对话留下的那一页
+    val kept = keptAny?.takeIf { it.conversationId == ui.conversationId }
     val live by frames.collectAsState()
     val webLive by webOpen.collectAsState()
     // 任务一结束虚拟屏就释放了;完成时小窗还要停留几秒打勾,继续显示最后一帧
@@ -278,7 +282,7 @@ fun ChatScreen(
                 }
                 ui.exchanges.forEachIndexed { i, ex ->
                     val backgroundNote = i == ui.exchanges.lastIndex && ui.operatingPhone
-                    exchange(i, ex, ui.conversationId, ui.takeoverStage, vm, reduceMotion, backgroundNote, openRun, loadSource, openSource)
+                    exchange(i, ex, ui.conversationId, ui.takeoverStage, vm, reduceMotion, backgroundNote, openRun, loadSource, openSource, kept)
                 }
                 if (phoneSetupNeeded && ui.exchanges.isNotEmpty()) item("phone-setup") { PhoneSetupLine(openPhoneSetup) }
                 ui.blocked?.let { problems ->
@@ -295,7 +299,8 @@ fun ChatScreen(
             }
         }
 
-        val sub = ChatCopy.subtitle(last, last?.let(vm::livePlace))
+        // 没有任务在跑、这个对话留着一页在后台运行时:顶栏写「后台保持着 1 个网页」
+        val sub = ChatCopy.subtitle(last, last?.let(vm::livePlace)) ?: kept?.let { ChatCopy.KEPT_PAGE to ChatCopy.Tone.Ok }
         Column(Modifier.behindMenu(menuOpen) { lift.value }.onSizeChanged { topHeight = it.height }) {
             TopBar(
                 ChatCopy.APP_TITLE,
@@ -307,6 +312,7 @@ fun ChatScreen(
                 subtitleColor = when (sub?.second) {
                     ChatCopy.Tone.Accent -> c.accent
                     ChatCopy.Tone.Warn -> c.warn
+                    ChatCopy.Tone.Ok -> c.ok
                     null -> Color.Unspecified
                 },
             )
@@ -433,6 +439,7 @@ private fun ExampleRow(icon: ImageVector, text: String, first: Boolean, onClick:
 private fun LazyListScope.exchange(
     index: Int, ex: Exchange, conversationId: String?, stage: Takeover.Stage, vm: ChatViewModel, reduceMotion: Boolean, backgroundNote: Boolean,
     openRun: (String) -> Unit, loadSource: suspend (String) -> EvidenceSource?, openSource: (String?, String?) -> Unit,
+    kept: KeptPage? = null,
 ) {
     if (ex.goal.isNotEmpty()) item("u$index") { UserBubble(ex.goal, conversationId, key = "u$index") }
     val active = ex.status.isActive()
@@ -455,6 +462,8 @@ private fun LazyListScope.exchange(
     ex.draft?.takeIf(String::isNotBlank)?.let { draft -> item("d$index") { DraftText(draft, ex.waitingForModel) } }
     waiting.forEach(::steer)
     item("r$index") { StatusCard(ex.status, stage, vm, ex.runId, loadSource, openSource, "r$index") }
+    // 这一轮结束后留在后台运行的那一页:还开着是绿色一行(能关),关了是一句原因
+    keptPageRow(index, ex, kept, vm::closeKeptPage)
     if (ex.files.isNotEmpty()) item("f$index") { FileCards(ex.files) }
     learningNotes(index, ex, vm)
 }

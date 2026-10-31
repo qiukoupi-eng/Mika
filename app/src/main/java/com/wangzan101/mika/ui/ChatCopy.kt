@@ -45,7 +45,10 @@ object ChatCopy {
     fun plainTitle(text: String): String =
         ScreenCopy.plain(AttachmentMessage.plain(QuoteMessage.words(AttachedPage.words(text)))).lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
 
-    enum class Tone { Accent, Warn }
+    enum class Tone { Accent, Warn, Ok }
+
+    /** 顶栏副标题:这个对话留着一页在后台运行(没有任务在跑时)。 */
+    val KEPT_PAGE: String get() = tr(R.string.kept_chat_sub)
 
     /** 顶栏副标题:正在做什么(强调色)或等你(橙色);没有任务在跑时为 null。[place] 是正在操作的 App 或网站。 */
     fun subtitle(ex: Exchange?, place: String?): Pair<String, Tone>? = when (ex?.status) {

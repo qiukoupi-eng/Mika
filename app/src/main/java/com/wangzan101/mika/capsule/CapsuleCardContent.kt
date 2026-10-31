@@ -1,5 +1,11 @@
 package com.wangzan101.mika.capsule
 
+import kotlinx.coroutines.delay
+
+import androidx.compose.runtime.produceState
+
+import com.wangzan101.mika.ui.KeptPageCopy
+
 import com.wangzan101.mika.R
 import com.wangzan101.mika.i18n.tr
 import android.graphics.Bitmap
@@ -155,6 +161,8 @@ interface CardActions {
     fun captureScreen()
     /** 附件条上的 ×:不要这张截图。 */
     fun dropScreen()
+    /** 留在后台运行的那一页的卡片上的「关闭网页」。 */
+    fun closeKeptPage() {}
 }
 
 /** 截下来、挂在输入框上面等着发的一屏:[thumb] 是缩略图(不让截图的页面没有)。 */
@@ -211,6 +219,7 @@ fun CapsuleCard(
             zoomed && preview != null -> Zoomed(preview, actions)
             card is CardView.Detail -> Detail(card, preview, actions, elapsed, h, handle, inputRow)
             card is CardView.Chat -> ChatCard(card, thread, actions, elapsed, h, handle, inputRow)
+            card is CardView.Kept -> KeptCard(card, preview, actions, h, handle)
         }
     }
 }
@@ -519,6 +528,55 @@ private fun Detail(
         }
     }
 }
+
+/**
+ * 留在后台运行的那一页的卡片:标题「后台网页 · 还剩 1 小时 52 分」,实时画面(它那块显示的最新一帧,点一下放大),
+ * 站点和来自哪个对话,下面「打开对话」「关闭网页」。按内容高。剩下的时间每分钟走一次。
+ */
+@Composable
+private fun KeptCard(card: CardView.Kept, preview: Bitmap?, actions: CardActions, height: Dp, handle: Modifier) {
+    val c = MikaTheme.colors
+    val p = card.page
+    val now by produceState(System.currentTimeMillis(), p.id) {
+        while (true) {
+            delay(KEPT_TICK_MS)
+            value = System.currentTimeMillis()
+        }
+    }
+    CardFrame(height, fixed = false) {
+        Header(tr(R.string.kept_card_title), tr(R.string.kept_card_left, KeptPageCopy.duration(p.closesAt - now)), actions, handle)
+        Column(Modifier.padding(top = 10.dp).weight(1f, fill = false).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (preview != null) {
+                val image = remember(preview) { preview.asImageBitmap() }
+                Box(
+                    Modifier.testTag("kept-live").fillMaxWidth().aspectRatio(ratio(preview)).clip(ScreenShape)
+                        .border(1.dp, c.glassEdge, ScreenShape).background(Color.Black)
+                        .clickable(role = Role.Image, onClickLabel = CardCopy.SCREEN) { actions.zoom(true) }
+                        .semantics { contentDescription = tr(R.string.kept_card_live) },
+                ) {
+                    Image(image, null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
+                }
+            }
+            Text(p.host, style = Strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                listOf(tr(R.string.kept_card_from, ScreenCopy.plain(p.goal).let { if (it.length > TITLE_MAX) it.take(TITLE_MAX) + "…" else it }), tr(R.string.kept_card_live))
+                    .joinToString(" · "),
+                style = Sub, color = c.ink2, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(Modifier.padding(top = 12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f).testTag("kept-open")) { Action(tr(R.string.kept_open_chat), ButtonKind.Tonal) { actions.openMika(p.conversationId) } }
+            // 关闭是红字的淡红按钮,和别的按钮分开
+            Box(
+                Modifier.weight(1f).height(40.dp).testTag("kept-close").clip(MikaShapes.Pill).background(c.badSoft)
+                    .clickable(role = Role.Button, onClick = actions::closeKeptPage),
+                contentAlignment = Alignment.Center,
+            ) { Text(tr(R.string.kept_close), style = Strong, color = c.bad) }
+        }
+    }
+}
+
+private const val KEPT_TICK_MS = 30_000L
 
 /** 要你点的按钮(接管、同意、选项、继续),固定在卡片中间那段的下面,不跟着滚。 */
 @Composable

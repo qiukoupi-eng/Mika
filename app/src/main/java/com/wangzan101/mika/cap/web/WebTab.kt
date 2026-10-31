@@ -139,6 +139,10 @@ class WebTab(
     @Volatile var crashed: Boolean = false
         private set
 
+    /** 渲染进程不是自己崩的,是系统为腾内存收回的([crashed] 同时为 true)。 */
+    @Volatile var reclaimed: Boolean = false
+        private set
+
     private var pending: CompletableDeferred<Boolean>? = null
     // 发起新加载后,要等到它自己的 onPageStarted 才认 onPageFinished,上一次导航迟到的完成回调不算数
     private var armed = false
@@ -249,6 +253,7 @@ class WebTab(
             override fun onRenderProcessGone(v: WebView, detail: RenderProcessGoneDetail): Boolean {
                 Log.w(TAG, "renderer gone for tab $id crashed=${detail.didCrash()}")
                 crashed = true
+                reclaimed = !detail.didCrash()
                 loading = false
                 (view.parent as? ViewGroup)?.removeView(view)
                 finish(false)

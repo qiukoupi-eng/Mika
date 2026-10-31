@@ -26,7 +26,7 @@ sealed interface PoolEvent {
     data class NewTab(val tabId: String, val taskId: String, val fromPopup: Boolean) : PoolEvent
     /**
      * [reason]:closed 主动关、limit 超出上限关掉最久没用的、task_end 任务结束、popup_other_site 弹出窗口要去别的网站;
-     * 借来的标签([WebTabPool.attachExternal])还回去时是 returned(标签本身没关)。
+     * 借来的标签([WebTabPool.attachExternal])还回去时是 returned,任务结束时留在后台([WebTabPool.release])是 kept(这两种标签本身没关)。
      */
     data class Closed(val tabId: String, val reason: String) : PoolEvent
     data class Crashed(val tabId: String) : PoolEvent
@@ -181,6 +181,27 @@ class WebTabPool(
         return true
     }
 
+    /**
+     * 任务结束时把要留下的标签 [tabId] 交出去(见 [PageKeeper]):从池里拿掉,不销毁、不从宿主上摘下来,也不把别的标签挂上去
+     * (它是当前标签时这个任务就没有当前标签了);之后不再接它上面的事、不算上限、不随任务关。发 Closed(kept)。
+     * 借来的、临时后台的、被内存回收过的、崩了的、不存在的交不出,返回 null。主线程。
+     */
+    fun release(tabId: String): WebTab? {
+        checkMain()
+        val tab = synchronized(this) {
+            val e = entries[tabId]?.takeIf { it.counted } ?: return null
+            val t = e.tab?.takeIf { !it.destroyed && !it.crashed } ?: return null
+            entries.remove(tabId)
+            locked -= tabId
+            if (currentByTask[e.taskId] == tabId) currentByTask.remove(e.taskId)
+            t
+        }
+        loginProbes.remove(tabId)?.let(main::removeCallbacks)
+        tab.listener = null
+        emit(PoolEvent.Closed(tabId, "kept"))
+        return tab
+    }
+
     /** [tabId] 是借来的标签(见 [attachExternal])。 */
     @Synchronized
     fun isExternal(tabId: String): Boolean = entries[tabId]?.external == true
@@ -252,6 +273,17 @@ class WebTabPool(
         ids.forEach { remove(it, PoolEvent.Closed(it, if (isExternal(it)) "returned" else "task_end"), force = isExternal(it)) }
         synchronized(this) { crashedByTask.remove(taskId) }
         flushCookies()
+    }
+
+    /**
+     * 任务 [taskId] 结束、要留下 [keep] 那一页:先把它交出来([release]),再关掉这个任务别的标签([closeAll])。
+     * 交出来的标签由调用方接着管;[keep] 为 null 或交不出时为 null(照常全关)。主线程。
+     */
+    fun closeKeeping(taskId: String, keep: String?): WebTab? {
+        checkMain()
+        val tab = keep?.takeIf { synchronized(this) { entries[it]?.taskId == taskId } }?.let(::release)
+        closeAll(taskId)
+        return tab
     }
 
     /** 本任务的标签,按打开顺序。 */

@@ -23,6 +23,8 @@ import androidx.compose.ui.graphics.TransformOrigin
 import android.graphics.Rect
 import com.wangzan101.mika.record.RunStore
 import com.wangzan101.mika.R
+import com.wangzan101.mika.cap.web.KeptPage
+import com.wangzan101.mika.core.cap.web.KeptPageClose
 import com.wangzan101.mika.chat.ConversationStore
 import java.util.UUID
 import kotlinx.coroutines.withContext
@@ -99,6 +101,8 @@ class CapsuleController(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val model = CapsuleModel(::reasonLabel)
     private val flags = FeatureFlags.get(context)
+    /** 任务结束后留在后台运行的那一页(没有任务时胶囊说它,卡片里能看画面、关掉)。 */
+    private val keeper get() = (context.applicationContext as MikaApp).pageKeeper
     private val toolLabels by lazy { ToolLabels(knownTools()) }
     private val appLabels = HashMap<String, String>()
     /** 各任务这一问一答此刻的样子,和对话页同一套推法(步骤、要你做的事、结果)。 */
@@ -196,9 +200,10 @@ class CapsuleController(
         val screen = DeviceStateWatcher(context) { -1 }
         scope.launch {
             combine(
-                combine(runs(), flags.capsuleModeChanges(), foreground.visible, screen.locked, ScreenAccessibility.instance, ::Snapshot),
+                combine(runs(), flags.capsuleModeChanges(), foreground.visible, screen.locked, ScreenAccessibility.instance) { r, m, f, l, a -> Snapshot(r, m, f, l, a) },
                 ticks,
-            ) { s, _ -> s }.collect(::render)
+                keeper.page,
+            ) { s, _, kept -> s.copy(kept = kept) }.collect(::render)
         }
         // 停止后的交代写好(或写不成)时那一轮已改进对话:重读记下的轮次
         scope.launch { tasks.summarizing.collect { threadOf?.let(::loadPast) } }
@@ -231,9 +236,11 @@ class CapsuleController(
         })
     }
 
-    private class Snapshot(
+    private data class Snapshot(
         val runs: List<CapsuleRun>, val mode: CapsuleMode, val mikaInForeground: Boolean, val locked: Boolean,
         val service: ScreenAccessibility?,
+        /** 任务结束后留在后台运行的那一页。 */
+        val kept: KeptPage? = null,
     )
 
     /**
@@ -284,7 +291,7 @@ class CapsuleController(
         }
         val inputs = CapsuleInputs(
             s.runs, s.mode, s.mikaInForeground, screenInteractive = !s.locked,
-            serviceAvailable = service != null && service !== failedOn, cardOpen = expanded,
+            serviceAvailable = service != null && service !== failedOn, cardOpen = expanded, kept = s.kept,
         )
         val shown = model.update(inputs, System.currentTimeMillis()) as? CapsuleView.Shown
         schedule(model.nextChangeAt)
@@ -295,13 +302,15 @@ class CapsuleController(
         // App 已交到你手上:顶部那一条代替卡片
         if (shown.kind == CapsuleKind.HandedOver) resetCard()
         view = shown
-        card = if (expanded) CapsuleCards.of(model.cardRuns(), follow, idle) else null
+        card = if (expanded) CapsuleCards.of(model.cardRuns(), follow, idle, s.kept) else null
         if (expanded && card == null) resetCard()
         updateThread(card as? CardView.Chat, s.runs)
         // 换成了没有输入框的内容(例如变成要你同意):输入框收起,焦点还给下面的 App
         if (inputUi.open && card?.let(CapsuleCards::input) == null) closeInput()
         val detail = card as? CardView.Detail
-        watchPreview(detail?.takeIf { CapsuleCards.showsScreen(it.content) }?.run?.run?.key)
+        val keptCard = card as? CardView.Kept
+        if (keptCard != null) watchKept(keptCard.page.id)
+        else watchPreview(detail?.takeIf { CapsuleCards.showsScreen(it.content) }?.run?.run?.key)
         val w = window ?: openWindows(service)
         if (w == null) {
             view = null
@@ -446,6 +455,7 @@ class CapsuleController(
         val run = when (c) {
             is CardView.Detail -> c.run.run
             is CardView.Chat -> c.run?.run
+            is CardView.Kept -> null
         }
         when (kind) {
             CardInputKind.Steer -> run?.let { TaskService.start(context, text, it.conversationId, messageId = UUID.randomUUID().toString()) }
@@ -685,6 +695,19 @@ class CapsuleController(
         val run = key?.let(::runFor) ?: return
         previewJob = scope.launch {
             run.frames.filterNotNull().previewFrames(same = ::sameFrame).flowOn(Dispatchers.Default).collect { preview = it }
+        }
+    }
+
+    /** 留在后台运行的那一页的卡片:收它那块显示的画面(和任务卡片的小画面同一个节流)。 */
+    private fun watchKept(id: Long) {
+        val key = "kept:$id"
+        if (key == previewKey) return
+        previewKey = key
+        previewJob?.cancel()
+        preview = null
+        zoomed = false
+        previewJob = scope.launch {
+            keeper.frames().filterNotNull().previewFrames(same = ::sameFrame).flowOn(Dispatchers.Default).collect { preview = it }
         }
     }
 
@@ -964,6 +987,10 @@ class CapsuleController(
         override fun captureScreen() = captureForCard()
         override fun dropScreen() {
             inputUi = inputUi.copy(screen = null)
+        }
+        override fun closeKeptPage() {
+            keeper.close(KeptPageClose.User)
+            collapse()
         }
     }
 

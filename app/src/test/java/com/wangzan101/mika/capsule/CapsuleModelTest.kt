@@ -2,6 +2,7 @@ package com.wangzan101.mika.capsule
 
 import org.junit.Rule
 import com.wangzan101.mika.i18n.ChineseTexts
+import com.wangzan101.mika.cap.web.KeptPage
 import com.wangzan101.mika.core.agent.FailKind
 import com.wangzan101.mika.core.agent.GateReason
 import com.wangzan101.mika.core.agent.RunProgress
@@ -27,7 +28,10 @@ class CapsuleModelTest {
         interactive: Boolean = true,
         service: Boolean = true,
         cardOpen: Boolean = false,
-    ) = CapsuleInputs(runs.toList(), mode, foreground, interactive, service, cardOpen)
+        kept: KeptPage? = null,
+    ) = CapsuleInputs(runs.toList(), mode, foreground, interactive, service, cardOpen, kept)
+
+    private val kept = KeptPage(1, "c-k", "r-k", "把这门课点开,挂着别关", "course.example.com", null, null, 0, 7_200_000)
 
     private fun run(key: String, state: TaskState, stage: Takeover.Stage = Takeover.Stage.None) = CapsuleRun(key, "c-$key", state, stage)
     private fun running(said: String? = null, step: Int = 3, reason: String? = null, progress: RunProgress? = null) =
@@ -54,6 +58,32 @@ class CapsuleModelTest {
         // 一直显示也照样在 Mika 界面里、锁屏时不显示
         assertEquals(CapsuleView.Hidden, model.update(inputs(mode = CapsuleMode.Always, foreground = true), 0))
         assertEquals(CapsuleView.Hidden, model.update(inputs(mode = CapsuleMode.Always, interactive = false), 0))
+    }
+
+    // ---------- 留在后台运行的那一页 ----------
+
+    @Test fun keptPageStaysShownWhenNoTaskRuns() {
+        // 没有任务:展开成「后台网页运行中」,说的是它来自的对话;「一直显示」时也是它,不是空闲图标
+        for (mode in listOf(CapsuleMode.DuringTasks, CapsuleMode.Always)) {
+            val v = shown(model.update(inputs(mode = mode, kept = kept), 0))
+            assertEquals(CapsuleKind.KeptPage, v.kind)
+            assertEquals("后台网页运行中", v.text)
+            assertEquals("c-k", v.conversationId)
+            assertTrue(v.pill)
+        }
+        // 开关是「从不显示」、在 Mika 里、锁屏时照样不显示(靠通知)
+        assertEquals(CapsuleView.Hidden, model.update(inputs(mode = CapsuleMode.Off, kept = kept), 0))
+        assertEquals(CapsuleView.Hidden, model.update(inputs(foreground = true, kept = kept), 0))
+        assertEquals(CapsuleView.Hidden, model.update(inputs(interactive = false, kept = kept), 0))
+    }
+
+    @Test fun runningTaskAndFreshResultComeBeforeKeptPage() {
+        assertEquals(CapsuleKind.Running, shown(model.update(inputs(run("a", running("在搜")), kept = kept), 0)).kind)
+        // 刚办完的结果先停一会儿,停完才是留着的那一页
+        val done = run("a", TaskState.Succeeded("好了"))
+        assertEquals(CapsuleKind.Done, shown(model.update(inputs(done, kept = kept), 10)).kind)
+        assertEquals(CapsuleKind.KeptPage, shown(model.update(inputs(done, kept = kept), 10 + CapsuleModel.LINGER_MS)).kind)
+        assertTrue(!CapsuleKind.KeptPage.active && !CapsuleKind.KeptPage.needsYou)
     }
 
     @Test fun modeParsesWithAlwaysDefault() {

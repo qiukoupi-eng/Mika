@@ -26,6 +26,8 @@ class WebStack private constructor(
     val host: WebHost,
     val pool: WebTabPool,
     workspace: Workspace?,
+    /** 任务结束后留下一页时交给它;为 null 时不能留页(web_keep_open 报不可用)。 */
+    private val keeper: PageKeeper?,
 ) {
     /**
      * 本对话的工作区:[dir] 是宿主目录(work/<对话>,不存在就建,不要求沙箱已安装);
@@ -42,7 +44,10 @@ class WebStack private constructor(
         WebFiles(context, w.dir, downloads, w.gate, transfers)
     }
 
-    val screen: WebScreen = WebScreen(pool, taskId, host, SystemClock::uptimeMillis, files)
+    val screen: WebScreen = WebScreen(pool, taskId, host, SystemClock::uptimeMillis, files, keptNow = keeper?.let { k -> { k.page.value } })
+
+    /** 留下的那一页记在谁名下(对话、运行记录、原话);任务结束时取。没给时不留页。 */
+    @Volatile var keepOrigin: (() -> KeptOrigin)? = null
 
     init {
         files?.let { f -> pool.downloadHandler = { tab, url, ua, cd, mime -> onDownload(f, tab, url, ua, cd, mime) } }
@@ -163,14 +168,27 @@ class WebStack private constructor(
     /** 借来的标签上用户摸了几下(接管交回时记进结果);由借出的一方给。 */
     @Volatile var borrowedTouches: ((WebTab) -> Int)? = null
 
-    /** 任务结束:还在接管就先收回,再关掉这个任务的标签和显示。 */
+    /**
+     * 任务结束:还在接管就先收回,再关掉这个任务的标签和显示。模型用 web_keep_open 标过一页时,那一页连同这块显示交给 [keeper]
+     * 留在后台接着运行(显示就不关了);交不出(那一页已关、崩了)时照常全关。
+     */
     fun close() {
         runCatching { returnFromTakeover(loggedIn = false) }.onFailure { Log.w(TAG, "takeover not returned cleanly", it) }
-        runCatching { pool.closeAll(taskId) }
+        // 先从池里拿出要留的那一页,别的标签关掉时就不会把别的页挂到显示上顶掉它
+        val kept = runCatching { pool.closeKeeping(taskId, screen.keepMark?.tabId) }.onFailure { Log.w(TAG, "kept page not released", it) }.getOrNull()
         runCatching { pool.close() }
-        runCatching { host.close() }
+        val handed = kept != null && runCatching { handOff(kept) }.onFailure { Log.w(TAG, "kept page not handed off", it) }.getOrDefault(false)
+        if (kept != null && !handed) runCatching { kept.destroy() }
+        if (!handed) runCatching { host.close() }
         runCatching { files?.close() }
         transfers.cancel()
+    }
+
+    /** 把留下的那一页交给 [keeper];收下了返回 true。 */
+    private fun handOff(tab: WebTab): Boolean {
+        val k = keeper ?: return false
+        val origin = keepOrigin?.invoke() ?: return false
+        return k.keep(tab, host, origin) != null
     }
 
     companion object {
@@ -181,11 +199,12 @@ class WebStack private constructor(
             context: Context, taskId: String, widthPx: Int, heightPx: Int, densityDpi: Int,
             assetLoaders: List<WebViewAssetLoader> = emptyList(),
             workspace: Workspace? = null,
+            keeper: PageKeeper? = WebOwner.of(context).pageKeeper,
         ): WebStack {
             val host = WebHost(context, widthPx, heightPx, densityDpi)
             return try {
                 val pool = WebTabPool(context, host, assetLoaders = assetLoaders, registry = WebSites.registry(context))
-                WebStack(context.applicationContext, taskId, host, pool, workspace)
+                WebStack(context.applicationContext, taskId, host, pool, workspace, keeper)
             } catch (e: Exception) {
                 host.close()
                 throw e

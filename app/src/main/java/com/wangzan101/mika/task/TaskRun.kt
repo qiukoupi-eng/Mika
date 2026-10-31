@@ -102,6 +102,7 @@ import com.wangzan101.mika.cap.web.LazyWebPort
 import com.wangzan101.mika.cap.web.WebHandover
 import com.wangzan101.mika.cap.web.WebSites
 import com.wangzan101.mika.cap.web.WebStack
+import com.wangzan101.mika.cap.web.KeptOrigin
 import com.wangzan101.mika.cap.web.WebTab
 import com.wangzan101.mika.browser.PageLoans
 import com.wangzan101.mika.browser.UserBrowser
@@ -562,6 +563,8 @@ class TaskRun(
                         workspace = SandboxDirs(service).let { d -> WebStack.Workspace(d.workspace(conversationId), d.gate, d.tree) },
                     ) }
                 webStack = stack
+                // 模型用 web_keep_open 标过的那一页,任务结束时留在后台,记在这一轮名下(对话里那一轮下面显示、关了补一句)
+                stack.keepOrigin = { KeptOrigin(conversationId, _runId.value, goal) }
                 side.launch {
                     // 网页界面时画中画显示网页显示的画面;换界面时先清掉上一边的画面;怎么显示见 WebPreview
                     var last: String? = null

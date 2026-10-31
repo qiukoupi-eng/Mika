@@ -52,6 +52,9 @@ import com.wangzan101.mika.cap.web.cdp.PageScriptRunner
 import com.wangzan101.mika.core.cap.web.cdp.ReadScriptRunner
 import com.wangzan101.mika.core.cap.web.PageTree
 import com.wangzan101.mika.core.cap.web.SiteModeResult
+import com.wangzan101.mika.core.cap.web.KEEP_OPEN_HOURS
+import com.wangzan101.mika.core.cap.web.KeepOpenResult
+import com.wangzan101.mika.core.cap.web.WebTabIsUsers
 import com.wangzan101.mika.core.cap.web.TabInfo
 import com.wangzan101.mika.core.cap.web.WebBarrier
 import com.wangzan101.mika.core.cap.web.WebFacts
@@ -110,10 +113,18 @@ class WebScreen(
     private val taskId: String? = null,
     /** 下载与上传走的工作区;为空时下载报不可用、上传报不可用。 */
     private val files: WebFiles? = null,
+    /** 此刻留在后台的那一页(见 [PageKeeper]);为空时不能留页,web_keep_open 报不可用。 */
+    private val keptNow: (() -> KeptPage?)? = null,
 ) : WebPort {
     /** 一个任务的网页端口:当前标签取自标签池里这个任务的当前标签。 */
-    constructor(pool: WebTabPool, taskId: String, host: WebHost, clock: () -> Long, files: WebFiles? = null) :
-        this({ pool.current(taskId) }, host, clock, pool, taskId, files)
+    constructor(pool: WebTabPool, taskId: String, host: WebHost, clock: () -> Long, files: WebFiles? = null, keptNow: (() -> KeptPage?)? = null) :
+        this({ pool.current(taskId) }, host, clock, pool, taskId, files, keptNow)
+
+    /** 模型要在任务结束后留下的那一页(web_keep_open):[tabId] 是哪个标签;任务结束时由 [WebStack.close] 取。 */
+    data class KeepMark(val tabId: String, val reason: String)
+
+    @Volatile var keepMark: KeepMark? = null
+        private set
 
     private val scripts = WeakHashMap<WebTab, PageScript>()
     private val readers = WeakHashMap<WebTab, ReadScriptRunner>()
@@ -933,6 +944,27 @@ class WebScreen(
         return withContext(Dispatchers.Main) {
             pool.close(taskId!!, tabId)
         }
+    }
+
+    /**
+     * 记下任务结束后留下当前这一页(只记下,此刻什么也不动);[keep] 为 false 时撤销。借来的(用户自己的)那一页本来就不随任务关,
+     * 不用留。只记一页:再标别的标签就换成它。
+     */
+    override suspend fun keepOpen(keep: Boolean, reason: String): KeepOpenResult? {
+        val now = keptNow ?: throw UnsupportedOperationException("no page keeper")
+        val pool = pool ?: throw UnsupportedOperationException(NO_POOL)
+        if (!keep) {
+            val had = keepMark
+            keepMark = null
+            return KeepOpenResult(false, had?.tabId, null, null, null, KEEP_OPEN_HOURS)
+        }
+        val tab = currentTab() ?: return crashedTab()?.let { throw WebTabCrashed(it) }
+        if (tab.crashed) throw WebTabCrashed(tab.id)
+        if (pool.isExternal(tab.id)) throw WebTabIsUsers(tab.id)
+        val (u, title) = withContext(Dispatchers.Main) { tab.view.url to tab.view.title }
+        keepMark = KeepMark(tab.id, reason)
+        Log.i(TAG, "tab ${tab.id} marked to keep running after the task")
+        return KeepOpenResult(true, tab.id, u, title?.takeIf { it.isNotBlank() }, u?.let(WebUrlPolicy::host), KEEP_OPEN_HOURS, replaces = now()?.host)
     }
 
     override suspend fun siteMode(): String? =

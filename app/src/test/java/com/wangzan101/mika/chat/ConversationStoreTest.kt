@@ -25,6 +25,19 @@ class ConversationStoreTest {
         assertNotEquals(id, b.newConversation())
     }
 
+    /** 留在后台运行的那一页(站点)和它后来关掉的原因跟着那一轮存下;没留页的轮次不写这两个字段。 */
+    @Test fun persistsKeptPage() {
+        val dir = tmp.newFolder("c")
+        val a = ConversationStore(dir)
+        val id = a.newConversation()
+        a.append(id, Turn("播放课程,挂着别关", "开始播放了", "succeeded", runId = "r1", keptPage = "course.example.com"))
+        a.append(id, Turn("谢谢", "不客气", "succeeded", runId = "r2"))
+        assertEquals(listOf("course.example.com", null), ConversationStore(dir).turns(id).map { it.keptPage })
+        a.updateTurn(id, "r1") { it.copy(keptPageClosed = "expired") }
+        assertEquals("expired", ConversationStore(dir).turns(id).first().keptPageClosed)
+        assertFalse("keptPage" in java.io.File(dir, "$id.json").readText().substringAfter("谢谢"))
+    }
+
     /** 这一轮用过的能力组跟着存下(下一轮开局据此预先展开);没用过的不写这个字段。 */
     @Test fun persistsUsedGroups() {
         val dir = tmp.newFolder("c")

@@ -97,6 +97,20 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
     val childRuns by lazy { FileChildRunStore(java.io.File(filesDir, "children-v3.json")) }
     override val tabBudget get() = resources.tabBudget
 
+    /** 任务结束后留在后台接着运行的那一页;关掉时在来源对话那一轮记下原因(对话页那一轮下面显示「后台网页已关闭」)。 */
+    override val pageKeeper: com.wangzan101.mika.cap.web.PageKeeper by lazy {
+        com.wangzan101.mika.cap.web.PageKeeper(this, tabBudget).also { k ->
+            k.onClosed = { p, reason ->
+                p.runId?.let { runId ->
+                    scope.launch(Dispatchers.IO) {
+                        runCatching { conversations.updateTurn(p.conversationId, runId) { it.copy(keptPageClosed = reason.wire) } }
+                            .onFailure { android.util.Log.w("MikaApp", "could not note the kept page closing", it) }
+                    }
+                }
+            }
+        }
+    }
+
     /** 记忆、个人技能、开关与结果卡片提示。 */
     override val memory: MemoryRuntime by lazy { MemoryRuntime(this) }
 
@@ -254,6 +268,8 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
             describeAttachments = { uris -> AttachFiles.describe(app, uris) },
             deletionImpact = conversationDeleter::impact,
             removeConversation = conversationDeleter::delete,
+            keptPage = pageKeeper.page,
+            closeKept = { pageKeeper.close(com.wangzan101.mika.core.cap.web.KeptPageClose.User) },
         )
     }
 

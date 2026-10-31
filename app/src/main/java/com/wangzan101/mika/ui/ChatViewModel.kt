@@ -1,6 +1,7 @@
 package com.wangzan101.mika.ui
 
 import com.wangzan101.mika.R
+import com.wangzan101.mika.cap.web.KeptPage
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
 import com.wangzan101.mika.core.assembly.legacyNames
@@ -156,6 +157,10 @@ data class Exchange(
     val line: String = "",
     /** 任务进行中用户在这里插的话和它们的去向。 */
     val steers: List<SteerNote> = emptyList(),
+    /** 这一轮结束后留在后台运行的那一页的站点(见 [Turn.keptPage]);没留为 null。 */
+    val keptPage: String? = null,
+    /** 那一页后来关掉的原因([Turn.keptPageClosed]);还开着或不知道为 null。 */
+    val keptPageClosed: String? = null,
 )
 
 /** 在跑时的一行进展:等你时说等什么;模型请求在途时只给中性状态;否则是这一步的话,没有就是最近做的事。 */
@@ -309,7 +314,14 @@ class ChatViewModel(
     private val deletionImpact: (String) -> DeleteImpact = { DeleteImpact(runningTask = false, schedules = 0) },
     /** 删掉一个对话和属于它的一切(见 `ConversationDeleter.delete`)。 */
     private val removeConversation: suspend (String) -> Unit = {},
+    /** 任务结束后留在后台运行的那一页(全局至多一页);对话页在它来自的那一轮下面显示一行,顶栏写「后台保持着 1 个网页」。 */
+    val keptPage: StateFlow<KeptPage?> = MutableStateFlow(null),
+    /** 关掉留着的那一页(用户点了那一行上的「关闭」)。 */
+    private val closeKept: () -> Unit = {},
 ) {
+    /** 用户在对话页上关掉留在后台的那一页。 */
+    fun closeKeptPage() = closeKept()
+
     private val _ui = MutableStateFlow(ChatUi())
     val ui: StateFlow<ChatUi> = _ui.asStateFlow()
 
@@ -788,7 +800,9 @@ class ChatViewModel(
                 tracked.remove(mine)
                 // 停止后补上的交代记在存下的那份里
                 val m = if (mine.status is ExchangeStatus.Cancelled && s.status is ExchangeStatus.Cancelled && s.status.summary != null) mine.copy(status = s.status) else mine
-                if (m.goal.isEmpty()) m.copy(goal = s.goal) else m
+                // 留页的记录(留下的站点、后来关掉的原因)也只在存下的那份里
+                val k = if (s.keptPage != null) m.copy(keptPage = s.keptPage, keptPageClosed = s.keptPageClosed) else m
+                if (k.goal.isEmpty()) k.copy(goal = s.goal) else k
             }.asReversed()
             val exchanges = merged + tracked + listOfNotNull(live)
             if (exchanges == ui.exchanges) return@update ui
@@ -1124,6 +1138,7 @@ class ChatViewModel(
             }
             return Exchange(t.userText, emptyList(), status, live = false, runId = t.runId,
                 memoryNotes = t.memoryNotes, usedMemory = t.usedMemory, skillNotes = t.skillNotes,
+                keptPage = t.keptPage, keptPageClosed = t.keptPageClosed,
                 steers = t.steers.mapIndexed { i, text ->
                     SteerNote("turn-$i", text, SteerState.Joined, t.interruptedReplies.getOrNull(i)?.takeIf(String::isNotEmpty),
                         t.finishedReplies.getOrNull(i)?.takeIf(String::isNotEmpty))
@@ -1242,6 +1257,7 @@ class ToolLabels(private val tools: ToolIndex, private val legacy: LegacyNames =
             "打开网页" to R.string.tool_open_page,
             "切换网页标签" to R.string.tool_switch_tab,
             "切换网页版本" to R.string.tool_switch_version,
+            "保持网页开着" to R.string.tool_keep_page,
             "读网页" to R.string.tool_read_page,
             "查看下载" to R.string.tool_downloads,
             "查看网页收到的数据" to R.string.tool_network,
