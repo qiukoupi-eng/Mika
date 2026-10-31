@@ -40,8 +40,9 @@ enum class TranscribeMethod { AudioTranscriptions, ChatInputAudio, GeminiInline,
 
 /**
  * 选择存在 [FeatureFlags] 那份设置里,一个键、一段 JSON;读不出来一律当 [SpeechChoice.Auto]。
- * 另记一个「手机自带识别不响应」([systemSilent]):按住说话时服务一直不回话就记上,
- * 用户在设置里重新选「手机自带」时清掉,好让换了识别服务、更新过系统的手机能再试。
+ * 另记一个「手机自带识别不响应」([systemSilent]):按住说话时服务一直不回话,连着 [SILENT_STRIKES] 次才记上
+ * (一次卡住多半是识别服务冷启动慢,不该从此关掉这条路);中间任何一次回了话就重新数。
+ * 用户在设置里选「自动」或「手机自带」时记号和次数都清掉,好让换了识别服务、更新过系统的手机能再试。
  */
 class SpeechSettings(private val prefs: SharedPreferences) {
     private val _choice = MutableStateFlow(read())
@@ -51,17 +52,27 @@ class SpeechSettings(private val prefs: SharedPreferences) {
     val systemSilent: StateFlow<Boolean> = _systemSilent.asStateFlow()
 
     fun set(choice: SpeechChoice) {
+        // 这两种都会去用手机自带识别:用户主动选了,就再给它机会
+        val retry = choice == SpeechChoice.System || choice == SpeechChoice.Auto
         val edit = prefs.edit().putString(KEY, encode(choice).toString())
-        if (choice == SpeechChoice.System) edit.remove(SILENT)
+        if (retry) edit.remove(SILENT).remove(STRIKES)
         edit.apply()
         _choice.value = choice
-        if (choice == SpeechChoice.System) _systemSilent.value = false
+        if (retry) _systemSilent.value = false
     }
 
-    /** 手机自带识别这次一个回调都没给。 */
-    fun markSystemSilent() {
-        prefs.edit().putBoolean(SILENT, true).apply()
-        _systemSilent.value = true
+    /** 手机自带识别这次一个回调都没给:连着第 [SILENT_STRIKES] 次才记成不响应。 */
+    fun noteSystemSilent() {
+        val strikes = prefs.getInt(STRIKES, 0) + 1
+        val edit = prefs.edit().putInt(STRIKES, strikes)
+        if (strikes >= SILENT_STRIKES) edit.putBoolean(SILENT, true)
+        edit.apply()
+        if (strikes >= SILENT_STRIKES) _systemSilent.value = true
+    }
+
+    /** 手机自带识别这次回了话:之前没响应的次数作废。 */
+    fun noteSystemAnswered() {
+        if (prefs.getInt(STRIKES, 0) != 0) prefs.edit().remove(STRIKES).apply()
     }
 
     private fun read(): SpeechChoice {
@@ -101,6 +112,10 @@ class SpeechSettings(private val prefs: SharedPreferences) {
         private const val KEY = "speech_choice"
         private const val TYPE = "type"
         private const val SILENT = "speech_system_silent"
+        private const val STRIKES = "speech_system_silent_strikes"
+
+        /** 连着这么多次不响应才记下。 */
+        const val SILENT_STRIKES = 2
 
         fun get(context: Context) = SpeechSettings(
             context.applicationContext.getSharedPreferences(FeatureFlags.PREFS, Context.MODE_PRIVATE),

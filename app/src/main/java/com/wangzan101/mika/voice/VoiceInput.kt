@@ -42,7 +42,10 @@ class VoiceInput(
         }
         val tag = language ?: SystemSpeech.speechTag(AppLanguage.current(context))
         return when (spec) {
-            is SpeechEngineSpec.System -> SystemSpeechSession(context, spec.onDevice, tag, onNoResponse = settings::markSystemSilent)
+            is SpeechEngineSpec.System -> SystemSpeechSession(
+                context, spec.onDevice, tag,
+                onNoResponse = settings::noteSystemSilent, onAnswered = settings::noteSystemAnswered,
+            )
             is SpeechEngineSpec.Provider -> {
                 val p = spec.provider
                 val t = transcriber(p)

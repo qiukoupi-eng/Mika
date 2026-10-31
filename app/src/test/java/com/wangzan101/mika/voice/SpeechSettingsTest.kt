@@ -29,19 +29,66 @@ class SpeechSettingsTest {
         }
     }
 
-    @Test fun silentMarkSurvivesUntilSystemIsPickedAgain() {
+    @Test fun silentMarkNeedsTwoSilentSessionsInARow() {
         val prefs = MemoryPrefs()
         val s = SpeechSettings(prefs)
         assertEquals(false, s.systemSilent.value)
-        s.markSystemSilent()
-        assertEquals(true, s.systemSilent.value)
-        assertEquals(true, SpeechSettings(prefs).systemSilent.value)
-        // 选别的不清:记号说的是这台手机的识别服务
-        s.set(SpeechChoice.Off)
-        assertEquals(true, SpeechSettings(prefs).systemSilent.value)
-        s.set(SpeechChoice.System)
+        // 一次卡住(冷启动慢)不算
+        s.noteSystemSilent()
         assertEquals(false, s.systemSilent.value)
         assertEquals(false, SpeechSettings(prefs).systemSilent.value)
+        // 次数也记在设置里:重启 App 后再一次不响应就够了
+        SpeechSettings(prefs).noteSystemSilent()
+        assertEquals(true, SpeechSettings(prefs).systemSilent.value)
+    }
+
+    @Test fun anAnswerInBetweenStartsTheCountOver() {
+        val prefs = MemoryPrefs()
+        val s = SpeechSettings(prefs)
+        s.noteSystemSilent()
+        s.noteSystemAnswered()
+        s.noteSystemSilent()
+        assertEquals(false, s.systemSilent.value)
+        s.noteSystemSilent()
+        assertEquals(true, s.systemSilent.value)
+    }
+
+    @Test fun silentMarkSurvivesUntilAutoOrSystemIsPickedAgain() {
+        for (retry in listOf(SpeechChoice.System, SpeechChoice.Auto)) {
+            val prefs = MemoryPrefs()
+            val s = SpeechSettings(prefs)
+            s.noteSystemSilent()
+            s.noteSystemSilent()
+            assertEquals(true, s.systemSilent.value)
+            assertEquals(true, SpeechSettings(prefs).systemSilent.value)
+            // 选别的不清:记号说的是这台手机的识别服务
+            s.set(SpeechChoice.Off)
+            s.set(SpeechChoice.Provider("p", "m", TranscribeMethod.AudioTranscriptions))
+            assertEquals(true, SpeechSettings(prefs).systemSilent.value)
+            s.set(retry)
+            assertEquals(false, s.systemSilent.value)
+            assertEquals(false, SpeechSettings(prefs).systemSilent.value)
+            // 次数也清了:再一次不响应不立刻记上
+            s.noteSystemSilent()
+            assertEquals(retry.toString(), false, s.systemSilent.value)
+        }
+    }
+
+    @Test fun pickingAutoOrSystemClearsAHalfCount() {
+        val prefs = MemoryPrefs()
+        val s = SpeechSettings(prefs)
+        s.noteSystemSilent()
+        s.set(SpeechChoice.Auto)
+        s.noteSystemSilent()
+        assertEquals(false, s.systemSilent.value)
+    }
+
+    @Test fun transcribeMethodNamesNeverChange() {
+        // 设置里存的是名字:改名、删掉都会让旧设置读不回来;新的只往后加,加了在这里补上
+        assertEquals(
+            listOf("AudioTranscriptions", "ChatInputAudio", "GeminiInline", "ChatInputAudioUri", "ChatInputAudioOnly"),
+            TranscribeMethod.entries.map { it.name },
+        )
     }
 
     @Test fun earlierStoredMethodStillReads() {

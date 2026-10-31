@@ -102,13 +102,14 @@ object SystemSpeech {
  * 按着期间识别服务自己结束一段(出最终结果或「没听到」)就立刻重开,各段由 [Segments] 拼起来;
  * 松开后 stopListening,最多等 [FINAL_WAIT_MS] 拿最终结果,等不到就用最后一次中间结果。
  * 每次 startListening 后 [NO_RESPONSE_MS] 内服务一个回调都没有,按 [SystemSpeech.afterSilence] 收尾;
- * 从没回过话时调 [onNoResponse],让设置记下这台手机的自带识别不响应。
+ * 从没回过话时调 [onNoResponse],回过话时调一次 [onAnswered]:设置据此数连着几次不响应,够了才记下。
  */
 class SystemSpeechSession(
     context: Context,
     private val onDevice: Boolean,
     private val languageTag: String,
     private val onNoResponse: () -> Unit = {},
+    private val onAnswered: () -> Unit = {},
 ) : SpeechSession {
     private val context = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
@@ -125,6 +126,8 @@ class SystemSpeechSession(
     private var restartPending = false
     /** 当前识别器回过话没有(任何回调都算)。 */
     private var answered = false
+    /** 这次会话已经报过 [onAnswered];每次会话只报一次,免得每个音量回调都写设置。 */
+    private var reported = false
     // 还没回过话时由 [silence] 收尾:松开后的等待不抢先给「没听清」
     private val timeout = Runnable { if (answered) finish(SpeechEvent.Final(segments.full())) }
     private val silence = Runnable {
@@ -228,6 +231,10 @@ class SystemSpeechSession(
     private fun heard() {
         answered = true
         main.removeCallbacks(silence)
+        if (!reported) {
+            reported = true
+            onAnswered()
+        }
     }
 
     private fun teardown() {
