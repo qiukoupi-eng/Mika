@@ -1,0 +1,160 @@
+package com.wangzan101.mika.voice
+
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class HoldToTalkTest {
+    /** 假会话:只记松开、取消各被调了几次;事件由测试直接喂给 [HoldToTalk.onEvent]。 */
+    private class FakeSession(override val live: Boolean = true) : SpeechSession {
+        override val events: Flow<SpeechEvent> = emptyFlow()
+        var released = 0
+        var cancelled = 0
+        override fun release() { released++ }
+        override fun cancel() { cancelled++ }
+    }
+
+    private var now = 0L
+    private val hold = HoldToTalk(clock = { now })
+
+    private fun pressed(live: Boolean = true): FakeSession = FakeSession(live).also { hold.press(it) }
+
+    @Test
+    fun partialShowsLive() {
+        pressed()
+        hold.onEvent(SpeechEvent.Partial("帮我", "订票"))
+        val s = hold.state.value as HoldToTalk.State.Listening
+        assertEquals("帮我", s.stable)
+        assertEquals("订票", s.tail)
+        assertTrue(s.live)
+    }
+
+    @Test
+    fun releaseGivesDone() {
+        val session = pressed()
+        now = 2_000
+        hold.release()
+        assertEquals(1, session.released)
+        hold.onEvent(SpeechEvent.Final("帮我订票"))
+        assertEquals(HoldToTalk.State.Done("帮我订票"), hold.state.value)
+    }
+
+    @Test
+    fun cancelArmedDropsText() {
+        val session = pressed()
+        now = 2_000
+        hold.onEvent(SpeechEvent.Partial("帮我", "订票"))
+        hold.drag(100f, 80f)
+        assertTrue((hold.state.value as HoldToTalk.State.Listening).cancelArmed)
+        hold.release()
+        assertEquals(HoldToTalk.State.Idle, hold.state.value)
+        assertEquals(1, session.cancelled)
+        assertEquals(0, session.released)
+        // 取消以后迟到的结果不再冒出来
+        hold.onEvent(SpeechEvent.Final("帮我订票"))
+        assertEquals(HoldToTalk.State.Idle, hold.state.value)
+    }
+
+    @Test
+    fun dragBackDisarms() {
+        pressed()
+        hold.drag(100f, 80f)
+        hold.drag(10f, 80f)
+        assertFalse((hold.state.value as HoldToTalk.State.Listening).cancelArmed)
+    }
+
+    @Test
+    fun tooShortIsNoMatch() {
+        pressed()
+        now = 300
+        hold.release()
+        hold.onEvent(SpeechEvent.Final(""))
+        assertEquals(HoldToTalk.State.Problem(null), hold.state.value)
+    }
+
+    @Test
+    fun maxDurationReleases() {
+        val session = pressed()
+        now = 30_000
+        hold.tick()
+        assertEquals(0, session.released)
+        assertEquals(30_000L, (hold.state.value as HoldToTalk.State.Listening).elapsedMs)
+        now = 60_000
+        hold.tick()
+        assertEquals(1, session.released)
+        // 到点以后再 tick 不重复收尾
+        now = 61_000
+        hold.tick()
+        assertEquals(1, session.released)
+    }
+
+    @Test
+    fun providerShowsConverting() {
+        pressed(live = false)
+        now = 2_000
+        hold.release()
+        hold.onEvent(SpeechEvent.Converting)
+        assertEquals(HoldToTalk.State.Converting, hold.state.value)
+        // 服务商的引擎可能晚到一个音量:转文字时不再回到在听
+        hold.onEvent(SpeechEvent.Level(0.5f))
+        assertEquals(HoldToTalk.State.Converting, hold.state.value)
+        hold.onEvent(SpeechEvent.Final("你好"))
+        assertEquals(HoldToTalk.State.Done("你好"), hold.state.value)
+    }
+
+    @Test
+    fun failureSurfaces() {
+        pressed()
+        hold.onEvent(SpeechEvent.Failed(SpeechFailure.Busy))
+        assertEquals(HoldToTalk.State.Problem(SpeechFailure.Busy), hold.state.value)
+    }
+
+    @Test
+    fun disposeCancels() {
+        val session = pressed()
+        hold.dispose()
+        hold.dispose()
+        assertEquals(1, session.cancelled)
+        assertEquals(HoldToTalk.State.Idle, hold.state.value)
+    }
+
+    @Test
+    fun levelMovesWhileListening() {
+        pressed()
+        hold.onEvent(SpeechEvent.Level(0.7f))
+        assertEquals(0.7f, (hold.state.value as HoldToTalk.State.Listening).level, 0.0001f)
+    }
+
+    @Test
+    fun resetAfterDoneGoesIdle() {
+        pressed()
+        now = 2_000
+        hold.release()
+        hold.onEvent(SpeechEvent.Final("好"))
+        hold.reset()
+        assertEquals(HoldToTalk.State.Idle, hold.state.value)
+    }
+
+    @Test
+    fun pressAgainDropsTheOldSession() {
+        val first = pressed()
+        val second = pressed()
+        assertEquals(1, first.cancelled)
+        assertEquals(0, second.cancelled)
+        assertTrue(hold.state.value is HoldToTalk.State.Listening)
+    }
+
+    @Test
+    fun joinRules() {
+        assertEquals("你好", HoldToTalk.join("", "你好"))
+        assertEquals("帮我订票", HoldToTalk.join("帮我", "订票"))
+        assertEquals("book a train", HoldToTalk.join("book", "a train"))
+        assertEquals("帮我 book", HoldToTalk.join("帮我", "book"))
+        assertEquals("好的，订票", HoldToTalk.join("好的，", "订票"))
+        assertEquals("book ", HoldToTalk.join("book ", ""))
+        assertEquals("book a", HoldToTalk.join("book ", "a"))
+    }
+}

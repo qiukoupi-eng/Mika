@@ -81,6 +81,12 @@ class ChatCopyTest {
         assertEquals("补充或改要求…", ChatCopy.placeholder(ComposerMode.Busy, hasHistory = true))
     }
 
+    @Test fun voicePlaceholderSaysHoldToTalk() {
+        assertEquals("按住说话，点一下打字", ChatCopy.voicePlaceholder(ComposerMode.Idle))
+        assertEquals("按住说话插话，点一下打字", ChatCopy.voicePlaceholder(ComposerMode.Busy))
+        assertEquals("按住说话回答，点一下打字", ChatCopy.voicePlaceholder(ComposerMode.Answer))
+    }
+
     private val zone = ZoneId.of("Asia/Shanghai")
     private fun at(y: Int, mo: Int, d: Int, h: Int = 12, mi: Int = 0) =
         LocalDateTime.of(y, mo, d, h, mi).atZone(zone).toInstant().toEpochMilli()

@@ -328,6 +328,8 @@ private fun MikaRoot(store: ProviderStore, monitor: SystemStatusMonitor, activit
                         sourceLegacyText = legacy
                         nav.push(Route.Source)
                     },
+                    voice = app.voice,
+                    openSpeechModel = { nav.push(Route.SpeechModel) },
                 )
             }
         }
