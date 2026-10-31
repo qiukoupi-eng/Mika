@@ -39,8 +39,28 @@ class AppKnowledgeLearningTest {
     private fun request(m: FakeModel) = m.requests.single().single().parts.filterIsInstance<Part.Text>().single().text
 
     private fun draft(m: FakeModel, ev: List<RunEvent>, end: TaskState = unreviewed, outcome: RunOutcome = RunOutcome.Done,
-        current: AppKnowledgeDraft? = null) = runBlocking {
-        AppKnowledgeDrafter(m).draft(AppRunInput("r1", "查看闲鱼", end, outcome, ev, knownTools()), app, store.builtIn(app.name), current, "d1", 5)
+        current: AppKnowledgeDraft? = null, goal: String = "查看闲鱼") = runBlocking {
+        AppKnowledgeDrafter(m).draft(AppRunInput("r1", goal, end, outcome, ev, knownTools()), app, store.builtIn(app.name), current, "d1", 5)
+    }
+
+    /** 带读屏的一次运行:点了名为 [names] 的几个元素,第 [typeAt] 步输入 [typed]。 */
+    private fun tapped(names: List<String>, typed: String? = null): List<RunEvent> {
+        val elements = names.mapIndexed { i, n -> """{"ref":"@e${i + 1}","role":"button","name":"$n"}""" }.joinToString(",")
+        val out = mutableListOf<RunEvent>(
+            RunEvent.ModelReply(1, 1, "", "phone_launch_app", """{"package":"com.taobao.idlefish"}""", null, null, null),
+            RunEvent.ToolResult(2, 1, "phone_launch_app", """{"ok":true}""", true, null),
+            RunEvent.ModelReply(3, 2, "", "phone_list_elements", "{}", null, null, null),
+            RunEvent.ToolResult(4, 2, "phone_list_elements", """{"ok":true,"currentApp":"com.taobao.idlefish","elements":[$elements]}""", false, null),
+        )
+        names.forEachIndexed { i, _ ->
+            out += RunEvent.ModelReply(10L + i, 3 + i, "", "phone_tap", """{"ref":"@e${i + 1}"}""", null, null, null)
+            out += RunEvent.ToolResult(30L + i, 3 + i, "phone_tap", """{"ok":true}""", true, null)
+        }
+        if (typed != null) {
+            out += RunEvent.ModelReply(60, 20, "", "phone_type_text", """{"text":"$typed"}""", null, null, null)
+            out += RunEvent.ToolResult(61, 20, "phone_type_text", """{"ok":true}""", true, null)
+        }
+        return out
     }
 
     @Test fun doneRunAddsFactsWithExistingKnowledgeInRequest() {
@@ -68,13 +88,69 @@ class AppKnowledgeLearningTest {
     }
 
     @Test fun revisionOfCurrentSupplement() {
-        val current = AppKnowledgeDraft("d0", "xianyu", "com.taobao.idlefish", "- 旧的一条。", "r0", AppKnowledgeStage.Verified, 1)
+        val current = AppKnowledgeDraft("d0", "xianyu", "com.taobao.idlefish", "- 旧的一条。", "r0", AppKnowledgeStage.Trial, 1)
         val m = model(facts)
         val d = draft(m, events(), current = current)!!
         assertEquals("d0", d.revises)
         assertTrue(request(m).contains("旧的一条"))
         // 改完和原来一样:不算修订
         assertNull(draft(model("- 旧的一条。"), events(), current = current))
+    }
+
+    @Test fun runSpecificsDoNotBecomeFacts() {
+        val ev = tapped(listOf("消息", "妈妈", "聊一聊", "发送", "我的"), typed = "今晚回家吃饭吗")
+        // 目标里点名的联系人:那一条去掉;内置说明里有的界面名字(「聊一聊」)照留
+        val d = draft(model("- 消息页列表里点联系人「妈妈」进入会话。\n- 商品页底部的「聊一聊」进入和卖家的会话。"), ev, goal = "在闲鱼上给妈妈发消息")!!
+        assertEquals("- 商品页底部的「聊一聊」进入和卖家的会话。", d.markdown)
+        // 照抄了输入的文字:整份丢掉
+        assertNull(draft(model("- 会话里输入今晚回家吃饭吗后点「发送」。"), ev, goal = "在闲鱼上给妈妈发消息"))
+        // 一整句照抄回答
+        val answered = TaskState.Succeeded("已经发给妈妈了,她的头像是一只橘猫", verified = false, reviewed = false)
+        assertNull(draft(model("- 会话列表里显示她的头像是一只橘猫。"), ev, answered, goal = "在闲鱼上给妈妈发消息"))
+    }
+
+    @Test fun failureReasonIsSentAsIs() {
+        val bad = """{"ok":false,"error":"obscured"}"""
+        val m = model("NONE")
+        draft(m, events("""{"ok":true}""", bad, bad), TaskState.Failed("找不到「我发布的」入口", FailKind.GaveUp), RunOutcome.Unknown)
+        assertTrue(request(m), request(m).contains("找不到「我发布的」入口"))
+        assertTrue(request(m).contains("not_done"))
+    }
+
+    @Test fun ruleWordingIsNotAFact() {
+        assertTrue(AppKnowledgeDrafter.ruleLike("- 应该先点「我的」再找设置。"))
+        assertTrue(AppKnowledgeDrafter.ruleLike("- 不要点底部的「外卖」标签。"))
+        assertTrue(AppKnowledgeDrafter.ruleLike("- You should open the search tab first."))
+        assertFalse(AppKnowledgeDrafter.ruleLike("- 订单页的「不要了」按钮取消订单。"))
+        assertFalse(AppKnowledgeDrafter.ruleLike("- 首页顶部是搜索框。"))
+        val d = draft(model("- 必须先登录才能看私信。\n- 私信列表在「消息」标签里。"), events())!!
+        assertEquals("- 私信列表在「消息」标签里。", d.markdown)
+    }
+
+    @Test fun verifiedNotesAndAPlainDoneRunAskNothing() {
+        val verified = AppKnowledgeDraft("d0", "xianyu", "com.taobao.idlefish", "- 旧的一条。", "r0", AppKnowledgeStage.Verified, 1)
+        val m = model(facts)
+        assertNull(draft(m, events(), current = verified))
+        assertTrue(m.requests.isEmpty())
+        // 磕绊的照样请
+        val bad = """{"ok":false,"error":"obscured"}"""
+        assertTrue(draft(model(facts), events("""{"ok":true}""", bad, bad), current = verified) != null)
+    }
+
+    @Test fun olderFullAppMdSupplementCanBeRevised() {
+        val old = AppKnowledgeDraft("d0", "xianyu", "com.taobao.idlefish", "---\nname: xianyu\n---\n## 界面\n首页顶部有搜索入口。", "r0", AppKnowledgeStage.Trial, 1)
+        assertEquals("- 首页顶部有搜索入口。", AppKnowledgeDrafter.facts(old.markdown))
+        val m = model("- 首页顶部有搜索入口。\n- 「我的」页里有「我发布的」。")
+        assertEquals("d0", draft(m, events(), current = old)!!.revises)
+        assertTrue(request(m).contains("- 首页顶部有搜索入口。"))
+    }
+
+    @Test fun revisionOnTrialShadowsThePreviousOne() {
+        val v1 = AppKnowledgeDraft("v1", "xianyu", "p", "- a", "r", AppKnowledgeStage.Verified, 1)
+        val v2 = AppKnowledgeDraft("v2", "xianyu", "p", "- b", "r", AppKnowledgeStage.Trial, 2, revises = "v1")
+        assertEquals("v2", AppKnowledgeTrial.inUse(listOf(v1, v2), "xianyu")?.id)
+        assertEquals("v1", AppKnowledgeTrial.inUse(listOf(v1, v2.copy(stage = AppKnowledgeStage.Archived)), "xianyu")?.id)
+        assertEquals("v1", AppKnowledgeTrial.inUse(listOf(v1, v2.copy(stage = AppKnowledgeStage.Draft)), "xianyu")?.id)
     }
 
     @Test fun failedAndBumpyRunsLearnLessons() {

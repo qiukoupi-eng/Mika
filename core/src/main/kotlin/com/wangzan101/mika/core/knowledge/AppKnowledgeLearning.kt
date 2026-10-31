@@ -37,23 +37,24 @@ data class AppKnowledgeDraft(val id: String, val appName: String, val packageNam
 /** 注入时附在 App 说明后面的自学补充;[trial] 为 true 时还在试用,没被办成的任务用过。 */
 data class LearnedNote(val text: String, val trial: Boolean)
 
+
 /**
- * 自学的 App 知识。每个 App 至多一份待确认的([AppKnowledgeStage.Draft])、至多一份在用的(试用或已核实);
- * 收下一份修订就替换在用的那份(旧的归档)。
+ * 自学的 App 知识。每个 App 至多一份待确认的([AppKnowledgeStage.Draft])、只注入一份([inUse])。
+ * 收下的修订试用期间暂时顶替它修订的那份(那份不注入、也不删);修订转正式才把旧的归档,修订被归档就换回旧的。
  */
 interface AppKnowledgeDraftStore {
     fun all(): List<AppKnowledgeDraft>
-    /** 同一个 App 已有待确认的就不收,返回 false。 */
+    /** 同一个 App 已有待确认的,或 [AppKnowledgeDraft.revises] 不是现在注入的那份(过时的修订),就不收,返回 false。 */
     fun putPending(draft: AppKnowledgeDraft): Boolean
+    /** 修订的不是现在注入的那份(过时了)就不收,返回 false。 */
     fun approve(id: String): Boolean
     fun reject(id: String): Boolean
     /** 用过试用中那份的运行结束了:[good] 是这次算办成([LearnGate]);按 [AppKnowledgeTrial.next] 转正式、留着或归档。 */
     fun recordTrial(appName: String, good: Boolean): AppKnowledgeDraft?
     fun notes(): Map<String, LearnedNote>
 
-    /** 这个 App 在用的那份补充(试用或已核实)。 */
-    fun inUse(appName: String): AppKnowledgeDraft? =
-        all().firstOrNull { it.appName == appName && (it.stage == AppKnowledgeStage.Trial || it.stage == AppKnowledgeStage.Verified) }
+    /** 这个 App 现在注入的那份补充。 */
+    fun inUse(appName: String): AppKnowledgeDraft? = AppKnowledgeTrial.inUse(all(), appName)
 }
 
 /** 试用结果怎么改阶段;和个人技能一样:顺利办成的转正式,从教训学来的要连着两次不好才归档,别的一次不好就归档。 */
@@ -70,6 +71,13 @@ object AppKnowledgeTrial {
         }
         return d.copy(stage = stage, trialOutcomes = outcomes)
     }
+
+    /** [rows] 里 [appName] 注入的那份:试用或已核实,且没被一份试用中的修订暂时顶替。 */
+    fun inUse(rows: List<AppKnowledgeDraft>, appName: String): AppKnowledgeDraft? {
+        val app = rows.filter { it.appName == appName }
+        val shadowed = app.filter { it.stage == AppKnowledgeStage.Trial }.mapNotNull { it.revises }.toSet()
+        return app.firstOrNull { (it.stage == AppKnowledgeStage.Trial || it.stage == AppKnowledgeStage.Verified) && it.id !in shadowed }
+    }
 }
 
 /** 起草要看的一次运行:[end] 和 [outcome] 是它的结局与交出回答后判的结局。 */
@@ -79,14 +87,17 @@ data class AppRunInput(
 
 /**
  * 一次运行在某个 App 里的经过属于哪种:[Done] 顺利办成;[Bumpy] 办成了但途中出错、界面没变或来回返回;
- * [NotDone] 没办成或只办成一部分。后两种是「下次能少走弯路」的教训。
+ * [NotDone] 没办成或只办成一部分。后两种是「下次能少走弯路」的教训。[wire] 是请求里写给模型的结局。
  */
-enum class AppRunKind { Done, Bumpy, NotDone }
+enum class AppRunKind(val wire: String) { Done("done"), Bumpy("bumpy"), NotDone("not_done") }
 
 /**
  * 把一次运行在某个 App 里的经过,写成对这个 App 知识补充的修订:请一次模型(不带工具),交给它这个 App 的内置说明、
  * 在用的补充、结局和精简的动作清单(带出错码、界面变没变),要回补充改完以后的全文;没有值得补的(最常见)什么也不产出。
- * 原始界面和输入的文字不进请求;目标与回答里的值、数字换掉。
+ *
+ * 防泄漏和起草个人技能用同一套([SkillRedactor]):请求里目标的值、输入的文字、数字换掉;交回的补充里再把回答、
+ * 输入的文字、目标里点名的界面元素(联系人、商品名这类)和网页上的元素名当具体值换掉,照抄了原文的整份丢掉;
+ * 内置说明和在用的补充里本来就有的字(界面上的名字)不算。换不干净(还带着具体值)或写成规定的那几条去掉。
  */
 class AppKnowledgeDrafter(private val model: ChatModel) {
     suspend fun draft(run: AppRunInput, app: KnowledgeEntry, builtIn: String?, current: AppKnowledgeDraft?, id: String, atMs: Long): AppKnowledgeDraft? {
@@ -94,35 +105,50 @@ class AppKnowledgeDrafter(private val model: ChatModel) {
         if (Eligibility.interrupted(run.events) != null || run.events.any { it is RunEvent.Replay && it.matched }) return null
         val lines = ActionDigest.of(run.events, run.tools).filter { it.where in app.packages }
         val kind = kind(run.end, run.outcome, lines, run.tools) ?: return null
+        // 已经核实过的补充,一次顺利办成多半说明不了新东西(模型也只会回 NONE):不请
+        if (kind == AppRunKind.Done && current?.stage == AppKnowledgeStage.Verified) return null
         val said = when (val end = run.end) {
             is TaskState.Succeeded -> end.answer
             is TaskState.Failed -> end.reason
             else -> return null
         }
-        val existing = current?.let { FrontMatter.parse(it.markdown).second.trim() }
-        val keepDigits = (app.packages + listOfNotNull(builtIn, existing))
-            .flatMap { Regex("\\d{2,}").findAll(it).map { m -> m.value }.toList() }.toSet()
-        val literals = SkillRedactor.literals(run.goal, listOf(said)) + SkillRedactor.textLiterals(listOf(said))
-        val request = SkillRedactor.scrubNumbers(SkillRedactor.redact(buildString {
-            appendLine("App:" + app.display + " (" + app.packages.joinToString(", ") + ")")
-            appendLine("结局:" + KIND_LABEL.getValue(kind))
-            appendLine("目标:" + run.goal)
-            appendLine((if (run.end is TaskState.Failed) "没办成的原因:" else "回答:") + said)
-            appendLine("这个 App 现有的说明:")
-            appendLine(builtIn?.takeIf { it.isNotBlank() } ?: NONE_LABEL)
-            appendLine("已有的补充:")
-            appendLine(existing?.takeIf { it.isNotBlank() } ?: NONE_LABEL)
-            appendLine("这次在这个 App 里的动作:")
-            append(ActionDigest.render(lines))
-        }, literals), keepDigits)
+        val existing = current?.let { facts(it.markdown) }
+        // 本来就可以出现的字:内置说明、在用的补充、App 的名字
+        val known = listOfNotNull(builtIn, existing, app.display, app.name).plus(app.aliases).joinToString("\n")
+        val knownNorm = SkillRedactor.norm(known)
+        val keepDigits = (app.packages + known).flatMap { Regex("\\d{2,}").findAll(it).map { m -> m.value }.toList() }.toSet()
+        val typed = ActionDigest.typed(run.events, run.tools)
+        val goal = SkillRedactor.norm(run.goal)
+        // 目标里点名的元素(给「妈妈」发消息时点的「妈妈」)和网页上的元素名是这一次的具体内容
+        val named = lines.mapNotNull { l -> l.target?.takeIf { t -> l.fromPage || (t.length >= 2 && goal.contains(SkillRedactor.norm(t))) } }
+        val goalLiterals = SkillRedactor.literals(run.goal, emptyList())
+        val request = SkillRedactor.scrubNumbers(SkillRedactor.redact(Prompts.fill(INPUT, mapOf(
+            "app" to app.display + " (" + app.packages.joinToString(", ") + ")",
+            "outcome" to kind.wire,
+            "goal" to run.goal,
+            "said" to said,
+            "built_in" to builtIn.orEmpty(),
+            "current" to existing.orEmpty(),
+            "actions" to ActionDigest.render(lines),
+        )), goalLiterals + SkillRedactor.textLiterals(typed)), keepDigits)
         val reply = try {
             model.complete(PROMPT, listOf(Message(Role.User, listOf(Part.Text(request)), Author.Mika)), emptyList())
         } catch (e: CancellationException) { throw e }
         catch (_: Exception) { return null }
         val raw = SkillDrafter.stripFence(reply.parts.filterIsInstance<Part.Text>().joinToString("") { it.text })
         if (raw.isEmpty() || raw.equals(NOTHING, ignoreCase = true)) return null
-        val facts = SkillRedactor.scrubNumbers(SkillRedactor.redact(raw, literals), keepDigits)
-        if (!valid(facts, run.tools) || norm(facts) == existing?.let(::norm)) return null
+        // 格式和上限按模型交回的原样查:换掉具体值之后再去掉的几条不该让超长的回复混过去
+        if (!valid(raw, run.tools)) return null
+        val literals = (SkillRedactor.literals(run.goal, listOf(said)) + SkillRedactor.textLiterals(typed + named + said))
+            .filterNot { knownNorm.contains(SkillRedactor.norm(it)) }.toSet()
+        val redacted = SkillRedactor.redact(raw, literals)
+        // 先按原样查:写了密码、卡号这类东西说明起草走偏了,数字换掉也不收
+        if (SensitiveFilter.hit(redacted) != null) return null
+        if (SkillRedactor.leaks(redacted, typed + named, known) || SkillRedactor.leaks(redacted, listOf(said), known, ANSWER_LEAK_WINDOW)) return null
+        val kept = SkillRedactor.scrubNumbers(redacted, keepDigits).lines().map { it.trim() }.filter { it.isNotEmpty() }
+            .filterNot { SkillRedactor.PLACEHOLDER in it || ruleLike(it) }
+        val facts = kept.joinToString("\n")
+        if (kept.isEmpty() || facts == existing) return null
         return AppKnowledgeDraft(id, app.name, app.packages.first(), facts, run.runId, AppKnowledgeStage.Draft, atMs,
             lesson = kind != AppRunKind.Done, revises = current?.id)
     }
@@ -139,18 +165,34 @@ class AppKnowledgeDrafter(private val model: ChatModel) {
         /** 补充至多这么多条、这么多字:注入时附在说明后面,不该比说明本身还长。 */
         const val MAX_FACTS = 12
         const val MAX_CHARS = 1500
+        /**
+         * 照抄回答按这么长的一段算:回答本来就在讲界面(「找不到『我发布的』入口」),短片段和事实重合是常事;
+         * 一整句原样搬进补充才说明把这一次的结果当成了事实。
+         */
+        const val ANSWER_LEAK_WINDOW = 12
         /** 模型说「没有值得补的」时只回这个词。 */
         const val NOTHING = "NONE"
 
         val PROMPT: String by lazy { Prompts.role("app_knowledge") }
+        private val INPUT: String by lazy { Prompts.role("app_knowledge_input") }
 
-        private const val NONE_LABEL = "(没有)"
-        private val KIND_LABEL = mapOf(
-            AppRunKind.Done to "办成了",
-            AppRunKind.Bumpy to "办成了,途中有出错、界面没变或来回返回的步骤",
-            AppRunKind.NotDone to "没办成或只办成一部分",
-        )
         private val TOOL_MENTION = Regex("`([a-z][a-z0-9_]*)`")
+        /**
+         * 写成做法或规定的说法(知识只写现象,见 docs/knowledge-format.md)。只收几乎不会出现在界面名字里的词,
+         * 免得误伤事实:「不要」可能是按钮上的字,所以只在「不要点、不要用……」这类搭配里算。
+         */
+        private val RULE = Regex("应该|应当|必须|务必|切勿|请勿|一定要|不要(?:点|用|选|进|去|再)|\\b(?:should|must|don't|do not)\\b", RegexOption.IGNORE_CASE)
+
+        /** 这一行是规定不是事实。 */
+        fun ruleLike(line: String): Boolean = RULE.containsMatchIn(line)
+
+        /**
+         * 一份补充的事实行:去掉头部、标题和空行,不是「- 」开头的补上。旧版本起草的是整份 APP.md,
+         * 这样也能接着修订、比较改了哪些行。
+         */
+        fun facts(markdown: String): String = FrontMatter.parse(markdown).second.lines().map { it.trim() }
+            .filter { it.isNotEmpty() && !it.startsWith("#") }
+            .joinToString("\n") { if (it.startsWith("- ")) it else "- " + it.removePrefix("-").removePrefix("*").trim() }
 
         /** 这次运行在 [app] 里的经过算哪种;不值得学的为 null(取消的、判不成的、核查没过的、动作太少的)。 */
         fun kind(end: TaskState, outcome: RunOutcome, lines: List<ActionLine>, tools: ToolIndex): AppRunKind? {
@@ -183,7 +225,5 @@ class AppKnowledgeDrafter(private val model: ChatModel) {
                 TOOL_MENTION.findAll(facts).all { it.groupValues[1] in tools.names } &&
                 SensitiveFilter.hit(facts) == null
         }
-
-        private fun norm(s: String) = s.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
     }
 }

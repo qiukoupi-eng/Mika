@@ -2,6 +2,7 @@ package com.wangzan101.mika.knowledge
 
 import com.wangzan101.mika.core.knowledge.AppKnowledgeDraft
 import com.wangzan101.mika.core.knowledge.AppKnowledgeStage
+import com.wangzan101.mika.core.knowledge.LearnedNote
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -32,16 +33,48 @@ class AppKnowledgeFilesTest {
         assertTrue(File(tmp.root, "knowledge/app-drafts/archive").listFiles().orEmpty().isNotEmpty())
     }
 
-    @Test fun revisionReplacesTheOneInUse() {
+    private fun verifiedD1(): AppKnowledgeFiles {
         val files = AppKnowledgeFiles(tmp.root)
         files.putPending(draft("d1")); files.approve("d1"); files.recordTrial("qq", true)
+        return files
+    }
+
+    @Test fun revisionReplacesTheOneInUseOnceItWorks() {
+        val files = verifiedD1()
         // 在用的那份不挡新的修订
         assertTrue(files.putPending(draft("d2", "$facts\n- 消息页右上角的加号能建群。", revises = "d1")))
         assertEquals(facts, files.notes().getValue("qq").text)
         assertTrue(files.approve("d2"))
+        // 试用期间注入修订,旧的那份留着
+        assertEquals("d2", files.inUse("qq")?.id)
+        assertTrue(files.notes().getValue("qq").let { it.trial && it.text.contains("加号") })
+        assertEquals(AppKnowledgeStage.Verified, files.all().single { it.id == "d1" }.stage)
+        assertEquals(AppKnowledgeStage.Verified, files.recordTrial("qq", true)?.stage)
         assertEquals(AppKnowledgeStage.Archived, files.all().single { it.id == "d1" }.stage)
         assertEquals("d2", files.inUse("qq")?.id)
-        assertTrue(files.notes().getValue("qq").text.contains("加号"))
+    }
+
+    @Test fun badTrialOfRevisionRestoresThePreviousNotes() {
+        val files = verifiedD1()
+        files.putPending(draft("d2", "$facts\n- 消息页右上角的加号能建群。", revises = "d1")); files.approve("d2")
+        assertEquals(AppKnowledgeStage.Archived, files.recordTrial("qq", false)?.stage)
+        assertEquals("d1", files.inUse("qq")?.id)
+        assertEquals(LearnedNote(facts, trial = false), AppKnowledgeFiles(tmp.root).notes().getValue("qq"))
+        // 用户把试用中的修订归档也一样
+        files.putPending(draft("d3", "- 别的。", revises = "d1")); files.approve("d3"); files.reject("d3")
+        assertEquals("d1", files.inUse("qq")?.id)
+    }
+
+    @Test fun staleRevisionIsRefused() {
+        val files = verifiedD1()
+        // 两次运行都对着 d1 起草;先收下的那份在用之后,另一份过时了
+        assertTrue(files.putPending(draft("r1", "- 一。", revises = "d1"))); assertTrue(files.approve("r1"))
+        assertFalse(files.putPending(draft("r2", "- 二。", revises = "d1")))
+        // 已经存下的过时修订也收不下
+        files.putPending(draft("r3", "- 三。", revises = "r1"))
+        files.reject("r1")
+        assertFalse(files.approve("r3"))
+        assertEquals("d1", files.inUse("qq")?.id)
     }
 
     @Test fun failedTrialIsArchivedAndNeverInjected() {

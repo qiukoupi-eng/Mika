@@ -16,6 +16,7 @@ import com.wangzan101.mika.core.skills.PersonalSkill
 import com.wangzan101.mika.core.skills.PersonalSkills
 import com.wangzan101.mika.core.skills.SkillStatus
 import com.wangzan101.mika.core.knowledge.AppKnowledgeDraftStore
+import com.wangzan101.mika.core.knowledge.AppKnowledgeDrafter
 import com.wangzan101.mika.core.knowledge.AppKnowledgeStage
 import com.wangzan101.mika.settings.MemorySettings
 import com.wangzan101.mika.settings.MemorySwitches
@@ -227,7 +228,8 @@ data class SkillsUi(val drafts: List<SkillRow> = emptyList(), val installed: Lis
             val appRows = all.filter { it.stage != AppKnowledgeStage.Archived }.map { d ->
                 val row = AppKnowledgeRow(d.id, d.appName, d.markdown, d.stage)
                 if (d.stage != AppKnowledgeStage.Draft) row
-                else row.copy(revision = d.revises != null, changedLines = changedLines(d.revises?.let { byId[it] }?.markdown.orEmpty(), d.markdown))
+                else row.copy(revision = d.revises != null,
+                    changedLines = changedLines(d.revises?.let { byId[it] }?.markdown?.let(AppKnowledgeDrafter::facts).orEmpty(), d.markdown))
             }
             return SkillsUi(drafts, installed.sortedBy { it.status == SkillStatus.suspended }.map { row(it.name, it, skills) }, appRows)
         }

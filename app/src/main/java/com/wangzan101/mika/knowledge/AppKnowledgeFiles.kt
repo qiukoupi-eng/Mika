@@ -13,8 +13,9 @@ import java.nio.file.StandardCopyOption
 import java.util.UUID
 
 /**
- * App 知识补充的各个版本与阶段账本;待确认的(草稿)不会被知识库读取。每个 App 至多一份待确认的;
- * 收下一份就把这个 App 在用的那份归档(改动前的文件都留在 archive 里)。
+ * App 知识补充的各个版本与阶段账本;待确认的(草稿)不会被知识库读取。每个 App 至多一份待确认的、只注入一份
+ * ([AppKnowledgeTrial.inUse]):收下的修订试用期间顶替旧的那份,转正式才把旧的归档,被归档就换回旧的
+ * (改动前的文件都留在 archive 里)。
  */
 class AppKnowledgeFiles(dir: File) : AppKnowledgeDraftStore {
     private val root = File(dir, "knowledge/app-drafts")
@@ -32,9 +33,10 @@ class AppKnowledgeFiles(dir: File) : AppKnowledgeDraftStore {
             }
 
     @Synchronized override fun putPending(draft: AppKnowledgeDraft): Boolean {
+        val rows = all()
         if (!idPattern.matches(draft.id) || !idPattern.matches(draft.appName) ||
             draft.stage != AppKnowledgeStage.Draft ||
-            all().any { it.appName == draft.appName && it.stage == AppKnowledgeStage.Draft }) return false
+            rows.any { it.appName == draft.appName && it.stage == AppKnowledgeStage.Draft } || stale(draft, rows)) return false
         save(draft)
         return true
     }
@@ -42,8 +44,7 @@ class AppKnowledgeFiles(dir: File) : AppKnowledgeDraftStore {
     @Synchronized override fun approve(id: String): Boolean {
         val rows = all()
         val old = rows.firstOrNull { it.id == id && it.stage == AppKnowledgeStage.Draft } ?: return false
-        rows.filter { it.appName == old.appName && it.id != id && it.stage != AppKnowledgeStage.Archived }
-            .forEach { save(it.copy(stage = AppKnowledgeStage.Archived)) }
+        if (stale(old, rows)) return false
         save(old.copy(stage = AppKnowledgeStage.Trial))
         return true
     }
@@ -54,17 +55,28 @@ class AppKnowledgeFiles(dir: File) : AppKnowledgeDraftStore {
         return true
     }
 
+    /** 试用的是注入的那份;转正式时它顶替过的旧版本一并归档,归档时旧版本自然换回来。 */
     @Synchronized override fun recordTrial(appName: String, good: Boolean): AppKnowledgeDraft? {
-        val old = all().firstOrNull { it.appName == appName && it.stage == AppKnowledgeStage.Trial } ?: return null
+        val rows = all()
+        val old = AppKnowledgeTrial.inUse(rows, appName)?.takeIf { it.stage == AppKnowledgeStage.Trial } ?: return null
         val next = AppKnowledgeTrial.next(old, good)
+        if (next.stage == AppKnowledgeStage.Verified) rows.filter {
+            it.appName == appName && it.id != old.id && (it.stage == AppKnowledgeStage.Trial || it.stage == AppKnowledgeStage.Verified)
+        }.forEach { save(it.copy(stage = AppKnowledgeStage.Archived)) }
         save(next)
         return next
     }
 
-    /** 在用的补充;旧版本起草的是带头部的整份 APP.md,只取正文。 */
-    @Synchronized override fun notes(): Map<String, LearnedNote> =
-        all().filter { it.stage == AppKnowledgeStage.Trial || it.stage == AppKnowledgeStage.Verified }
+    /** 每个 App 注入的那份;旧版本起草的是带头部的整份 APP.md,只取正文。 */
+    @Synchronized override fun notes(): Map<String, LearnedNote> {
+        val rows = all()
+        return rows.map { it.appName }.distinct().mapNotNull { app -> AppKnowledgeTrial.inUse(rows, app) }
             .associate { row -> row.appName to LearnedNote(FrontMatter.parse(row.markdown).second.trim(), trial = row.stage == AppKnowledgeStage.Trial) }
+    }
+
+    /** 修订起草时对着的那份已经不是现在注入的了(另一份修订先收下了):收下它会丢掉那一份。 */
+    private fun stale(draft: AppKnowledgeDraft, rows: List<AppKnowledgeDraft>) =
+        draft.revises != AppKnowledgeTrial.inUse(rows, draft.appName)?.id
 
     private fun save(row: AppKnowledgeDraft) {
         val d = File(root, row.id)

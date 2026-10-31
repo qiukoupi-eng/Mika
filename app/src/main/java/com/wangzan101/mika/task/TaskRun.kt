@@ -905,7 +905,7 @@ class TaskRun(
             k.switches, k.memory, memoryRuntime.skills(), k.catalog,
             extractor = k.memory?.let { MemoryExtractor(k.light ?: k.model) },
             drafter = SkillDrafter(k.model),
-            appDrafter = AppKnowledgeDrafter(k.model),
+            appDrafter = AppKnowledgeDrafter(k.light ?: k.model),
             appDrafts = memoryRuntime.appKnowledge(),
             ids = { UUID.randomUUID().toString() },
             autoApprove = env.evalHooks.autoApproveSkillDrafts,

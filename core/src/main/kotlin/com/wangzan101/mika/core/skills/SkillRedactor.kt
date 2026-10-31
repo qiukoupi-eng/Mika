@@ -63,6 +63,23 @@ object SkillRedactor {
         }.joinToString("\n")
     }
 
+    /**
+     * 草稿里照抄了 [sources](屏幕原文、输入的文字、回答)的片段:[window] 个字以上、[known] 里没有的一段原样出现。
+     * 替换没换干净时据此丢掉草稿;[known] 是本来就可以出现的字(目标、内置说明里的界面名字)。
+     */
+    fun leaks(draft: String, sources: List<String>, known: String, window: Int = LEAK_WINDOW): Boolean {
+        if (sources.isEmpty()) return false
+        val k = norm(known)
+        return sources.map(::norm).any { t ->
+            (0..t.length - window).any { i ->
+                val w = t.substring(i, i + window)
+                w.isNotBlank() && draft.contains(w) && !k.contains(w)
+            }
+        }
+    }
+
+    const val LEAK_WINDOW = 4
+
     private fun numbers(t: String) = AMOUNT.findAll(t).map { it.value.trim() } + DIGITS.findAll(t).map { it.value }
 
     // 一个字的值换掉会把正文搅乱(「妈」「号」);纯数字不受此限
