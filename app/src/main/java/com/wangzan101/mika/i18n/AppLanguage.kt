@@ -6,13 +6,14 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.Configuration
 import android.content.res.Resources
+import android.icu.util.ULocale
 import android.os.Build
 import android.os.LocaleList
 import java.util.Locale
 
 /**
- * App 界面的语言:跟随系统、中文、English。资源里英文是默认(`values/`),简体中文在 `values-zh/`、繁体中文在 `values-b+zh+Hant/`,
- * 所以「跟随系统」时中文系统显示对应的中文,其他语言的系统显示英文。
+ * App 界面的语言:跟随系统、简体中文、繁體中文、English。资源里英文是默认(`values/`),简体中文在 `values-zh/`、繁体中文在 `values-b+zh+Hant/`,
+ * 安卓按文字体系挑资源,所以「跟随系统」时简体、繁体中文的系统各显示对应的中文,其他语言的系统显示英文。
  *
  * 安卓 13 起由系统的「应用语言」管(LocaleManager):系统记住选择、套到整个进程、重建界面,
  * 系统设置里的「应用语言」和这里的开关是同一个值。安卓 11、12 没有这项,由这里记在本地,
@@ -20,7 +21,8 @@ import java.util.Locale
  */
 enum class AppLanguage(val tag: String?) {
     System(null),
-    Chinese("zh-Hans"),
+    SimplifiedChinese("zh-Hans"),
+    TraditionalChinese("zh-Hant"),
     English("en");
 
     companion object {
@@ -47,11 +49,18 @@ enum class AppLanguage(val tag: String?) {
             },
         )
 
-        /** 语言标签对应哪一项:中文的各种写法都是中文,其他非空的标签是英文。 */
-        fun fromTag(tag: String?): AppLanguage = when {
-            tag.isNullOrEmpty() -> System
-            Locale.forLanguageTag(tag).language == "zh" -> Chinese
-            else -> English
+        /** 语言标签对应哪一项:见 [fromTag];标签里没写文字体系时,按 ICU 的常见写法补出来。 */
+        fun fromTag(tag: String?): AppLanguage = fromTag(tag) { ULocale.addLikelySubtags(ULocale.forLanguageTag(it)).script }
+
+        /**
+         * 中文按文字体系分:写的或 [likelyScript] 补出的是 Hant 就是繁體中文,别的中文是简体中文;
+         * 其他非空的标签是英文。以前选「中文」存下的 zh-Hans 仍是简体中文。
+         */
+        internal fun fromTag(tag: String?, likelyScript: (String) -> String): AppLanguage {
+            if (tag.isNullOrEmpty()) return System
+            val l = Locale.forLanguageTag(tag)
+            if (l.language != "zh") return English
+            return if (l.script.ifEmpty { likelyScript(tag) } == "Hant") TraditionalChinese else SimplifiedChinese
         }
 
         /** 换语言并重建界面。安卓 13 起交给系统(系统自己重建);之前记在本地,重建 [context] 所在的界面。 */

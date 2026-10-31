@@ -2,7 +2,7 @@
 <resources>
     <string name="language_title">語言</string>
     <string name="language_system">跟隨系統</string>
-    <string name="language_system_detail">系統是中文時用中文,其他語言時用英文</string>
+    <string name="language_system_detail">系統是簡體或繁體中文時用對應的中文,其他語言時用英文</string>
     <string name="settings_basic">基本</string>
     <string name="settings_model">模型</string>
     <string name="settings_not_set">未設定</string>

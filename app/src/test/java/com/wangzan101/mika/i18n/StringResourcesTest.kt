@@ -58,12 +58,27 @@ class StringResourcesTest {
 
     @Test
     fun languageFromTag() {
-        assertEquals(AppLanguage.System, AppLanguage.fromTag(null))
-        assertEquals(AppLanguage.System, AppLanguage.fromTag(""))
-        assertEquals(AppLanguage.Chinese, AppLanguage.fromTag("zh-Hans"))
-        assertEquals(AppLanguage.Chinese, AppLanguage.fromTag("zh-Hant"))
-        assertEquals(AppLanguage.English, AppLanguage.fromTag("en"))
-        assertEquals(AppLanguage.English, AppLanguage.fromTag("fr-FR"))
+        // 单测里没有安卓的 ICU:补文字体系这一步换成假的,只认一个私用标签是繁体
+        val likely = { tag: String -> if (tag == "zh-x-hant") "Hant" else "Hans" }
+        fun of(tag: String?) = AppLanguage.fromTag(tag, likely)
+        assertEquals(AppLanguage.System, of(null))
+        assertEquals(AppLanguage.System, of(""))
+        // 以前选「中文」存下的是 zh-Hans
+        assertEquals(AppLanguage.SimplifiedChinese, of("zh-Hans"))
+        assertEquals(AppLanguage.TraditionalChinese, of("zh-Hant"))
+        assertEquals(AppLanguage.SimplifiedChinese, of("zh"))
+        // 没写文字体系时按补出来的算
+        assertEquals(AppLanguage.TraditionalChinese, of("zh-x-hant"))
+        // 写了文字体系就按写的,不再补
+        assertEquals(AppLanguage.SimplifiedChinese, AppLanguage.fromTag("zh-Hans") { "Hant" })
+        assertEquals(AppLanguage.English, of("en"))
+        assertEquals(AppLanguage.English, of("fr-FR"))
+    }
+
+    @Test
+    fun eachLanguageHasItsOwnTag() {
+        assertEquals(listOf(null, "zh-Hans", "zh-Hant", "en"), AppLanguage.entries.map { it.tag })
+        for (l in AppLanguage.entries) assertEquals(l, AppLanguage.fromTag(l.tag) { "Hans" })
     }
 
     private fun args(s: String): Set<String> = Regex("%(\\d+\\$)?[sd]").findAll(s).map { it.value }.toSet()
