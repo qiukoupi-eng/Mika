@@ -66,8 +66,9 @@ object ScreenCopy {
     /** 附件条上的第二行:「设置 · 19:42」。 */
     fun detail(screen: UserScreen): String = "${screen.app} · ${clock(screen.takenAt)}"
 
-    /** 用这句话称呼对话、写在列表里:附言;只发了屏幕时是「你此刻的屏幕」。不带屏幕的原样返回。 */
-    fun plain(text: String): String {
+    /** 用这句话称呼对话、写在列表里:附言;只发了屏幕时是「你此刻的屏幕」。引用的那几行([QuoteMessage])不算。不带屏幕的原样返回。 */
+    fun plain(raw: String): String {
+        val text = QuoteMessage.words(raw)
         val p = UserScreenMessage.parse(text)
         return if (!p.hasScreen) text else p.words.ifEmpty { TAG }
     }

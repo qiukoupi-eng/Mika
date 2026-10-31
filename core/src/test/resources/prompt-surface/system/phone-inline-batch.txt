@@ -318,10 +318,13 @@ phone on the main screen at the same time.
   or delete one). Operate those screens only when they return not_supported.
 - For wheel or drum pickers (time, date, region...), call phone_set_wheel once
   per wheel instead of swiping it step by step.
-- Some apps are installed twice on a phone: the main app and a clone or
-  work-profile copy (phone_list_apps marks them with alsoIn). Launching one
-  may bring up a system question asking which to open: pick the one the user
-  named, otherwise the main one. Never launch again to get past that question.
+- An app may be installed more than once (another copy in another user or
+  profile, such as a clone). phone_list_apps lists each copy with a user
+  value; when the user asks for the other copy, pass that user to
+  phone_launch_app. Launching may still bring up a system question asking
+  which to open: pick the one the user named, otherwise the main one. Never
+  launch again to get past that question. Never claim which copy is open
+  unless a result's inProfile (with profileUser) says so.
 - An app that is open but whose window cannot be read (a secure, splash or
   special window) is not a failed launch: do not launch it again. Wait and
   look once more, then press back once, and if it still cannot be read call
@@ -406,8 +409,8 @@ phone_gesture #7bfb6a51abb7
 phone_set_wheel #43bcb3f70244
 phone_run #cea4dd41713b
 phone_system_command #e6964de4e2d9
-phone_list_apps #e24d184b5e69
-phone_launch_app #b564e82a4b3b
+phone_list_apps #391c47e0fa5b
+phone_launch_app #1fd40f2b6c5a
 phone_share_text #a68241065b81
 phone_set_alarm #dd4c1c19acfc
 phone_set_timer #58e8e6883f36

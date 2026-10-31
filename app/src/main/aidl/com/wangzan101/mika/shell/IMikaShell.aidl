@@ -84,6 +84,15 @@ interface IMikaShell {
     // Mika 的进程被杀后助手要不要把它拉起来(RestoreWish.flags:1=拉起来 2=拉起来前写回无障碍服务)。
     // 助手读不到 Mika 的设置,只记最后交来的这一份;Mika 每次交接后和心愿变了时都交一次
     void setRestoreWish(int flags) = 37;
+    // 能打开里面 App 的那几份别的用户(分身、工作资料一类;规则见 AppCopies):users=int[] 编号,summary=给诊断信息的一行
+    // (编号、标记、类型、资料组,不含名字和装了什么);读不到用户为 null
+    Bundle appCopyUsers() = 38;
+    // 在另一份用户 userId 里打开该包,启动到这块屏;只认 appCopyUsers 列出的那几份,别的返回 8。返回值同 startApp / restartApp。
+    // 主屏、Mika 另一块屏上的占用只看这一份(包名 + 用户):用户在主屏用着本来那份时不挡这一份,反过来也一样。
+    // cold 时只结束这份用户里的进程,另一份不动;userId 是 Mika 自己的用户时等同 startApp / restartApp
+    int startAppInUser(int displayId, String packageName, int userId, boolean cold) = 39;
+    // 该包在 userId 那份用户里的任务所在的 Mika 虚拟屏;不在 Mika 的任何一块屏上返回 -1
+    int displayOfPackageInUser(String packageName, int userId) = 40;
 
     // 沿用早先定下的销毁事务号;AIDL 要求要么全部方法编号要么都不编号
     void destroy() = 16777114;

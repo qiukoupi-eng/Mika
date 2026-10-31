@@ -27,6 +27,7 @@ import android.util.Log
 import android.view.Display
 import com.wangzan101.mika.BuildConfig
 import com.wangzan101.mika.cap.phone.a11y.AndroidScreen
+import com.wangzan101.mika.cap.phone.a11y.AppCopyReader
 import com.wangzan101.mika.cap.phone.a11y.LazyPhoneScreen
 import com.wangzan101.mika.cap.phone.a11y.ScreenAccessibility
 import com.wangzan101.mika.cap.phone.a11y.PhoneUnavailable
@@ -477,6 +478,10 @@ class TaskRun(
                     a11y, shell, agentDisplay, { recovery.markClipHeld(it) },
                     clipLock = service.clipLock, checkOtherTasks = parallel,
                     reserve = { pkg -> service.reservePackage(pkg, key) { runCatching { shell.displayOfPackage(pkg) }.getOrDefault(-1) >= 0 } },
+                    // 另一份用户里的那份单独占:和本来那份互不挡
+                    reserveCopy = { pkg, user ->
+                        service.reservePackage("$pkg@$user", key) { runCatching { shell.displayOfPackageInUser(pkg, user) }.getOrDefault(-1) >= 0 }
+                    },
                     clipSaved = { original, ours -> recovery.saveClip(original, ours) },
                     handedOver = { handoverRef?.handedOver == true },
                     // 打字一段一段出来;App 知识说限制浏览快慢的 App 打得更慢
@@ -489,7 +494,13 @@ class TaskRun(
                 return screen
             }
             val phoneScreen = LazyPhoneScreen(metrics.widthPixels, metrics.heightPixels,
-                listApps = { withContext(Dispatchers.IO) { launchableApps(service.packageManager, service.packageName) } }) { connectPhone() }
+                listApps = { withContext(Dispatchers.IO) { launchableApps(service.packageManager, service.packageName) } },
+                // 另一份用户里的 App 要问内置助手:助手已经连着才问,不为它去接
+                appCopies = {
+                    phoneServices.hub.shell.value?.let { s ->
+                        withContext(Dispatchers.IO) { runCatching { AppCopyReader.read(s, launchableApps(service.packageManager, service.packageName)) }.getOrNull() }
+                    }.orEmpty()
+                }) { connectPhone() }
             // 挪回虚拟屏后等窗口出现,Agent 接下来读屏才读得到
             suspend fun moveTask(taskId: Int, to: Int): Boolean {
                 val p = phone ?: return false
@@ -815,8 +826,10 @@ class TaskRun(
         val side = sideScope ?: return
         side.launch(Dispatchers.IO) {
             p.screen.target.filterNotNull().collectLatest { t ->
-                // 用户在「干活时」关掉了静音就不碰它的声音
-                if (FeatureFlags.get(service).muteTarget() && !p.audio.mute(t.packageName)) {
+                // 用户在「干活时」关掉了静音就不碰它的声音。静音按包作用在 Mika 所在的用户上:目标是另一份用户里的那份时不碰,
+                // 免得把用户手上本来那份静了音
+                val otherCopy = t.userId >= 0 && t.userId != AppCopyReader.myUser
+                if (FeatureFlags.get(service).muteTarget() && !otherCopy && !p.audio.mute(t.packageName)) {
                     muteFailedFor = t.packageName
                     publish(_state.value)
                 }

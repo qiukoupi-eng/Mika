@@ -122,8 +122,9 @@
     <string name="phone_connect_port_submit">连接</string>
     <string name="fail_usb_stopped">手机助手已停止</string>
     <string name="fail_usb_stopped_body">它是用电脑启动的,手机重启后就会停。在电脑上再运行一次 USB 启动命令,或配对无线调试让它自动恢复。</string>
-    <string name="phone_usb_toggle">用电脑启动(USB 数据线)</string>
-    <string name="phone_usb_body">插上 USB 数据线、打开「USB 调试」,在电脑上运行下面这条命令。手机重启后要再运行一次,或配对无线调试让它自动恢复。</string>
+    <string name="phone_usb_ask">找不到无线调试？</string>
+    <string name="phone_usb_title">这台手机打不开无线调试？改用电脑启动</string>
+    <string name="phone_usb_body">用数据线连上电脑，在电脑上运行这条命令。手机重启后要再运行一次。</string>
     <string name="phone_usb_copy">复制</string>
     <string name="phone_usb_copied">命令已复制</string>
 </resources>

@@ -237,6 +237,8 @@ data class ChatUi(
     val rejectedAttachments: List<String> = emptyList(),
     /** 超过一次能带的个数([AttachTray.LIMIT])没加上的个数;为 0 不提示。 */
     val overLimit: Int = 0,
+    /** 输入框上方要随下一句话发出去的引用(长按消息选「引用」);没有为 null。换对话时清掉。 */
+    val quote: QuoteMessage.Quote? = null,
 ) {
     /** 任务此刻正在后台的虚拟屏上操作(输入框上方那行提示):开过屏、在干活,不在等你或等解锁。 */
     val operatingPhone: Boolean
@@ -565,15 +567,30 @@ class ChatViewModel(
     private fun gated(p: PipUi) = if (screenSeen) p else p.copy(visible = false, expanded = false)
 
 
-    /** 发送输入框里的话。返回 false 表示没发出去(条件不满足,或任务在跑)。 */
+    /** 长按消息选了「引用」:引的内容放到输入框上方,随下一句话发出去(新任务、插话、回答都带)。空的不引。 */
+    fun quote(from: QuoteMessage.From, text: String) {
+        val t = text.trim()
+        if (t.isNotEmpty()) _ui.update { it.copy(quote = QuoteMessage.Quote(from, t)) }
+    }
+
+    fun clearQuote() = _ui.update { it.copy(quote = null) }
+
+    /** 发送输入框里的话;有引用时引用写在话的前面(见 [QuoteMessage]),发出去后清掉。返回 false 表示没发出去(条件不满足,或任务在跑)。 */
     fun send(text: String, check: Prerequisites.Check): Boolean {
         refreshParallel()
         val ui = _ui.value
         if (ui.importing) return false
+        val sent = sendQuoted(text.trim(), ui, check)
+        if (sent) _ui.update { it.copy(quote = null) }
+        return sent
+    }
+
+    private fun sendQuoted(words: String, ui: ChatUi, check: Prerequisites.Check): Boolean {
         // 附件只跟新任务走;回答问题时不带
-        if (ui.composer == ComposerMode.Idle && ui.attachments.isNotEmpty()) return sendWithAttachments(text.trim(), ui.attachments, check)
-        val goal = text.trim()
-        if (goal.isEmpty()) return false
+        if (ui.composer == ComposerMode.Idle && ui.attachments.isNotEmpty()) return sendWithAttachments(QuoteMessage.compose(ui.quote, words), ui.attachments, check)
+        // 只有引用、没写话时不发
+        if (words.isEmpty()) return false
+        val goal = QuoteMessage.compose(ui.quote, words)
         when (ui.composer) {
             ComposerMode.Answer -> {
                 act({ actions.answer(goal) }) { actions.answerIn(it, goal) }

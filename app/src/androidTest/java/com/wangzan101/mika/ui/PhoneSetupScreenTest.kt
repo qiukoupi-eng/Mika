@@ -1,5 +1,9 @@
 package com.wangzan101.mika.ui
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -249,6 +253,42 @@ class PhoneSetupScreenTest {
         assertEquals(emptyList<String>(), calls)
         compose.onNodeWithTag("setup-done").performClick()
         assertEquals(listOf("close"), calls)
+    }
+
+    /** 「改用电脑启动」平时不出现:无线调试一步只有一行「找不到无线调试?」,点了才在这一步里出现命令和复制。 */
+    @Test
+    fun usbCardAppearsOnlyWhenAskedOnTheWirelessStep() {
+        val wirelessStep = SetupInputs(true, false, BuiltinShellStatus.NotPaired)
+        compose.setContent {
+            var asked by remember { mutableStateOf(false) }
+            PhoneSetupContent(
+                view = PhoneSetupFlow.view(wirelessStep.copy(usbAsked = asked)),
+                onStepAction = {}, onFailureFix = {}, onAllowNotifications = {}, onConfirmStep = {}, onSubmit = { _, _ -> }, onClose = {},
+                usbCommand = "adb shell sh /sdcard/usb-start.sh",
+                onAskUsb = { asked = true },
+                onCopyUsbCommand = { calls += "copy" },
+            )
+        }
+        compose.onNodeWithTag("setup-usb").assertDoesNotExist()
+        compose.onNodeWithTag("setup-usb-ask").performScrollTo().performClick()
+        compose.onNodeWithTag("setup-usb-ask").assertDoesNotExist()
+        compose.onNodeWithText(PhoneSetupCopy.USB_TITLE).assertExists()
+        compose.onNodeWithTag("setup-usb-copy").performScrollTo().performClick()
+        assertEquals(listOf("copy"), calls)
+    }
+
+    /** 正常走到配对一步:没有「找不到无线调试?」,也没有卡片。 */
+    @Test
+    fun normalPairingStepHasNoUsbOption() {
+        compose.setContent {
+            PhoneSetupContent(
+                view = PhoneSetupFlow.view(SetupInputs(true, true, BuiltinShellStatus.NotPaired)),
+                onStepAction = {}, onFailureFix = {}, onAllowNotifications = {}, onConfirmStep = {}, onSubmit = { _, _ -> }, onClose = {},
+                usbCommand = "adb shell sh /sdcard/usb-start.sh",
+            )
+        }
+        compose.onNodeWithTag("setup-usb").assertDoesNotExist()
+        compose.onNodeWithTag("setup-usb-ask").assertDoesNotExist()
     }
 
     @Test

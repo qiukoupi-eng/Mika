@@ -44,4 +44,13 @@ class AppSwitchTest {
         assertNull(check(null, sameTask = false))
         assertNull(check("com.clock", sameTask = false))
     }
+
+    @Test fun theOtherCopyOfTheTargetAppInFrontIsASwitch() {
+        // 同一个 App 装了两份:最上面换成了不是目标的那一份
+        assertEquals(AppSwitch.Switch("com.clock", byTarget = false),
+            AppSwitch.switchedTo("com.clock", "com.clock", { true }, pickers, { false }, otherCopy = { true }))
+        // 还是目标那一份,或只装了一份(不问另一份):照旧不算
+        assertNull(AppSwitch.switchedTo("com.clock", "com.clock", { true }, pickers, { false }, otherCopy = { false }))
+        assertNull(AppSwitch.switchedTo("com.clock", "com.clock", { true }, pickers, { false }))
+    }
 }

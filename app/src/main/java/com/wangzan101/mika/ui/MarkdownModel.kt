@@ -89,6 +89,27 @@ object MarkdownModel {
     /** 流式片段可停在语法中间；只在显示时补全尾部，不修改实际回答。 */
     fun parseStreaming(markdown: String, styles: Styles = Styles.Light): List<MdBlock> = parse(StreamingMarkdown.preview(markdown), styles)
 
+    /**
+     * 回答去掉 Markdown 符号后的纯文字(复制、引用用):段落、标题、代码照原文,各块之间空一行;
+     * 列表每项一行,前面「• 」或「1. 」;引用每行前面「> 」;表格每行一行、格子之间用制表符;分隔线不要。
+     */
+    fun toPlainText(markdown: String): String = blocksText(parse(markdown)).trim()
+
+    private fun blocksText(blocks: List<MdBlock>, sep: String = "\n\n"): String = blocks.mapNotNull { b ->
+        when (b) {
+            is MdBlock.Para -> b.text.text
+            is MdBlock.Heading -> b.text.text
+            is MdBlock.Code -> b.code
+            is MdBlock.Quote -> blocksText(b.blocks).lines().joinToString("\n") { "> $it".trimEnd() }
+            is MdBlock.ListBlock -> b.items.mapIndexed { i, item ->
+                val mark = if (b.start == null) "• " else "${b.start + i}. "
+                mark + blocksText(item, "\n").lines().joinToString("\n" + " ".repeat(mark.length))
+            }.joinToString("\n")
+            is MdBlock.Table -> (listOf(b.header) + b.rows).joinToString("\n") { r -> r.joinToString("\t") { it.text } }
+            MdBlock.Rule -> null
+        }?.takeIf { it.isNotBlank() }
+    }.joinToString(sep)
+
     private fun plain(s: String): List<MdBlock> = if (s.isBlank()) emptyList() else listOf(MdBlock.Para(AnnotatedString(s.trim())))
 
     private fun children(n: Node): Sequence<Node> = generateSequence(n.firstChild) { it.next }

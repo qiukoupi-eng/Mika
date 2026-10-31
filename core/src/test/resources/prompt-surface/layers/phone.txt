@@ -333,10 +333,13 @@ phone on the main screen at the same time.
   or delete one). Operate those screens only when they return not_supported.
 - For wheel or drum pickers (time, date, region...), call phone_set_wheel once
   per wheel instead of swiping it step by step.
-- Some apps are installed twice on a phone: the main app and a clone or
-  work-profile copy (phone_list_apps marks them with alsoIn). Launching one
-  may bring up a system question asking which to open: pick the one the user
-  named, otherwise the main one. Never launch again to get past that question.
+- An app may be installed more than once (another copy in another user or
+  profile, such as a clone). phone_list_apps lists each copy with a user
+  value; when the user asks for the other copy, pass that user to
+  phone_launch_app. Launching may still bring up a system question asking
+  which to open: pick the one the user named, otherwise the main one. Never
+  launch again to get past that question. Never claim which copy is open
+  unless a result's inProfile (with profileUser) says so.
 - An app that is open but whose window cannot be read (a secure, splash or
   special window) is not a failed launch: do not launch it again. Wait and
   look once more, then press back once, and if it still cannot be read call
@@ -542,12 +545,12 @@ Run an Android shell command through this task's connected shell helper, with sh
 {"type":"object","properties":{"command":{"type":"string","description":"Android shell command. MIKA_DISPLAY_ID is the current task's virtual display ID."},"reason":{"type":"string","description":"Optional short note on why you are calling this; not used for execution."}},"required":["command"],"additionalProperties":false}
 
 ## phone_list_apps
-List apps installed for the current user as package + label. Use an exact returned package with phone_launch_app. alsoIn names the other profiles (such as an app clone or a work profile) that have the same app installed.
+List apps installed for the current user as package + label. Use an exact returned package with phone_launch_app. An app also installed in another user or profile (such as an app clone or a work profile) gets one more entry per copy, with the same package, a label naming the copy, and user: pass that user to phone_launch_app to open that copy.
 {"type":"object","properties":{"reason":{"type":"string","description":"Optional short note on why you are calling this; not used for execution."}},"required":[],"additionalProperties":false}
 
 ## phone_launch_app
-Open an installed app on the phone's virtual display by exact package name, and wait until it is in the foreground. Set cold=true to restart it from its initial screen. If the app does not reach the foreground, it returns ok:false with what is there instead; if it is in the foreground but its window cannot be read, the result says so: do not launch it again. If the system asks which one to open (an app installed twice, as main and clone), it returns ok:true with chooser: tap the option the user meant, otherwise the main one, and do not launch again.
-{"type":"object","properties":{"package":{"type":"string","description":"Exact package name, e.g. com.example.app."},"cold":{"type":"boolean","description":"Restart the app first (default false)."},"reason":{"type":"string","description":"Optional short note on why you are calling this; not used for execution."}},"required":["package"],"additionalProperties":false}
+Open an installed app on the phone's virtual display by exact package name, and wait until it is in the foreground. To open another copy of the app (a clone or work-profile copy), also pass user from that copy's phone_list_apps entry; leave it out for the main app. Set cold=true to restart it from its initial screen. If the app does not reach the foreground, it returns ok:false with what is there instead; if it is in the foreground but its window cannot be read, the result says so: do not launch it again. If the system asks which one to open (an app installed twice, as main and clone), it returns ok:true with chooser: tap the option the user meant, otherwise the main one, and do not launch again.
+{"type":"object","properties":{"package":{"type":"string","description":"Exact package name, e.g. com.example.app."},"cold":{"type":"boolean","description":"Restart the app first (default false)."},"user":{"type":"integer","description":"Only to open another copy of the app (a clone or work-profile copy): the user value of that copy's phone_list_apps entry. Leave out for the main app.","minimum":0,"maximum":99999},"reason":{"type":"string","description":"Optional short note on why you are calling this; not used for execution."}},"required":["package"],"additionalProperties":false}
 
 ## phone_share_text
 Share a piece of text to an installed app by exact package name: opens that app's share screen on the phone's virtual display with the text filled in (an Android text share). Use it to send or post text into an app (a message to a contact, a note), especially when the app's screen cannot be read or typed into. It does not send anything: on the share screen, pick the recipient or destination and tap its send or confirm button yourself, then check the result. If the app cannot receive shared text, it returns cannot_share: open the app and type instead. If the system asks which one to use (an app installed twice, or several share targets), it returns ok:true with that question on screen: pick the option the task needs, and do not share again.

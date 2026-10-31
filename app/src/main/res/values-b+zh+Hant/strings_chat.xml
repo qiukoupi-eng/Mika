@@ -126,4 +126,13 @@
     <string name="source_none">沒有儲存這次答覆的來源</string>
     <string name="source_image">來源畫面</string>
     <string name="zoom_in">放大看</string>
+    <string name="chat_message_actions">訊息操作</string>
+    <string name="chat_copy">複製</string>
+    <string name="chat_quote">引用</string>
+    <string name="chat_select_text">選取文字</string>
+    <string name="chat_copied">已複製</string>
+    <string name="chat_select_hint">長按文字就能選取</string>
+    <string name="chat_quote_remove">移除引用</string>
+    <string name="chat_quoting_mika">引用 Mika:%1$s</string>
+    <string name="chat_quoting_you">引用你的話:%1$s</string>
 </resources>

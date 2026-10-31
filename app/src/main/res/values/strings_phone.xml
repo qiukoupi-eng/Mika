@@ -122,8 +122,9 @@
     <string name="phone_connect_port_submit">Connect</string>
     <string name="fail_usb_stopped">Phone helper stopped</string>
     <string name="fail_usb_stopped_body">It was started from a computer and stops when the phone restarts. Run the USB command on the computer again, or pair Wireless debugging so it restarts by itself.</string>
-    <string name="phone_usb_toggle">Use a computer instead (USB)</string>
-    <string name="phone_usb_body">Plug in a USB cable, turn on “USB debugging”, and run this command on the computer. After a phone restart, run it again, or pair Wireless debugging to make it automatic.</string>
+    <string name="phone_usb_ask">Can’t find Wireless debugging?</string>
+    <string name="phone_usb_title">Can’t use Wireless debugging on this phone? Start from a computer instead</string>
+    <string name="phone_usb_body">Plug the phone into a computer with a USB cable and run this command on the computer. Run it again after the phone restarts.</string>
     <string name="phone_usb_copy">Copy</string>
     <string name="phone_usb_copied">Command copied</string>
 </resources>

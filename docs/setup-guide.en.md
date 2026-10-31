@@ -119,6 +119,7 @@ If the system says "An app is obscuring a permission request" when you turn it o
 
 - The switch turns itself off again: usually the phone isn't on Wi-Fi, or "Allow" wasn't tapped in the dialog. Join Wi-Fi and try again.
 - The switch is on but Mika stays on this step: some phones don't report this switch. Tap "I’ve turned it on, next" to continue.
+- There's no "Wireless debugging" in Developer options at all: tap "Can’t find Wireless debugging?" in this step and start it from a computer instead (see [Another way](#another-way-start-it-from-a-computer-usb-cable) below).
 
 ## Step 5: Pair with a code
 
@@ -200,7 +201,7 @@ If wireless pairing doesn't work, or you'd like an AI agent on your computer to 
 adb shell sh /sdcard/Android/data/com.wangzan101.mika/files/usb-start.sh
 ```
 
-When you see `Mika helper starting...`, go back to Mika and check that "Phone control" shows ready. You can unplug the cable afterwards. The same command, with a "Copy" button, is under "Use a computer instead (USB)" at the bottom of the wizard.
+When you see `Mika helper starting...`, go back to Mika and check that "Phone control" shows ready. You can unplug the cable afterwards. The wizard doesn't show this option all the time. The same command, with a "Copy" button, appears in the current step as "Can’t use Wireless debugging on this phone? Start from a computer instead" when it's needed: the phone has no Wireless debugging, you tapped "Can’t find Wireless debugging?" in step 4, pairing or connecting failed, or the wizard has been waiting on step 4, step 5 (before the pairing window is found) or "Connect automatically" for about 45 seconds.
 
 Good to know:
 

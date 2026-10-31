@@ -184,8 +184,9 @@ class PhoneSetupCopyTest {
         val banner = StatusCopy.banner(Problem.PhoneHelper(stopped))
         assertEquals("手机助手已停止", banner.title)
         assertEquals(line, banner.detail)
-        assertEquals("用电脑启动(USB 数据线)", PhoneSetupCopy.USB_TOGGLE)
-        assertTrue(PhoneSetupCopy.USB_BODY.contains("「USB 调试」"))
+        assertEquals("这台手机打不开无线调试？改用电脑启动", PhoneSetupCopy.USB_TITLE)
+        assertEquals("找不到无线调试？", PhoneSetupCopy.USB_ASK)
+        assertTrue(PhoneSetupCopy.USB_BODY.contains("数据线"))
         assertTrue(PhoneSetupCopy.USB_BODY.contains("重启后"))
     }
 

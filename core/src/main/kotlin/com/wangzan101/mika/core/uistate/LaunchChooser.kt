@@ -30,9 +30,7 @@ object LaunchChooser {
      */
     fun options(appLabel: String, elements: List<UiElement>, profiles: List<String>): List<ChoiceOption>? {
         val label = key(appLabel)
-        if (label.isEmpty()) return null
-        val picked = elements.filter { it.clickable && it.name.isNotBlank() && key(it.name).contains(label) }
-        if (picked.isEmpty()) return null
+        val picked = optionIndices(appLabel, elements)?.map { elements[it] } ?: return null
         val others = profiles.map(::key).filter { it.isNotEmpty() }
         val counts = picked.groupingBy { key(it.name) }.eachCount()
         return picked.map { e ->
@@ -46,6 +44,13 @@ object LaunchChooser {
             }
             ChoiceOption(e.name.replace('\n', ' ').trim(), clone)
         }
+    }
+
+    /** [options] 认出的那几个选项在 [elements] 里的下标(先后不变);不是在问打开哪一个为 null。点选项时用。 */
+    fun optionIndices(appLabel: String, elements: List<UiElement>): List<Int>? {
+        val label = key(appLabel)
+        if (label.isEmpty()) return null
+        return elements.indices.filter { elements[it].let { e -> e.clickable && e.name.isNotBlank() && key(e.name).contains(label) } }.ifEmpty { null }
     }
 
     private fun key(s: String) = s.filterNot(Char::isWhitespace).lowercase()

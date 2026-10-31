@@ -39,6 +39,10 @@ enum class PairingNotifyIssue {
  * [accessibility] 是 Mika 的无障碍服务在运行:配对时由它读出配对码;用户可以跳过([accessibilitySkipped]),退回在通知里填。
  * [restrictedSettings] 是系统可能拦着不让打开无障碍(没从应用商店装的 App 要先在应用信息里允许受限制的设置)。
  * [notificationsAllowed]、[pairingChannel] 决定配对码能不能填在通知里。
+ * 下面三项决定要不要给「改用电脑启动」(见 [SetupView.usbFallback]):
+ * [wirelessMissing] 是系统里根本没有无线调试这一项(原版开机时总会写好这项设置,读不到就是系统没带这个功能);
+ * [stalledMs] 是停在无线调试、配对(还没找到配对窗口)、自动连接这几处多久没有进展(见 [PhoneSetupFlow.stallPoint]);
+ * [usbAsked] 是用户点了「找不到无线调试?」,或卡片已经出现过(出现后不再收回,免得一会儿有一会儿没)。
  */
 data class SetupInputs(
     val developerOptions: Boolean,
@@ -54,6 +58,9 @@ data class SetupInputs(
     val restrictedSettings: Boolean = false,
     val confirmed: Set<SetupStep> = emptySet(),
     val revisit: SetupStep? = null,
+    val wirelessMissing: Boolean = false,
+    val stalledMs: Long = 0L,
+    val usbAsked: Boolean = false,
 )
 
 /** 配对或连接没成功时最可能的原因:[step] 这一步读到是关着的;[unreadable] 为真是这台手机根本读不到。 */
@@ -77,6 +84,8 @@ data class SetupView(
     val suspect: SetupSuspect? = null,
     /** 当前这一步是用户点回来重做的:界面给「回到原来的步骤」。 */
     val revisiting: Boolean = false,
+    /** 在当前这一步给「改用电脑启动」的卡片:无线调试多半用不了,或者卡住了。正常走下去时不给。 */
+    val usbFallback: Boolean = false,
 ) {
     /** 通知发不出来(没允许,或「配对」通知被关):配对码要填在通知里,先修好。 */
     val needsNotifications: Boolean
@@ -99,7 +108,40 @@ object PhoneSetupFlow {
     /** 有「我已经打开了,下一步」的几步:读的是系统开关(无障碍另有跳过)。 */
     val CONFIRMABLE: Set<SetupStep> = setOf(SetupStep.DeveloperOptions, SetupStep.UsbDebugging, SetupStep.WirelessDebugging)
 
-    fun view(i: SetupInputs): SetupView {
+    /** 停在 [stallPoint] 这么久没有进展,就给「改用电脑启动」。 */
+    const val STALL_MS = 45_000L
+
+    /** 这几类失败说明无线调试这条路走不通,给「改用电脑启动」:找不到配对窗口、连不上、电脑起的助手停了。 */
+    private val USB_FAILURES = setOf(BuiltinShellFailure.PairingWindowClosed, BuiltinShellFailure.ConnectFailed, BuiltinShellFailure.UsbHelperStopped)
+
+    fun view(i: SetupInputs): SetupView = steps(i).let { it.copy(usbFallback = usbFallback(it, i)) }
+
+    /**
+     * 卡住计时算在哪一处:停在无线调试一步、停在配对一步还没找到配对窗口(系统一直没有配对服务)、正在自动连接。
+     * 前面几步要用户自己去系统设置里找,花多久都正常,不算;换了地方就从头算。
+     */
+    fun stallPoint(v: SetupView): SetupStep? = when {
+        v.phase == SetupPhase.Working -> SetupStep.Connect
+        v.phase != SetupPhase.Guide -> null
+        v.current == SetupStep.WirelessDebugging -> SetupStep.WirelessDebugging
+        v.current == SetupStep.PairingCode && !v.portFound -> SetupStep.PairingCode
+        else -> null
+    }
+
+    /**
+     * 要不要给「改用电脑启动」:系统没有无线调试、用户说找不到,都只在走到无线调试这一步以后给(电脑启动也要先做完前两步);
+     * 配对、连接失败在上面几类里,或者用户说开了、助手却读到关着;在 [stallPoint] 停了 [STALL_MS] 以上。别的时候不给。
+     */
+    private fun usbFallback(v: SetupView, i: SetupInputs): Boolean {
+        if (v.phase == SetupPhase.Success) return false
+        val reachedWireless = v.phase == SetupPhase.Working || (v.current != null && v.current >= SetupStep.WirelessDebugging)
+        return (reachedWireless && (i.wirelessMissing || i.usbAsked)) ||
+            v.failure?.reason in USB_FAILURES ||
+            (v.phase == SetupPhase.Failed && v.suspect?.step == SetupStep.WirelessDebugging) ||
+            (stallPoint(v) != null && i.stalledMs >= STALL_MS)
+    }
+
+    private fun steps(i: SetupInputs): SetupView {
         val status = effectiveStatus(i.status, i.repair)
         if (status == BuiltinShellStatus.Running) return SetupView(SetupPhase.Success, marks(SetupStep.entries.size, i), null)
         val natural = natural(i, status)

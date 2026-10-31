@@ -114,6 +114,12 @@ This action was not done: the previous action had just opened an app on the user
 ## failure.app_not_found
 That app is not installed or has no launchable screen. Use phone_list_apps to find the exact package.
 
+## failure.copy_not_opened
+The requested copy of the app could not be opened: the system kept opening a different copy (see the details). Nothing was left open as if it were the requested copy. Tell the user which copy opened instead; do not claim the requested copy is open.
+
+## failure.copy_not_found
+There is no such copy of that app that Mika may open. Use phone_list_apps and pass a user value exactly as listed for that package, or leave user out to open the main app.
+
 ## failure.app_not_in_front
 The app was started but did not come to the foreground within a few seconds, so it is not open on Mika's screen. Look at the screen before deciding: it may still be starting, or something else (a dialog, another app) is in front.
 
@@ -249,8 +255,17 @@ The user closed the system's question without picking, so nothing was opened. De
 ## spill.user_done
 {{app}} needed the user, so it stayed on their own screen; they handled it there and tapped continue. Observe Mika's screen to see where things stand before going on.
 
+## spill.user_popup
+This action opened {{app}} as a popup on the user's own screen that needs them (a sign-in, verification, account confirmation or payment step). Mika left it there on purpose: do not pull it back to Mika's screen and do not repeat the action. Call hand_to_user so the user can finish it there (reason login for a sign-in or verification, payment for a payment step), then check Mika's screen to see what came back before going on.
+
 ## spill.in_use
 This action opened {{app}}, which the user is using on their own screen, so it opened there in front of them and Mika left it alone. Do not repeat the action. Call hand_to_user with reason other so the user can do that step there, or wait and try again later.
+
+## profile.main_not_requested
+This is the main app, not the requested copy.
+
+## profile.copy_not_requested
+This is the copy in user {{user}}, not the requested copy (user {{wanted}}).
 
 ## profile.other
 inProfile other: this is the other copy of the app (clone or other profile), not the main one. If the user did not ask for that copy, go back and pick the other option.

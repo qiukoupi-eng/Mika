@@ -11,6 +11,9 @@ import android.provider.Settings
 import com.wangzan101.mika.BuildConfig
 import com.wangzan101.mika.MikaApp
 import com.wangzan101.mika.cap.phone.PhoneServices
+import com.wangzan101.mika.cap.phone.a11y.AppCopyReader
+import com.wangzan101.mika.cap.phone.a11y.launchableApps
+import com.wangzan101.mika.cap.phone.shell.ShellService
 import com.wangzan101.mika.cap.phone.setup.DeveloperSettings
 import com.wangzan101.mika.cap.phone.setup.PairingChannel
 import com.wangzan101.mika.cap.sandbox.SandboxState
@@ -33,6 +36,8 @@ fun SystemStatus.setupInputs(
     accessibilitySkipped: Boolean = false,
     confirmed: Set<SetupStep> = emptySet(),
     revisit: SetupStep? = null,
+    stalledMs: Long = 0L,
+    usbAsked: Boolean = false,
 ) = SetupInputs(
     developerOptions = developerOptions, wirelessDebugging = wirelessDebugging,
     status = builtinShell, discovery = discovery, notificationsAllowed = notificationsAllowed,
@@ -40,6 +45,7 @@ fun SystemStatus.setupInputs(
     usbDebugging = usbDebugging, accessibility = accessibility == AccessibilityState.On,
     accessibilitySkipped = accessibilitySkipped, restrictedSettings = restrictedSettings,
     confirmed = confirmed, revisit = revisit,
+    wirelessMissing = wirelessDebuggingMissing, stalledMs = stalledMs, usbAsked = usbAsked,
 )
 
 /**
@@ -71,6 +77,7 @@ object DiagnosticsCollector {
                 attentionChannelImportance = channel(app, TaskService.CHANNEL_ATTENTION),
                 wifiConnected = wifi(app),
                 lastError = phone.shellManager.engine.lastError,
+                appCopies = appCopies(app, phone),
             ),
             recovery = DiagnosticsSnapshot.Recovery(
                 consent = phone.recoverySettings.consent.value,
@@ -89,6 +96,14 @@ object DiagnosticsCollector {
             },
         )
     }
+
+    /** 内置助手连着时问它每份别的用户的判定,再数能打开的另一份有几个(只数,不列包名);问不到为 null。 */
+    private fun appCopies(app: MikaApp, phone: PhoneServices): String? = runCatching {
+        val shell = phone.hub.shell.value ?: return null
+        val summary = shell.appCopyUsers()?.getString(ShellService.KEY_COPY_SUMMARY) ?: return null
+        val copies = AppCopyReader.read(shell, launchableApps(app.packageManager, app.packageName))
+        "$summary; ${copies?.size ?: "?"} app copies"
+    }.getOrNull()
 
     private fun installer(context: Context): String? = runCatching {
         context.packageManager.getInstallSourceInfo(context.packageName).installingPackageName

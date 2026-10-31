@@ -118,8 +118,9 @@ object PhoneSetupCopy {
     val START_USING: String get() = tr(R.string.phone_start_using)
     val SUCCESS_DONE: String get() = tr(R.string.done)
 
-    /** 引导页底下的另一条路:用电脑经 USB 数据线起助手(命令本身不翻译)。 */
-    val USB_TOGGLE: String get() = tr(R.string.phone_usb_toggle)
+    /** 另一条路:用电脑经 USB 数据线起助手(命令本身不翻译)。只在需要时出现;[USB_ASK] 是无线调试一步里让用户自己叫出它的那一行。 */
+    val USB_ASK: String get() = tr(R.string.phone_usb_ask)
+    val USB_TITLE: String get() = tr(R.string.phone_usb_title)
     val USB_BODY: String get() = tr(R.string.phone_usb_body)
     val USB_COPY: String get() = tr(R.string.phone_usb_copy)
     val USB_COPIED: String get() = tr(R.string.phone_usb_copied)

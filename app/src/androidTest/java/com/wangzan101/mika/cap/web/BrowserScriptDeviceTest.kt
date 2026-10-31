@@ -147,7 +147,7 @@ class BrowserScriptDeviceTest {
             return { texts: list.items.map((i) => i.text), total: list.total, count, first: first.text, status, none, visible: list.items[0].box.visible };
         """.trimIndent())
         assertEquals(r.toString(), "true", r.s("ok"))
-        val v = Json.parseToJsonElement(r.s("result")).jsonObject
+        val v = Json.parseToJsonElement(r.result()).jsonObject
         assertEquals(5, v["texts"]!!.jsonArray.size)
         assertEquals("苹果 3 元", v["texts"]!!.jsonArray[0].jsonPrimitive.content)
         assertEquals("5", v.s("total")); assertEquals("5", v.s("count")); assertEquals("苹果 3 元", v.s("first"))
@@ -162,7 +162,7 @@ class BrowserScriptDeviceTest {
             const q = (s) => mika.query(s, { fields: ['value', 'attrs'] });
             return { pw: await q('#pw'), otp: await q('#otp'), tok: await q('#tok'), name: await q('#name'), form: await mika.text('#f') };
         """.trimIndent())
-        val v = Json.parseToJsonElement(r.s("result")).jsonObject
+        val v = Json.parseToJsonElement(r.result()).jsonObject
         for (k in listOf("pw", "otp", "tok")) assertEquals(k, "***", v[k]!!.jsonObject.s("value"))
         assertEquals("***", v["tok"]!!.jsonObject["attrs"]!!.jsonObject.s("value"))
         assertTrue(r.s("result"), "hunter2" !in r.s("result") && "654321" !in r.s("result") && "csrf-123" !in r.s("result"))
@@ -200,7 +200,7 @@ class BrowserScriptDeviceTest {
             return { types, escape };
         """.trimIndent())
         assertEquals(r.toString(), "true", r.s("ok"))
-        val v = Json.parseToJsonElement(r.s("result")).jsonObject
+        val v = Json.parseToJsonElement(r.result()).jsonObject
         for ((k, t) in v["types"]!!.jsonObject) assertEquals(k, "undefined", t.jsonPrimitive.content)
         for ((k, e) in v["escape"]!!.jsonObject) assertEquals(k, "blocked", e.jsonPrimitive.content)
         // 页面原样
@@ -232,10 +232,10 @@ class BrowserScriptDeviceTest {
             return await mika.text('#status');
         """.trimIndent())
         assertEquals(r.toString(), "true", r.s("ok"))
-        assertEquals("\"clicks=2\"", r.s("result"))
+        assertEquals("\"clicks=2\"", r.result())
         assertEquals("2", page("window.clicks"))
         assertEquals("\"Mika\"", page("document.getElementById('name').value"))
-        assertEquals(listOf("snapshot", "phone_tap", "snapshot", "phone_tap", "snapshot", "type", "text"), r["actions"]!!.jsonArray.map { it.jsonObject.s("op") })
+        assertEquals(listOf("snapshot", "tap", "snapshot", "tap", "snapshot", "type", "text"), r["actions"]!!.jsonArray.map { it.jsonObject.s("op") })
         assertTrue(r["logs"]!!.jsonArray[0].jsonPrimitive.content.startsWith("typed"))
         val recorded = events.filterIsInstance<RunEvent.ToolResult>().filter { it.source == "script" }
         assertEquals(6, recorded.size)
