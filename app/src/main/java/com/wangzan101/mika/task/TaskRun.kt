@@ -568,7 +568,8 @@ class TaskRun(
             val profileSnapshot = if (switches.useMemory) withContext(Dispatchers.IO) {
                 runCatching { memoryRuntime.profile().snapshot() }.onFailure { Log.w(TAG, "profile unavailable", it) }.getOrDefault(emptyList())
             } else emptyList()
-            val utterances = memory?.let { UserUtterances() }
+            // 用户本次说的话:记忆的引文、按用户要求写下技能的引文都据此核对(只在内存里,任务开始清空)
+            val utterances = UserUtterances()
             // 改名前沉淀的个人技能:里面的旧工具名载入时换成现在的
             val catalog = GuideCatalog.withPersonal(skills, memoryRuntime.skills(), legacyNames()::rewrite)
             // 内置浏览器:每个任务自己的后台网页显示、标签池和脚本引擎,第一次打开网址时才建(只用手机的任务不建);
@@ -669,7 +670,9 @@ class TaskRun(
                 userScreens = userScreens,
                 scheduleTrigger = if (provenance.origin == RunOrigin.Ui) { trigger -> TriggerRuntime.schedule(service, trigger) } else null,
                 scheduleAdmin = if (provenance.origin == RunOrigin.Ui) LocalScheduleAdmin(service) else null,
-                childHost = childRunner)
+                childHost = childRunner,
+                // 用户要求时写下或改写个人技能(和自学收下的放在同一处,设置里立刻能看到)
+                personalSkills = memoryRuntime.skills())
             dispatcher = tools
             val agent = AgentLoop(
                 model, tools,
@@ -985,7 +988,7 @@ class TaskRun(
             yieldToForeground = { while (service.hasActiveRuns()) delay(500) },
         )
         val notes = learning.learn(RunAftermath(
-            conversationId, runId, k.agent.taskText ?: goal, end, k.utterances?.all.orEmpty(), k.dispatcher.savedChanges, k.agent.usedMemoryIds,
+            conversationId, runId, k.agent.taskText ?: goal, end, k.utterances.takeIf { k.memory != null }?.all.orEmpty(), k.dispatcher.savedChanges, k.agent.usedMemoryIds,
             k.dispatcher.definitions().map { it.name }.toSet(), k.dispatcher.index,
             events = { withContext(Dispatchers.IO) { runId?.let { k.runStore?.events(it) }.orEmpty() } },
             origin = provenance.origin,

@@ -38,6 +38,8 @@ internal class ToolConfig(
     val childHost: ChildRunHost? = null,
     /** 这个对话里用户发来的屏幕;没有时不提供 view_user_screen。 */
     val userScreens: com.wangzan101.mika.core.userscreen.UserScreenSource? = null,
+    /** 用户的个人技能;给了(且有技能目录、用户本次说的话)才提供 skill_save。 */
+    val personalSkills: com.wangzan101.mika.core.skills.PersonalSkills? = null,
 )
 
 /**

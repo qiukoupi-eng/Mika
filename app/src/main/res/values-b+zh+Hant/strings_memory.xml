@@ -66,6 +66,7 @@
     <string name="skills_empty">還沒有學到的技能</string>
     <string name="skills_suspended">已停用</string>
     <string name="skills_trial">試用中，還沒用它辦成過事</string>
+    <string name="skills_user_created">按你的要求寫下</string>
     <string name="skills_recent">最近:%1$s</string>
     <string name="skills_app_knowledge">App 知識</string>
     <string name="skills_restore_prev">恢復上一版</string>

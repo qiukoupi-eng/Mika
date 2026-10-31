@@ -188,8 +188,8 @@ class AgentLoop(
     /** 本次任务真的用过的能力组(记进这一轮,下一轮开局预先展开);任务结束后读取。 */
     val usedGroups: Set<String> get() = tools.used
 
-    /** 用户本次说的话(memory_save 的引文校验用);记忆关着时不收集。 */
-    private val utterances get() = if (memory != null) tools.utterances else null
+    /** 用户本次说的话(memory_save、skill_save 的引文校验用);给了就收集,只在内存里、每个任务开始清空。 */
+    private val utterances get() = tools.utterances
 
     private val user = UserExchange(tools, confirmations, confirmTimeoutMs, inputTimeoutMs, { utterances }, { _state.value = it }, ::emit, ::now)
     private val replay = routes?.let { RouteReplay(it, tools, ::awaitGate, { r -> gateState = r; _state.value = r }, ::emit, clock) }

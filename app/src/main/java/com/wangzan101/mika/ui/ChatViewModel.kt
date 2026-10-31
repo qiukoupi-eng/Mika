@@ -1270,6 +1270,7 @@ class ToolLabels(private val tools: ToolIndex, private val legacy: LegacyNames =
             "查找技能" to R.string.tool_find_skill,
             "查看 App/网站知识" to R.string.tool_read_knowledge,
             "查看技能" to R.string.tool_read_skill,
+            "保存技能" to R.string.tool_save_skill,
             "说明没办成的原因" to R.string.tool_explain_failure,
             "问你一个问题" to R.string.tool_ask_user,
             "请你接手" to R.string.tool_takeover,

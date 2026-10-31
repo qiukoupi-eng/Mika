@@ -66,6 +66,7 @@
     <string name="skills_empty">No learned skills yet</string>
     <string name="skills_suspended">Paused</string>
     <string name="skills_trial">On trial, no task done with it yet</string>
+    <string name="skills_user_created">Written at your request</string>
     <string name="skills_recent">Recent: %1$s</string>
     <string name="skills_app_knowledge">App knowledge</string>
     <string name="skills_restore_prev">Restore previous version</string>
