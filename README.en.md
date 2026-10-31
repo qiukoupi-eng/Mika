@@ -85,7 +85,7 @@ Then try saying: "Set alarms for 9:40 and 10:00 tomorrow morning" or "Check the 
 | **Browse the web** | A built-in desktop-class browser that keeps you signed in, reads pages, downloads and uploads; paces itself and hands block pages to you |
 | **Your current screen** | Double-tap the floating capsule to send the screen you're looking at: "how should I reply?", "note this down" |
 | **Schedules and conditions** | "Remind me at 9 tomorrow", "do this every Friday"; runs on time in the original conversation |
-| **Jump in or stop anytime** | Keep talking while a task runs to add or correct things; after a stop it reports where it got to, and "continue" picks up from there |
+| **Jump in or stop anytime** | Keep talking while a task runs to add or correct things (long-press to withdraw or edit one Mika hasn't picked up yet); after a stop it reports where it got to, and "continue" picks up from there |
 | **Files and computing** | A Linux sandbox per conversation runs Python, Node and shell on the files you send (arm64) |
 | **From your computer** | AI tools on your computer can hand Mika tasks through CLI + Skill or MCP ([CLI / Skill](docs/computer-install.en.md) · [MCP](docs/mcp.en.md)) |
 
