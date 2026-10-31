@@ -68,11 +68,38 @@ class HoldToTalkTest {
 
     @Test
     fun tooShortIsNoMatch() {
-        pressed()
+        val session = pressed()
         now = 300
         hold.release()
-        hold.onEvent(SpeechEvent.Final(""))
+        // 太短不交给会话去转(服务商的还要花额度):直接丢掉,当没听清
+        assertEquals(0, session.released)
+        assertEquals(1, session.cancelled)
         assertEquals(HoldToTalk.State.Problem(null), hold.state.value)
+        // 会话迟到的结果不覆盖「没听清」
+        hold.onEvent(SpeechEvent.Final("帮我"))
+        assertEquals(HoldToTalk.State.Problem(null), hold.state.value)
+    }
+
+    @Test
+    fun blankFinalIsNoMatch() {
+        val session = pressed()
+        now = 2_000
+        hold.release()
+        assertEquals(1, session.released)
+        assertTrue(hold.state.value is HoldToTalk.State.Listening)
+        hold.onEvent(SpeechEvent.Final("  "))
+        assertEquals(HoldToTalk.State.Problem(null), hold.state.value)
+    }
+
+    @Test
+    fun minimumIsConfigurable() {
+        // 输入栏开始听时手指已经按了 300ms,只再数 200ms:合起来不到半秒才算太短
+        val short = HoldToTalk(clock = { now }, minMs = 200)
+        val session = FakeSession().also { short.press(it) }
+        now = 250
+        short.release()
+        assertEquals(1, session.released)
+        assertEquals(0, session.cancelled)
     }
 
     @Test

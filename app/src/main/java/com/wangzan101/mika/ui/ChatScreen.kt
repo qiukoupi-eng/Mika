@@ -62,7 +62,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -1064,9 +1063,17 @@ internal fun Composer(
     LaunchedEffect(ime, nav, density) {
         snapshotFlow { ime.getBottom(density) - nav.getBottom(density) }.collect { if (it > keyboardPx) keyboardPx = it }
     }
-    // 输入框聚焦且键盘弹着时,长按留给系统的选字、粘贴;否则输入框上盖一层按住说话的手势
-    val keyboardUp by remember(ime, density) { derivedStateOf { ime.getBottom(density) > 0 } }
-    val voiceGesture = vh != null && (!(fieldFocused && keyboardUp) || voiceHolding)
+    // 输入框聚焦时长按留给系统的选字、粘贴(悬浮、分体、实体键盘也一样);没聚焦时输入框上盖一层按住说话的手势
+    val voiceGesture = vh != null && (!fieldFocused || voiceHolding)
+    // 键盘从弹着到收起(返回键、键盘自己的收起键):输入框跟着失焦,又能按住说话。只看键盘的变化,实体键盘(从不弹出)不受影响
+    LaunchedEffect(ime, density, vh != null) {
+        if (vh == null) return@LaunchedEffect
+        var wasUp = false
+        snapshotFlow { ime.getBottom(density) > 0 }.collect { up ->
+            if (wasUp && !up && fieldFocused) focus.clearFocus()
+            wasUp = up
+        }
+    }
     // 输入框外面的字一变(说完填进来、点了示例),光标放到末尾,接着说或接着打都在后面
     var fieldValue by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
     val shownValue = if (fieldValue.text == text) fieldValue else TextFieldValue(text, TextRange(text.length))

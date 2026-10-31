@@ -114,6 +114,9 @@ import kotlinx.coroutines.launch
 /** 按住约这么久(毫秒)才开始听;不到就是点一下打字。 */
 private const val HOLD_MS = 300L
 
+/** 从手指按下算,不到这么久(毫秒)松开就当误触、没听清。 */
+private const val MIN_TOTAL_MS = 500L
+
 /** 一次最多听这么久;最后 [COUNTDOWN_MS] 卡片右下角倒数。 */
 private const val MAX_MS = 60_000L
 private const val COUNTDOWN_MS = 10_000L
@@ -181,7 +184,8 @@ private object MicPermission {
  */
 @Stable
 internal class VoiceHold(private val voice: VoiceSource, private val scope: CoroutineScope) {
-    val hold = HoldToTalk(clock = SystemClock::elapsedRealtime, maxMs = MAX_MS)
+    // 「太短」按手指按下算不到半秒:开始听时已经按了 HOLD_MS,状态机只再数剩下的
+    val hold = HoldToTalk(clock = SystemClock::elapsedRealtime, maxMs = MAX_MS, minMs = MIN_TOTAL_MS - HOLD_MS)
 
     /** 长按开始以后手指还没离开。 */
     var holding by mutableStateOf(false)

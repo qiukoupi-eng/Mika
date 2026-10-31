@@ -9,10 +9,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -92,6 +94,21 @@ class VoiceHoldTest {
         session.out.close()
         waitNoTag("voice-listen")
         compose.onNodeWithTag("composer-field").assertTextEquals("帮我订明天的票")
+    }
+
+    @Test fun focusedFieldKeepsLongPressForTheSystem() {
+        composer("帮我订票")
+        // 点一下:聚焦打字
+        compose.onNodeWithTag("composer-field").performClick()
+        compose.onNodeWithTag("composer-field").assertIsFocused()
+        // 聚焦后长按是系统的选字、粘贴,不开始听
+        compose.onNodeWithTag("composer-field").performTouchInput { down(center) }
+        Thread.sleep(800)
+        compose.waitForIdle()
+        compose.onNodeWithTag("composer-field").performTouchInput { up() }
+        compose.waitForIdle()
+        assertEquals(0, voice.sessions.size)
+        assertEquals(0, compose.onAllNodesWithTag("voice-listen").fetchSemanticsNodes().size)
     }
 
     @Test fun slidingUpCancels() {
