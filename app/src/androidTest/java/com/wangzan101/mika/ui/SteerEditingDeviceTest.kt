@@ -159,6 +159,23 @@ class SteerEditingDeviceTest {
         shot("processed-menu")
     }
 
+    // 电脑追加的插话只归当前任务:手机上长按只有复制、引用、选择文字,撤回也被拒,照常交给模型
+    @Test fun remoteSteersOfferNoWithdrawOrEdit() {
+        val started = app.remoteTasks.start("请核对今天的资料", conversation)
+        val task = (started as com.wangzan101.mika.core.remote.StartOutcome.Started).task
+        script.awaitCall()
+        val id = checkNotNull(app.remoteTasks.steer(task.id, "电脑追加的要求"))
+        compose.waitUntil(5_000) { vm.ui.value.exchanges.lastOrNull()?.steers?.any { it.id == id && it.state == SteerState.Received } == true }
+        openSteer(id)
+        compose.onNodeWithTag("message-menu-copy").assertExists()
+        compose.onNodeWithTag("message-menu-edit").assertDoesNotExist()
+        compose.onNodeWithTag("message-menu-withdraw").assertDoesNotExist()
+        shot("remote-menu")
+        assertFalse(app.taskState.run(conversation)!!.withdrawSteer(id))
+        release.complete(Unit)
+        assertTrue(script.awaitCall().messages.toString().contains("电脑追加的要求"))
+    }
+
     private fun send(text: String) {
         compose.onNodeWithTag("composer-field").performTextInput(text)
         compose.onNodeWithContentDescription("发送").assertIsEnabled().performClick()
