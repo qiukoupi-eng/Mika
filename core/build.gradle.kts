@@ -96,7 +96,7 @@ tasks.test {
 
 val cliContractTest by tasks.registering(Test::class) {
     group = "verification"
-    description = "真实 Python CLI 对接 Kotlin 任务 API,MCP 路由关闭"
+    description = "真实 Python CLI 对接 Kotlin 任务 API,核对只走 /api/v1"
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.main.get().output + sourceSets.test.get().runtimeClasspath
     include("**/RemoteCliContractTest*")
@@ -104,6 +104,7 @@ val cliContractTest by tasks.registering(Test::class) {
     systemProperty("mika.python", providers.gradleProperty("mikaPython").getOrElse("python3"))
 }
 
+// 要 Python 3.10+,不挂在 check 上;需要时显式运行 ./gradlew :core:cliTest
 val cliTest by tasks.registering(Exec::class) {
     group = "verification"
     description = "CLI 进程、假 ADB、独立 Skill 与真实 HTTP 契约测试 (Python 3.10+)"
@@ -111,5 +112,3 @@ val cliTest by tasks.registering(Exec::class) {
     workingDir(rootProject.projectDir)
     commandLine(providers.gradleProperty("mikaPython").getOrElse("python3"), "-m", "unittest", "discover", "-s", "tools/mika/tests", "-v")
 }
-
-tasks.check { dependsOn(cliTest) }

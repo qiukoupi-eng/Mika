@@ -119,13 +119,14 @@ class McpTaskTools(
                 else throw ToolError("Unknown tool: $name")
         }
     } catch (e: RemoteTaskError) {
-        // 保留原 MCP 客户端看到的提示;共用服务不包含 MCP 命令名。
-        val message = when (e.message) {
-            RemoteStatus.ON_PHONE_NOTE -> ON_PHONE_NOTE
-            "The question is no longer open; check the task's status." -> "The question is no longer open; check mika_task_status."
-            else -> e.message.orEmpty().replace("No remote task", "No MCP task").replace("earlier remote task", "earlier MCP task")
-        }
-        throw ToolError(message)
+        // 按错误类型换回原 MCP 客户端看到的说法(带 MCP 工具名);共用服务不包含 MCP 命令名。
+        throw ToolError(when (e) {
+            is RemoteTaskError.NoSuchTask -> "No MCP task with id ${e.id}"
+            is RemoteTaskError.BadConversation -> "conversation must be one returned by an earlier MCP task (looks like mcp-<uuid>)"
+            is RemoteTaskError.NeedsPhone -> ON_PHONE_NOTE
+            is RemoteTaskError.QuestionClosed -> "The question is no longer open; check mika_task_status."
+            is RemoteTaskError.General -> e.message.orEmpty()
+        })
     }
 
     private fun taskId(args: JsonObject) = string(args, "task_id").orEmpty()

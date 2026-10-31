@@ -29,7 +29,6 @@ class RemoteHost(
     private val onError: (Throwable) -> Unit = {},
     loopbackToken: () -> String? = { null },
     device: DeviceAccess? = null,
-    mcpEnabled: Boolean = true,
 ) {
     private val access = RemoteAccess(token, clock, loopbackToken = loopbackToken)
     private val clients = LinkedHashMap<String, Long>()
@@ -37,7 +36,7 @@ class RemoteHost(
     val activity: StateFlow<RemoteActivity> = _activity.asStateFlow()
     private val service = RemoteTaskService(tasks)
     private val api = RemoteTaskApi(service, serverVersion, device)
-    private val rpc = if (mcpEnabled) McpRpc(McpTaskTools(service, device), serverVersion) { remote, name -> seen(remote, name) } else null
+    private val rpc = McpRpc(McpTaskTools(service, device), serverVersion) { remote, name -> seen(remote, name) }
     private var server: MiniHttpServer? = null
 
     val boundPort: Int get() = server?.port ?: -1
@@ -49,8 +48,7 @@ class RemoteHost(
             else RemoteTaskApi.error(v.status, "access_denied", v.message, v.headers)
             RemoteAccess.Verdict.Pass -> Unit
         }
-        if (req.path == McpRpc.PATH) return rpc?.handle(req)
-            ?: McpRpc.transportError(404, "MCP is disabled")
+        if (req.path == McpRpc.PATH) return rpc.handle(req)
         if (req.path == RemoteTaskApi.ROOT || req.path.startsWith("${RemoteTaskApi.ROOT}/")) {
             seen(req.remote, req.header("x-mika-client")?.take(64))
             return api.handle(req)

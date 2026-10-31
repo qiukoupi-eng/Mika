@@ -114,14 +114,5 @@ class RemoteTaskApiTest {
         assertEquals(401, localOnly.handle(req("192.168.1.20")).status)
     }
 
-    @Test fun apiWorksWithMcpRouteDisabled() {
-        val onlyApi = RemoteHost(tasks, { TOKEN }, 0, false, "test", mcpEnabled = false)
-        val headers = mapOf("authorization" to "Bearer $TOKEN", "content-type" to "application/json")
-        fun req(path: String, body: String) = HttpRequest("POST", path, headers, body.toByteArray(), InetAddress.getLoopbackAddress())
-        assertEquals(404, onlyApi.handle(req("/mcp", "{}")).status)
-        assertEquals(201, onlyApi.handle(req("/api/v1/tasks", """{"goal":"independent"}""")).status)
-        assertEquals(1, tasks.tasks.size)
-    }
-
     private companion object { const val TOKEN = "test-api-token" }
 }

@@ -113,4 +113,4 @@ mika --device SERIAL task list --limit 10 --json
 python3 -m unittest discover -s tools/mika/tests -v
 ```
 
-纯 JVM 测试覆盖共享服务、API/MCP 互操作、鉴权、状态与原有协议回归。`cliTest` 运行真实 CLI 对 Kotlin HTTP 服务的契约测试(关闭 MCP 路由),以及假 ADB、丢响应、令牌变化、端口清理和独立 Skill 目录测试。这些都不需要真机或模型 Key。真机无线断连、手机重启和真实 Agent 执行需要另行验收,不能用这些隔离测试代替。
+纯 JVM 测试覆盖共享服务、API/MCP 互操作、鉴权、状态与原有协议回归。`cliTest`(要 Python 3.10+,不在 `check` 里,需要时显式运行)运行真实 CLI 对 Kotlin HTTP 服务的契约测试(核对 CLI 只请求 `/api/v1`),以及假 ADB、丢响应、令牌变化、端口清理和独立 Skill 目录测试。这些都不需要真机或模型 Key。真机无线断连、手机重启和真实 Agent 执行需要另行验收,不能用这些隔离测试代替。

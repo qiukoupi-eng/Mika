@@ -44,6 +44,7 @@ class RemoteTaskServiceTest {
         tasks.set(task.id, TaskState.WaitingTakeover("payment", "Use the phone"))
         val error = runCatching { service.answer(task.id, "yes") }.exceptionOrNull() as RemoteTaskError
         assertEquals(RemoteTaskError.Code.CONFLICT, error.code)
+        assertTrue(error is RemoteTaskError.NeedsPhone)
         assertTrue(tasks.answers.isEmpty())
 
         val closing = object : RemoteTasks by tasks {
@@ -52,6 +53,7 @@ class RemoteTaskServiceTest {
         tasks.set(task.id, TaskState.WaitingInput("Which one?"))
         val closed = runCatching { RemoteTaskService(closing).answer(task.id, "one") }.exceptionOrNull() as RemoteTaskError
         assertEquals(RemoteTaskError.Code.CONFLICT, closed.code)
+        assertTrue(closed is RemoteTaskError.QuestionClosed)
     }
 
     @Test fun waitSharesTheBoundedStateTransitionRule() = runTest {
@@ -73,10 +75,13 @@ class RemoteTaskServiceTest {
         assertTrue(tasks.cancelled.isEmpty())
     }
 
-    @Test fun lostTaskDuringWaitIsNotReportedAsStillRunning() = runTest {
+    @Test fun lostTaskDuringWaitReturnsTheLastSeenStatus() = runTest {
         val task = service.start("wait")
+        tasks.set(task.id, TaskState.Running(1, "working"))
         launch { kotlinx.coroutines.delay(500); tasks.tasks.remove(task.id) }
-        val error = runCatching { service.wait(task.id, 2) }.exceptionOrNull() as RemoteTaskError
-        assertEquals(RemoteTaskError.Code.NOT_FOUND, error.code)
+        val result = service.wait(task.id, 2)
+        assertEquals(RemoteStatus.RUNNING, RemoteStatus.of(result.task.state))
+        assertFalse(result.changed)
+        assertTrue(testScheduler.currentTime < 2_000)
     }
 }

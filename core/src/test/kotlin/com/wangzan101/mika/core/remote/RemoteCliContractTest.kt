@@ -11,17 +11,20 @@ import java.util.concurrent.TimeUnit
 
 /** 运行真实 Python CLI,连真实 Kotlin HTTP 服务。与纯 JVM 测试分开由 :core:cliTest 运行。 */
 class RemoteCliContractTest {
-    @Test fun realCliCompletesLifecycleWithoutAnMcpRoute() {
+    @Test fun realCliCompletesLifecycleOverThePlainApiOnly() {
         val tasks = FakeRemoteTasks()
-        val host = RemoteHost(tasks, { "contract-test-token" }, 0, false, "test", mcpEnabled = false)
+        val host = RemoteHost(tasks, { "contract-test-token" }, 0, false, "test")
+        // 自己起监听、记下 CLI 请求过的路径,核对它一次也没走 MCP。
+        val paths = java.util.Collections.synchronizedList(mutableListOf<String>())
+        val server = MiniHttpServer(RemoteHost.bindAddress(false, 0), { req -> paths += req.path; host.handle(req) })
         val directory = Files.createTempDirectory("mika-cli-contract").toFile()
         val token = File(directory, "token").apply { writeText("contract-test-token") }
         val script = File("../tools/mika/scripts/mika_cli.py").canonicalPath
-        host.start()
+        server.start()
         try {
             fun cli(vararg args: String, exit: Int = 0): JsonObject {
                 val process = ProcessBuilder(listOf(System.getProperty("mika.python", "python3"), script,
-                    "--url", "http://127.0.0.1:${host.boundPort}", "--token-file", token.absolutePath, "--json") + args)
+                    "--url", "http://127.0.0.1:${server.port}", "--token-file", token.absolutePath, "--json") + args)
                     .directory(directory).redirectErrorStream(true).start()
                 if (!process.waitFor(10, TimeUnit.SECONDS)) {
                     process.destroyForcibly()
@@ -61,8 +64,10 @@ class RemoteCliContractTest {
             assertEquals("done", result["status"]!!.jsonPrimitive.content)
             assertNull(result["verified"])
             assertEquals(2, tasks.tasks.size)
+            assertTrue(paths.isNotEmpty())
+            assertTrue(paths.toString(), paths.all { it == RemoteTaskApi.ROOT || it.startsWith("${RemoteTaskApi.ROOT}/") })
         } finally {
-            host.stop()
+            server.stop()
             directory.deleteRecursively()
         }
     }
