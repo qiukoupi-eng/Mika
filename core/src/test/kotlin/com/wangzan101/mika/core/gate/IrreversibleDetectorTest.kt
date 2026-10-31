@@ -197,6 +197,10 @@ class IrreversibleDetectorTest {
             "立即購買" to IrrevAction.order, "傳送" to IrrevAction.send, "送出" to IrrevAction.submit, "儲值" to IrrevAction.pay)) {
             assertEquals(w, a, d.matchName(w))
         }
+        for ((w, s) in listOf("註銷帳户" to "注销账户", "回覆" to "回复", "發佈" to "发布", "聯繫對方" to "联系对方")) {
+            assertNotNull(s, d.matchName(s))
+            assertEquals(w, d.matchName(s), d.matchName(w))
+        }
         assertNull(d.matchName("已付款"))
         assertNull(d.matchName("購買記錄"))
         for (amount in listOf("合計 NT$ 390", "總計 $12.99", "US$12.99")) {
