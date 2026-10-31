@@ -124,14 +124,14 @@ internal fun SkillsSection(vm: MemoryViewModel, ui: SkillsUi, pending: Boolean) 
 @Composable
 private fun AppKnowledgeItem(vm: MemoryViewModel, row: AppKnowledgeRow, first: Boolean, expanded: Boolean, onToggle: () -> Unit) {
     val stage = when (row.stage) {
-        AppKnowledgeStage.Draft -> tr(R.string.skills_draft_unused)
+        AppKnowledgeStage.Draft -> tr(if (row.revision) R.string.skills_app_revision else R.string.skills_app_addition)
         AppKnowledgeStage.Trial -> stringResource(R.string.skills_trial)
         AppKnowledgeStage.Verified -> tr(R.string.skills_verified)
         AppKnowledgeStage.Archived -> tr(R.string.skills_archived)
     }
     Column {
         ListRow(null, row.name, stage, first = first, onClick = onToggle)
-        if (expanded) Text(row.markdown, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), style = MikaType.Hint, color = MikaTheme.colors.ink2)
+        ChangesAndText(row.changedLines, row.markdown, expanded)
         RowActions {
             MikaButton(if (expanded) stringResource(R.string.skills_hide_full) else stringResource(R.string.skills_view_full), onToggle, kind = ButtonKind.Tonal, size = ButtonSize.Small)
             if (row.stage == AppKnowledgeStage.Draft) MikaButton(stringResource(R.string.skills_accept_try), { vm.approveAppDraft(row.id) }, size = ButtonSize.Small)
@@ -142,14 +142,18 @@ private fun AppKnowledgeItem(vm: MemoryViewModel, row: AppKnowledgeRow, first: B
 
 /** 技能行下面:更新草稿改了哪几行,展开时再加全文。 */
 @Composable
-private fun SkillBody(r: SkillRow, expanded: Boolean) {
+private fun SkillBody(r: SkillRow, expanded: Boolean) = ChangesAndText(r.changedLines, r.markdown, expanded)
+
+/** 一行下面:这份草稿改了哪几行([changed]),展开时再加全文。 */
+@Composable
+private fun ChangesAndText(changed: List<String>, markdown: String, expanded: Boolean) {
     val c = MikaTheme.colors
-    if (r.changedLines.isEmpty() && !expanded) return
+    if (changed.isEmpty() && !expanded) return
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-        if (r.changedLines.isNotEmpty()) {
+        if (changed.isNotEmpty()) {
             Text(stringResource(R.string.skills_changed_lines), style = MikaType.Hint, color = c.ink3)
-            r.changedLines.forEach { Text(it, style = MikaType.Hint, color = if (it.startsWith("+")) c.ok else c.bad) }
+            changed.forEach { Text(it, style = MikaType.Hint, color = if (it.startsWith("+")) c.ok else c.bad) }
         }
-        if (expanded) Text(r.markdown, Modifier.padding(top = 6.dp), style = MikaType.Hint, color = c.ink2)
+        if (expanded) Text(markdown, Modifier.padding(top = 6.dp), style = MikaType.Hint, color = c.ink2)
     }
 }

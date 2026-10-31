@@ -35,9 +35,13 @@ class KnowledgeStoreTest {
     @Test fun trialComesOnlyFromLearnedDraft() {
         val bundledA = listOf(entry("a", pkgs = listOf("p.a")))
         assertTrue(!KnowledgeStore(bundledA).byPackage("p.a")!!.trial)
-        val trial = KnowledgeStore(bundledA, learnedNotes = mapOf("a" to "## 未核实的 App 知识试用稿\n草稿")).byPackage("p.a")!!
+        val trial = KnowledgeStore(bundledA, learnedNotes = mapOf("a" to LearnedNote("- 草稿", trial = true))).byPackage("p.a")!!
         assertTrue(trial.trial)
-        assertTrue(!KnowledgeStore(bundledA, learnedNotes = mapOf("a" to "已核实的补充")).byPackage("p.a")!!.trial)
+        assertTrue(trial.body!!.contains("- 草稿") && trial.body!!.contains("on trial"))
+        val verified = KnowledgeStore(bundledA, learnedNotes = mapOf("a" to LearnedNote("- 已核实的补充", trial = false))).byPackage("p.a")!!
+        assertTrue(!verified.trial && verified.body!!.contains("- 已核实的补充"))
+        // 自学补充的起草要看的是内置正文本身,不带补充
+        assertEquals(KnowledgeStore(bundledA).byPackage("p.a")!!.body, KnowledgeStore(bundledA, learnedNotes = mapOf("a" to LearnedNote("- x", true))).builtIn("a"))
     }
 
     @Test fun loadNotesReadsAppsAndSites() {

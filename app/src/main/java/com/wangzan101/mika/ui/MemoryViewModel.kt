@@ -204,8 +204,14 @@ class MemoryViewModel(
     }
 }
 
+/**
+ * 一份 App 知识补充。待确认的:[revision] 为 true 是对在用那份的修订,否则是第一次补充;
+ * [changedLines] 是相对在用那份(第一次补充时相对空白)加了、去掉的行。
+ */
+data class AppKnowledgeRow(val id: String, val name: String, val markdown: String, val stage: AppKnowledgeStage,
+    val revision: Boolean = false, val changedLines: List<String> = emptyList())
+
 /** 技能分段的内容:待收下的草稿和已收下的个人技能(在用的在前)。 */
-data class AppKnowledgeRow(val id: String, val name: String, val markdown: String, val stage: AppKnowledgeStage)
 
 data class SkillsUi(val drafts: List<SkillRow> = emptyList(), val installed: List<SkillRow> = emptyList(),
     val appKnowledge: List<AppKnowledgeRow> = emptyList()) {
@@ -216,8 +222,13 @@ data class SkillsUi(val drafts: List<SkillRow> = emptyList(), val installed: Lis
             val drafts = skills.drafts().map { (id, d) ->
                 row(id, d).copy(changedLines = d.replacesDraftOf?.let { byName[it] }?.let { changedLines(it.markdown, d.markdown) }.orEmpty())
             }
-            val appRows = appDrafts?.all().orEmpty().filter { it.stage != AppKnowledgeStage.Archived }
-                .map { AppKnowledgeRow(it.id, it.appName, it.markdown, it.stage) }
+            val all = appDrafts?.all().orEmpty()
+            val byId = all.associateBy { it.id }
+            val appRows = all.filter { it.stage != AppKnowledgeStage.Archived }.map { d ->
+                val row = AppKnowledgeRow(d.id, d.appName, d.markdown, d.stage)
+                if (d.stage != AppKnowledgeStage.Draft) row
+                else row.copy(revision = d.revises != null, changedLines = changedLines(d.revises?.let { byId[it] }?.markdown.orEmpty(), d.markdown))
+            }
             return SkillsUi(drafts, installed.sortedBy { it.status == SkillStatus.suspended }.map { row(it.name, it, skills) }, appRows)
         }
 
@@ -231,7 +242,7 @@ data class SkillsUi(val drafts: List<SkillRow> = emptyList(), val installed: Lis
             )
         }
 
-        /** 更新草稿相对原技能:「+ 」新增的行、「- 」去掉的行(不比空行)。 */
+        /** 更新草稿相对原来那份(技能或 App 知识补充):「+ 」新增的行、「- 」去掉的行(不比空行)。 */
         fun changedLines(old: String, new: String): List<String> {
             val before = old.lines().map { it.trimEnd() }.filter { it.isNotBlank() }
             val after = new.lines().map { it.trimEnd() }.filter { it.isNotBlank() }

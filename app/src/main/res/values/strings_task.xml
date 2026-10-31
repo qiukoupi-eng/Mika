@@ -9,7 +9,8 @@
     <string name="skill_suspended">This skill hasn’t been working lately, so it’s paused</string>
     <string name="skill_verified">Skill verified: %1$s</string>
     <string name="skill_learned">Mika learned a skill: %1$s</string>
-    <string name="skill_app_draft">Mika drafted APP.md for %1$s (not verified yet)</string>
+    <string name="skill_app_draft">Mika noted a few facts about %1$s for you to review</string>
+    <string name="skill_app_revised">Mika revised its notes on %1$s for you to review</string>
     <string name="recovered_result">Recovered task result</string>
     <string name="recover_delivery_failed">The last task finished, but its result notification failed. Check the chat.</string>
     <string name="recover_maybe_delivered">The last result may already have been delivered. Check the chat first to avoid doing it twice.</string>

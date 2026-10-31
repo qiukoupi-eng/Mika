@@ -9,7 +9,8 @@
     <string name="skill_suspended">这项技能最近不灵,先停用了</string>
     <string name="skill_verified">这项技能已核实:%1$s</string>
     <string name="skill_learned">Mika 学会了一项技能:%1$s</string>
-    <string name="skill_app_draft">Mika 为 %1$s 起草了 APP.md，尚未核实</string>
+    <string name="skill_app_draft">Mika 记下了几条关于%1$s的知识，等你确认</string>
+    <string name="skill_app_revised">Mika 修订了%1$s的知识，等你确认</string>
     <string name="recovered_result">恢复的任务结果</string>
     <string name="recover_delivery_failed">上次任务已完成，但结果通知送达失败；请在对话里查看</string>
     <string name="recover_maybe_delivered">上次结果可能已送达，请先在对话里查看，避免重复处理</string>

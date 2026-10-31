@@ -425,7 +425,7 @@ class TaskRun(
                 // 用户对某个 App/站点的补充放在私有目录 personal/apps、personal/sites 下
                 val userNotes = KnowledgeStore.loadNotes(File(service.filesDir, "personal"))
                 // 自学的 App 知识里改名前写下的工具名换成现在的
-                val learnedNotes = legacyNames().let { legacy -> memoryRuntime.appKnowledge().notes().mapValues { legacy.rewrite(it.value) } }
+                val learnedNotes = legacyNames().let { legacy -> memoryRuntime.appKnowledge().notes().mapValues { it.value.copy(text = legacy.rewrite(it.value.text)) } }
                 KnowledgeStore(KnowledgeStore.loadBundled(), userNotes, learnedNotes) to GuideCatalog.loadBundled()
             }
             val metrics = mainScreenMetrics()

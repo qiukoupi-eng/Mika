@@ -61,7 +61,7 @@
     <string name="skills_accept_try">Accept and try</string>
     <string name="skills_hide_full">Hide full text</string>
     <string name="skills_view_full">View full text</string>
-    <string name="skills_app_drafts">App knowledge drafts</string>
+    <string name="skills_app_drafts">App knowledge updates</string>
     <string name="skills_mine">My skills</string>
     <string name="skills_empty">No learned skills yet</string>
     <string name="skills_suspended">Paused</string>
@@ -70,7 +70,8 @@
     <string name="skills_app_knowledge">App knowledge</string>
     <string name="skills_restore_prev">Restore previous version</string>
     <string name="skills_edit_title">Edit, then try</string>
-    <string name="skills_draft_unused">Draft, not in use</string>
+    <string name="skills_app_addition">New notes, not in use yet</string>
+    <string name="skills_app_revision">Revision, not in use yet</string>
     <string name="skills_verified">Verified</string>
     <string name="skills_archived">Archived</string>
     <string name="skills_archive">Archive</string>

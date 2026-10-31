@@ -51,13 +51,17 @@ object Eligibility {
             !done -> "not_done"
             // 出错的动作不算步数(结果可能被截短,按原文判)
             events.count { it is RunEvent.ToolResult && tools.verb(it.tool) in ACTION_VERBS && !it.resultJson.contains("\"ok\":false") } < MIN_ACTIONS -> "too_few_actions"
-            events.any { it is RunEvent.Takeover && it.outcome == "skipped" } -> "takeover_skipped"
-            // 用户自己办完的:那段路线 Mika 没走过
-            events.any { it is RunEvent.Takeover && it.outcome == "user_finished" } -> "takeover_user_finished"
-            events.any { it is RunEvent.Confirmation && it.decision in DECLINED } -> "confirmation_declined"
-            followedPersonalSkill != null -> "followed_personal_skill"
-            else -> null
+            else -> interrupted(events) ?: "followed_personal_skill".takeIf { followedPersonalSkill != null }
         }
+    }
+
+    /** 这次的经过有一段不是 Mika 自己走的(跳过了接管、用户自己办完、不同意确认),从它学不到东西:返回原因,否则 null。 */
+    fun interrupted(events: List<RunEvent>): String? = when {
+        events.any { it is RunEvent.Takeover && it.outcome == "skipped" } -> "takeover_skipped"
+        // 用户自己办完的:那段路线 Mika 没走过
+        events.any { it is RunEvent.Takeover && it.outcome == "user_finished" } -> "takeover_user_finished"
+        events.any { it is RunEvent.Confirmation && it.decision in DECLINED } -> "confirmation_declined"
+        else -> null
     }
 
     private val DECLINED = setOf("declined", "declined_before")
@@ -290,13 +294,14 @@ class SkillDrafter(private val model: ChatModel) {
             }
         }.toSet()
 
-    private fun stripFence(text: String): String {
-        val t = text.trim()
-        if (!t.startsWith("```")) return t
-        return t.substringAfter('\n').removeSuffix("```").trim()
-    }
-
     companion object {
+        /** 模型回复外面包着的代码块围栏去掉。 */
+        fun stripFence(text: String): String {
+            val t = text.trim()
+            if (!t.startsWith("```")) return t
+            return t.substringAfter('\n').removeSuffix("```").trim()
+        }
+
         const val MAX_CHARS = 4000
 
         /**

@@ -10,6 +10,8 @@ import com.wangzan101.mika.core.knowledge.GuideCatalog
 import com.wangzan101.mika.core.knowledge.KnowledgeStore
 import com.wangzan101.mika.core.knowledge.AppKnowledgeDrafter
 import com.wangzan101.mika.core.knowledge.AppKnowledgeDraftStore
+import com.wangzan101.mika.core.knowledge.AppKnowledgeStage
+import com.wangzan101.mika.core.knowledge.AppRunInput
 import com.wangzan101.mika.core.memory.Change
 import com.wangzan101.mika.core.memory.MemoryExtractor
 import com.wangzan101.mika.core.memory.MemorySource
@@ -57,7 +59,8 @@ data class RunAftermath(
 )
 
 /**
- * 任务结束后:记下用到的个人技能的结果(可能自动停用)、从用户的话里提取记忆、办成的任务起草技能。
+ * 任务结束后:记下用到的个人技能和试用中 App 知识的结果(可能自动停用、转正式或归档)、从用户的话里提取记忆、
+ * 办成的任务起草技能;动过手的 App 从办成的、没办成的和磕磕绊绊的运行里起草知识补充的修订(见 [AppKnowledgeDrafter])。
  * 办成按交出回答后判的结局([RunAftermath.outcome])算,不按「交出了回答」,也不要求跑过最终核查([LearnGate])。
  * 全在结果通知发出之后的后台协程里做([launchAfter]);哪一步出错都不影响任务结局。
  *
@@ -84,8 +87,10 @@ class RunLearning(
         val events = guarded(emptyList()) { a.events() }
         val used = events.filterIsInstance<RunEvent.SkillUsed>()
         val skillNotes = recordOutcomes(used, a.end, a.outcome).toMutableList()
+        // 试用中的 App 知识和个人技能按同一种结果算:取消的、没判成的不记
+        val trial = SkillOutcomes.resultOf(a.end, a.outcome)?.takeIf { it != SkillResult.unreviewed }
         val trialNames = events.filterIsInstance<RunEvent.State>().filter { it.name == "knowledge_trial_used" }.map { it.detail }.distinct()
-        trialNames.forEach { name -> guarded(null) { appDrafts?.recordTrial(name, LearnGate.done(a.end, a.outcome)) } }
+        if (trial != null) trialNames.forEach { name -> guarded(null) { appDrafts?.recordTrial(name, trial == SkillResult.verified) } }
 
         val changes = a.saved.toMutableList()
         val store = store
@@ -106,7 +111,8 @@ class RunLearning(
         // 做法只从办成的学:回答如实说没办成、只办了一部分,或没判成的,不起草
         val done = learnable && LearnGate.done(a.end, a.outcome)
         if (done) draft(a, events, used.map { it.name }.distinct())?.let(skillNotes::add)
-        if (done) draftApp(a, events)?.let(skillNotes::add)
+        // App 知识也从没办成、磕磕绊绊的运行里学(值不值得由 AppKnowledgeDrafter 按经过判)
+        if (a.origin == RunOrigin.Ui) skillNotes += draftApps(a, events)
         return RunNotes(a.conversationId, a.runId.orEmpty(), MemoryExtractor.notes(changes), a.usedMemory, skillNotes)
     }
 
@@ -151,24 +157,24 @@ class RunLearning(
         return SkillNote(tr(R.string.skill_learned, description), draftId = id)
     }
 
-    private suspend fun draftApp(a: RunAftermath, events: List<RunEvent>): SkillNote? {
-        val drafter = appDrafter ?: return null
-        val drafts = appDrafts ?: return null
-        val knowledge = a.knowledge ?: return null
-        val runId = a.runId ?: return null
-        val done = a.end as? TaskState.Succeeded ?: return null
-        if (!switches.learnSkills || !LearnGate.done(a.end, a.outcome) || events.any { it is RunEvent.Replay && it.matched }) return null
-        val packages = events.filterIsInstance<RunEvent.Observed>().mapNotNull { e ->
-            e.place?.takeIf { it.kind == PlaceKind.App }?.name
-        }.distinct()
-        val app = packages.singleOrNull()?.let(knowledge::byPackage) ?: return null
-        if (drafts.all().any { it.appName == app.name && it.stage != com.wangzan101.mika.core.knowledge.AppKnowledgeStage.Archived }) return null
-        val draft = guarded(null) {
-            yieldToForeground()
-            drafter.draft(runId, a.goal, done.answer, events, a.tools, app, ids(), events.lastOrNull()?.atMs ?: 0L)
-        } ?: return null
-        if (!guarded(false) { drafts.putPending(draft) }) return null
-        return SkillNote(tr(R.string.skill_app_draft, app.display))
+    /** 这次动过手、有知识条目的每个 App 各判一次;同一个 App 已有待确认的修订就不再起草。 */
+    private suspend fun draftApps(a: RunAftermath, events: List<RunEvent>): List<SkillNote> {
+        val drafter = appDrafter ?: return emptyList()
+        val drafts = appDrafts ?: return emptyList()
+        val knowledge = a.knowledge ?: return emptyList()
+        val runId = a.runId ?: return emptyList()
+        if (!switches.learnSkills) return emptyList()
+        val run = AppRunInput(runId, a.goal, a.end, a.outcome, events, a.tools)
+        return AppKnowledgeDrafter.touched(events, a.tools, knowledge).mapNotNull { app ->
+            if (guarded(true) { drafts.all().any { it.appName == app.name && it.stage == AppKnowledgeStage.Draft } }) return@mapNotNull null
+            val current = guarded(null) { drafts.inUse(app.name) }
+            val draft = guarded(null) {
+                yieldToForeground()
+                drafter.draft(run, app, knowledge.builtIn(app.name), current, ids(), events.lastOrNull()?.atMs ?: 0L)
+            } ?: return@mapNotNull null
+            if (!guarded(false) { drafts.putPending(draft) }) return@mapNotNull null
+            SkillNote(tr(if (draft.revises != null) R.string.skill_app_revised else R.string.skill_app_draft, app.display))
+        }
     }
 
     /** 学的每一步出错都不影响别的步骤;取消照常往外抛。 */
