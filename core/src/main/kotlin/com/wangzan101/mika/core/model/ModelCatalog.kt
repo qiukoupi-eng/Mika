@@ -33,6 +33,11 @@ data class ListedModel(
     val chat: Boolean? = null,
     /** 服务商明确给出的思考档位;null 表示未知,空列表表示没有可选档位。保留服务商的顺序。 */
     val reasoningEfforts: List<String>? = null,
+    /**
+     * 服务商写明这个模型接受的思考方式(Anthropic 列表 `capabilities.thinking.types` 里支持的那几种,
+     * 如 `adaptive`、`enabled`、`disabled`);null 表示没说。
+     */
+    val thinkingTypes: List<String>? = null,
 ) {
     val usable: Boolean get() = endpoint != null || unsupportedApis.isEmpty()
 }
@@ -103,8 +108,9 @@ sealed interface ModelListResult {
  *   给了 `input_modalities`、`context_window`、`supported_reasoning_levels` 的照填。
  * - Anthropic:`GET {base}/v1/models`,按 `after_id` 翻页;`max_input_tokens` 是上下文,
  *   `capabilities.image_input` / `capabilities.thinking` 是看图和推理。不给工具调用信息。
+ *   思考档位按 `capabilities.effort` 和 `capabilities.thinking.types` 逐项照填(见 [anthropicEfforts])。
  * - Gemini:`GET {base}/v1beta/models`,按 `pageToken` 翻页;只留能 `generateContent` 的,
- *   `inputTokenLimit` 是上下文,`thinking` 是推理。不给工具调用和看图信息。
+ *   `inputTokenLimit` 是上下文,`thinking` 是推理。不给工具调用和看图信息,也不给思考档位。
  */
 class ModelCatalog(private val http: OkHttpClient) {
     // 各方法的 headers:每个请求都带的头(见 [ClientHeaders]);Key 的头由这里自己加
@@ -208,14 +214,33 @@ class ModelCatalog(private val http: OkHttpClient) {
     private fun anthropicModel(o: JsonObject): ListedModel? {
         val id = o.str("id")?.takeIf { it.isNotBlank() } ?: return null
         val caps = o["capabilities"] as? JsonObject
+        val thinking = caps?.obj("thinking")
+        val types = thinking?.obj("types")?.supportedKeys()
         return ListedModel(
             id = id,
             displayName = o.str("display_name").orEmpty(),
             vision = (caps?.get("image_input") as? JsonObject)?.bool("supported"),
             contextTokens = o.int("max_input_tokens"),
-            reasoning = (caps?.get("thinking") as? JsonObject)?.bool("supported"),
+            reasoning = thinking?.bool("supported"),
+            reasoningEfforts = types?.let { anthropicEfforts(caps?.obj("effort"), it) },
+            thinkingTypes = types,
         )
     }
+
+    /**
+     * Anthropic 模型可选的思考档位:只在它接受自适应思考(`adaptive`,档位放 `output_config.effort`)时给,
+     * 档位是 `capabilities.effort` 里标了支持的那几级;也接受关掉思考(`disabled`)的,前面加一档 `none`。
+     * 只接受按预算思考(`enabled` + `budget_tokens`)或不分档位的,没有可选档位。
+     */
+    private fun anthropicEfforts(effort: JsonObject?, types: List<String>): List<String> {
+        val levels = effort?.takeIf { it.bool("supported") == true }?.supportedKeys().orEmpty()
+            .sortedBy { EFFORT_ORDER.indexOf(it).takeIf { i -> i >= 0 } ?: EFFORT_ORDER.size }
+        if ("adaptive" !in types || levels.isEmpty()) return emptyList()
+        return listOfNotNull("none".takeIf { "disabled" in types }) + levels
+    }
+
+    /** `{"a":{"supported":true},"b":{"supported":false},"supported":true}` 里标了支持的子项:`[a]`。 */
+    private fun JsonObject.supportedKeys(): List<String> = keys.filter { (this[it] as? JsonObject)?.bool("supported") == true }
 
     private fun geminiModel(o: JsonObject): ListedModel? {
         val id = o.str("name")?.removePrefix("models/")?.takeIf { it.isNotBlank() } ?: return null
@@ -271,6 +296,8 @@ class ModelCatalog(private val http: OkHttpClient) {
     private companion object {
         /** 翻页上限:防止服务端一直给下一页。 */
         const val MAX_PAGES = 10
+        /** Anthropic 的 `capabilities.effort` 按字母排;界面按由浅到深排,不认得的排最后。 */
+        val EFFORT_ORDER = listOf("low", "medium", "high", "xhigh", "max")
         /** 列表里 `type` 一项的写法:是对话模型的,和不是的(向量、重排、画图、语音、审核)。 */
         val CHAT_TYPES = setOf("chat", "llm", "language", "text", "vlm", "code")
         val NON_CHAT_TYPES = setOf(

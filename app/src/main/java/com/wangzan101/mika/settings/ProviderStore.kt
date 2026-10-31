@@ -189,12 +189,14 @@ data class RoleChoices(
 
 /**
  * 建一个模型客户端时额外给的:[headers] 每个请求都带(客户端标识、会话号,见 [ClientHeaders]);
- * [maxOutputTokens] 限制回复长度(连接测试用),null 按适配器默认。
+ * [maxOutputTokens] 限制回复长度(连接测试用),null 按适配器默认;[reasoningEffort] 是这个用途选的思考强度;
+ * [thinkingTypes] 是模型列表写明这个模型接受的思考方式(见 [ListedModel.thinkingTypes]),没说为 null。
  */
 data class ClientSetup(
     val headers: Map<String, String> = emptyMap(),
     val maxOutputTokens: Int? = null,
     val reasoningEffort: String? = null,
+    val thinkingTypes: List<String>? = null,
 )
 
 /** 「测试并保存」试调用(见 [ProviderStore.probe])的结果。 */
@@ -448,8 +450,10 @@ class ProviderStore(
     fun modelFor(role: ModelRole, session: ModelSession = ModelSession.fresh()): ChatModel? = configFor(role)?.let { cfg ->
         val p = provider(cfg.providerId)
         val source = UsageSource(cfg.providerId, p?.name ?: cfg.name, cfg.model, UsagePurpose.of(role))
-        modelFactory(cfg, apiKey(cfg.id), endpointOf(cfg), ClientSetup(
+        val listed = listedOf(cfg)
+        modelFactory(cfg, apiKey(cfg.id), listed?.endpoint, ClientSetup(
             headers(p?.sessionHeader, session), reasoningEffort = _roles.value.reasoningEffort(role),
+            thinkingTypes = listed?.thinkingTypes,
         )).metered(source, usage)
     }
 
@@ -479,9 +483,9 @@ class ProviderStore(
 
     private fun headers(sessionHeader: String?, session: ModelSession) = ClientHeaders.of(userAgent, sessionHeader, session)
 
-    /** 服务商最近一次列出的模型里,给这个模型单独指定的接口;每次建模型时现查,重新列过就用新的。 */
-    private fun endpointOf(cfg: ProviderConfig): ModelEndpoint? =
-        provider(cfg.providerId)?.models?.firstOrNull { it.id == cfg.model }?.endpoint
+    /** 服务商最近一次列出的这个模型(单独指定的接口、写明的思考方式等);每次建模型时现查,重新列过就用新的。 */
+    private fun listedOf(cfg: ProviderConfig): ListedModel? =
+        provider(cfg.providerId)?.models?.firstOrNull { it.id == cfg.model }
 
     /** 列出这个服务商的可用模型(见 [ModelCatalog]);不属于任何对话,声明了会话头的用新的会话号。 */
     suspend fun listModels(kind: ProviderConfig.Kind, baseUrl: String, apiKey: String?, sessionHeader: String? = null): ModelListResult =
@@ -660,23 +664,19 @@ class ProviderStore(
      * 连接测试就会误报),Responses 也不给(ChatGPT 套餐那条路不收 `max_output_tokens`)。
      */
     private fun buildModel(cfg: ProviderConfig, apiKey: String?, endpoint: ModelEndpoint?, setup: ClientSetup): ChatModel {
-        // 订阅登录的地址固定在这一家,不跟模型列表里写的别的协议走,免得把订阅转去另一个接口
-        val (kind, baseUrl) = when (cfg.kind) {
-            ProviderConfig.Kind.Xai ->
-                cfg.kind to (provider(cfg.providerId)?.baseUrl?.takeIf { it.isNotBlank() } ?: cfg.baseUrl)
-            else -> adapterFor(cfg, endpoint)
-        }
+        val (kind, adapterBase) = adapterFor(cfg, endpoint)
+        // 订阅登录用服务商当前的地址(登录时可能换过),配置里存的是添加时的
+        val baseUrl = if (cfg.kind == ProviderConfig.Kind.Xai) {
+            provider(cfg.providerId)?.baseUrl?.takeIf { it.isNotBlank() } ?: adapterBase
+        } else adapterBase
         return when (kind) {
             ProviderConfig.Kind.OpenAiCompat ->
                 OpenAiCompatModel(baseUrl, apiKey, cfg.model, cfg.capabilities, http, endpoint?.reasoningField, setup.headers,
                     reasoningEffort = setup.reasoningEffort)
             ProviderConfig.Kind.Anthropic -> AnthropicModel(
                 baseUrl, apiKey.orEmpty(), cfg.model, cfg.capabilities, http,
-                // 开思考后输出上限里同时算思考,原来给连接测试的量不够一次像样的思考
-                maxTokens = setup.maxOutputTokens ?: if (setup.reasoningEffort?.let { it != "none" } == true) {
-                    ANTHROPIC_THINKING_MAX_TOKENS
-                } else DEFAULT_ANTHROPIC_MAX_TOKENS,
-                headers = setup.headers, reasoningEffort = setup.reasoningEffort,
+                maxTokens = setup.maxOutputTokens,
+                headers = setup.headers, reasoningEffort = setup.reasoningEffort, thinkingTypes = setup.thinkingTypes,
             )
             ProviderConfig.Kind.Gemini ->
                 GeminiModel(baseUrl, apiKey.orEmpty(), cfg.model, cfg.capabilities, http, setup.headers, setup.maxOutputTokens,
@@ -797,6 +797,7 @@ class ProviderStore(
                 contextTokens = m["contextTokens"]?.jsonPrimitive?.intOrNull,
                 reasoning = m["reasoning"]?.jsonPrimitive?.booleanOrNull,
                 reasoningEfforts = m["reasoningEfforts"]?.jsonArray?.map { it.jsonPrimitive.content },
+                thinkingTypes = m["thinkingTypes"]?.jsonArray?.map { it.jsonPrimitive.content },
                 chat = m["chat"]?.jsonPrimitive?.booleanOrNull,
                 endpoint = (m["api"] as? JsonObject)?.let { a ->
                     ModelProtocol.of(a["protocol"]?.jsonPrimitive?.content)?.let { protocol ->
@@ -868,6 +869,7 @@ class ProviderStore(
                                         m.contextTokens?.let { put("contextTokens", it) }
                                         m.reasoning?.let { put("reasoning", it) }
                                         m.reasoningEfforts?.let { levels -> putJsonArray("reasoningEfforts") { levels.forEach { add(it) } } }
+                                        m.thinkingTypes?.let { types -> putJsonArray("thinkingTypes") { types.forEach { add(it) } } }
                                         m.chat?.let { put("chat", it) }
                                         m.endpoint?.let { e ->
                                             putJsonObject("api") {
@@ -968,9 +970,6 @@ class ProviderStore(
         private const val PROBE_TEXT = "What time is it? Use the get_time tool."
         private val PROBE_TOOL = ToolSpec("get_time", "Returns the current time.", """{"type":"object","properties":{}}""")
         private const val PROBE_MAX_TOKENS = 1024
-        private const val DEFAULT_ANTHROPIC_MAX_TOKENS = 4096
-        /** 选了思考强度时 Claude 的输出上限:思考也占这个额度,4K 往往在出答案前就用完。 */
-        private const val ANTHROPIC_THINKING_MAX_TOKENS = 16_000
 
         /**
          * 列模型的接口:OpenAI 兼容、Responses、ChatGPT 和 xAI 都是 `GET {base}/models`(Bearer;订阅登录的 [apiKey] 是访问令牌)。
@@ -984,9 +983,13 @@ class ProviderStore(
                 ProviderConfig.Kind.Gemini -> catalog.gemini(baseUrl, apiKey.orEmpty(), headers)
             }
 
-        /** 调用这个模型用哪种适配器、交给它什么 Base URL。 */
+        /**
+         * 调用这个模型用哪种适配器、交给它什么 Base URL。建模型([buildModel])和给思考档位([ReasoningOptions])都按它。
+         * 订阅登录(xAI)固定走这一家的接口,不跟模型列表里写的别的协议走,免得把订阅转去另一个接口。
+         */
         internal fun adapterFor(cfg: ProviderConfig, endpoint: ModelEndpoint?): Pair<ProviderConfig.Kind, String> =
-            if (endpoint == null) cfg.kind to cfg.baseUrl else ProviderConfig.Kind.of(endpoint.protocol) to endpoint.adapterBaseUrl
+            if (endpoint == null || cfg.kind == ProviderConfig.Kind.Xai) cfg.kind to cfg.baseUrl
+            else ProviderConfig.Kind.of(endpoint.protocol) to endpoint.adapterBaseUrl
 
         /** 产品里的那份(App 建):配置在 files/settings 下,Key 用 Android 密钥库加密,用量记到 [usage]。 */
         fun create(context: Context, usage: UsageSink, userAgent: String): ProviderStore =

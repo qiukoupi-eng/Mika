@@ -26,7 +26,7 @@ Signing out only clears the sign-in on this phone.
 
 ## Reasoning effort
 
-For ChatGPT sign-in and Responses models, adjust **Reasoning effort** below each role card. The default leaves the choice to the provider. "Use main model" inherits its effort; explicitly picking the same model lets each role use a different effort. Options come from the provider's model list when available; otherwise manual options are offered, subject to server support. Higher effort usually takes longer and uses more tokens.
+Models on ChatGPT sign-in, xAI sign-in, and the Responses API can adjust **Reasoning effort** below each role card; OpenAI-compatible, Anthropic Messages, and Gemini models can too when the provider's model list states the levels for that model. The default leaves the choice to the provider. "Use main model" inherits its effort; explicitly picking the same model lets each role use a different effort. Options come from the provider's model list when available (the Anthropic model list states each model's levels; models that only take a thinking budget get none). Without listed levels, only Responses models get generic manual options, subject to server support; OpenAI-compatible, Anthropic, and Gemini models are not guessed. Higher effort usually takes longer and uses more tokens.
 
 ## Models on your own computer or LAN
 
