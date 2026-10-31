@@ -1,23 +1,22 @@
 <div align="center">
 
-<img src="docs/media/logo.png" alt="Mika" width="120" />
+<h1><img src="docs/media/logo.png" alt="" width="72" align="center" />&nbsp; Mika</h1>
 
-# Mika
+<a href="https://github.com/wangzan101/Mika/stargazers"><img src="https://img.shields.io/github/stars/wangzan101/Mika?style=flat&logo=github&label=Star&color=1f6feb" alt="stars" /></a>
+<a href="https://github.com/wangzan101/Mika/releases"><img src="https://img.shields.io/github/downloads/wangzan101/Mika/total?label=%E4%B8%8B%E8%BD%BD&color=2ea043" alt="downloads" /></a>
+<a href="https://github.com/wangzan101/Mika/releases/latest"><img src="https://img.shields.io/github/v/release/wangzan101/Mika?include_prereleases&label=%E7%89%88%E6%9C%AC" alt="version" /></a>
+<img src="https://img.shields.io/badge/Android-12%2B-3DDC84?logo=android&logoColor=white" alt="android" />
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-lightgrey" alt="license" /></a>
+<a href="https://x.com/wangzan101"><img src="https://img.shields.io/badge/X-%40wangzan101-000000?logo=x&logoColor=white" alt="X @wangzan101" /></a>
 
-简体中文 | [English](README.en.md)
+简体中文 · [English](README.en.md)
 
-**你手机上的私人 AI 助理，替你操作 App、上网、把事办成。**
-
+**你手机上的私人 AI 助理，替你操作 App、上网、把事办成。**<br/>
 它在一块看不见的后台屏上干活，你照样刷你的手机。
 
-An on-device AI agent for Android that operates apps and the web to get things done for you — on a hidden background screen, so you can keep using your phone.
+<h3><a href="https://github.com/wangzan101/Mika/releases/latest">⬇ 下载 Mika（安卓 APK）</a></h3>
 
-<a href="https://github.com/wangzan101/Mika/releases/latest"><img src="https://img.shields.io/github/v/release/wangzan101/Mika?include_prereleases&label=version" alt="version" /></a>
-<img src="https://img.shields.io/badge/Android-13%2B-3DDC84" alt="android" />
-<img src="https://img.shields.io/badge/sandbox-arm64-blue" alt="sandbox" />
-<a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-lightgrey" alt="license" /></a>
-
-[下载 APK](https://github.com/wangzan101/Mika/releases/latest) · [安装](#安装) · [快速开始](#快速开始) · [能做什么](#能做什么) · [常见问题](#常见问题) · [参与贡献](#参与贡献)
+[安装](#安装) · [快速开始](#快速开始) · [能做什么](#能做什么) · [常见问题](#常见问题) · [参与贡献](#参与贡献)
 
 </div>
 
