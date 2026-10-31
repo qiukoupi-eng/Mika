@@ -7,9 +7,10 @@
     <string name="parallel_needs_14">Android 14 以上才支援同時進行多個任務</string>
     <string name="parallel_low_ram">這臺手機記憶體較小,一次只進行一個任務</string>
     <string name="skill_suspended">這項技能最近不靈,先停用了</string>
-    <string name="skill_verified">這項技能已核實:%1$s</string>
+    <string name="skill_verified">這項技能用它辦成了事，轉為正式:%1$s</string>
     <string name="skill_learned">Mika 學會了一項技能:%1$s</string>
-    <string name="skill_app_draft">Mika 為 %1$s 起草了 APP.md，尚未核實</string>
+    <string name="skill_app_draft">Mika 記下了幾條關於%1$s的知識，等你確認</string>
+    <string name="skill_app_revised">Mika 修訂了%1$s的知識，等你確認</string>
     <string name="recovered_result">恢復的任務結果</string>
     <string name="recover_delivery_failed">上次任務已完成，但結果通知送達失敗；請在對話裡檢視</string>
     <string name="recover_maybe_delivered">上次結果可能已送達，請先在對話裡檢視，避免重複處理</string>

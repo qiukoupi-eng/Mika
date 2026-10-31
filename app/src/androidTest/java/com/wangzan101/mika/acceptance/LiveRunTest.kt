@@ -11,6 +11,8 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wangzan101.mika.MikaApp
+import com.wangzan101.mika.memory.MemoryRuntime
+import kotlinx.coroutines.Job
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.sh
 import com.wangzan101.mika.core.agent.TaskState
@@ -51,7 +53,8 @@ import com.wangzan101.mika.core.cap.phone.OperatingPace
  *   记下暂停状态和通知,几秒后像点通知上的「继续」一样恢复。
  *
  * 记录写到 App 外部文件目录 acceptance/<liveRun>/:log.txt(每步模型说的话、工具调用与结果摘要)、
- * result.txt(模型、目标、结果、步数、用时、最终回答)、虚拟屏每步画面与主屏截图。
+ * result.txt(模型、目标、结果、步数、用时、最终回答)、虚拟屏每步画面与主屏截图;
+ * 传了 `-e liveSettleSec N` 时等至多 N 秒让结局判定和学习做完,学到的写进 learned.txt。
  */
 @RunWith(AndroidJUnit4::class)
 class LiveRunTest {
@@ -126,6 +129,10 @@ class LiveRunTest {
         val recorder = Recorder(::note)
         testTasks.modelFactory = { ctx, s -> TaskEnvironment.defaultModelFactory(ctx, s)?.let { recorder.wrap(it) } }
         note("model=${cfg.model} pace=${pace.name.lowercase()} goal=$goal")
+        // 学习在任务结束后的进程级作用域里跑;开局记下那里已有几件常驻的事,收尾时等它回到这个数
+        val memory = MemoryRuntime.of(context)
+        val learningJob = memory.scope.coroutineContext[Job]!!
+        val resident = learningJob.children.count { it.isActive }
 
         compose.typeAndSend(goal!!)
         // 发出去就收起键盘:对话页下面的后台屏小画面才露得出来,和真人发完就收键盘一样
@@ -223,11 +230,27 @@ class LiveRunTest {
             is TaskState.Failed -> end.reason
             else -> ""
         }
+        // liveSettleSec:等交出之后的结局判定和学习做完,把学到的写进 learned.txt
+        val settleMs = (args.getString("liveSettleSec")?.toLong() ?: 0) * 1000
+        if (settleMs > 0) {
+            val settled = DeviceSupport.pollUntil(settleMs) { true.takeIf { learningJob.children.count { it.isActive } <= resident } } != null
+            note("learning settled=$settled")
+            File(dir, "learned.txt").writeText(learned(memory))
+        }
         File(dir, "result.txt").writeText(
             "model=${cfg.model}\ngoal=$goal\noutcome=$outcome\nsteps=${recorder.calls}\nmaxStep=$lastStep\n" +
                 "takeovers=$takeovers\npauses=$pausesHandled\nwallSec=$wall\ninputTokens=${recorder.inTokens}\noutputTokens=${recorder.outTokens}\n" +
                 "answer=$answer\n" + (summary?.let { "summary=$it\n" } ?: ""),
         )
+    }
+
+    /** 此刻学到的全部:个人技能(在用与草稿)、App 知识的各份补充、记住的路线条数。 */
+    private fun learned(memory: MemoryRuntime): String = buildString {
+        val skills = memory.skills()
+        skills.list().forEach { appendLine("skill ${it.name} status=${it.status} outcomes=${it.outcomes}\n${it.markdown}\n") }
+        skills.drafts().forEach { (id, s) -> appendLine("skill-draft $id ${s.name}\n${s.markdown}\n") }
+        memory.appKnowledge().all().forEach { appendLine("app ${it.appName} stage=${it.stage} lesson=${it.lesson} revises=${it.revises} trials=${it.trialOutcomes}\n${it.markdown}\n") }
+        appendLine("routes=${(context.applicationContext as MikaApp).routes.count()}")
     }
 
     /** Mika 当前通知的标题、正文和按钮(从 dumpsys notification 里摘)。 */
