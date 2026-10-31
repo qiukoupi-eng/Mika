@@ -60,6 +60,7 @@ import com.wangzan101.mika.core.workspace.SandboxTree
 import com.wangzan101.mika.task.TaskEnvironment
 import com.wangzan101.mika.task.ResourceScheduler
 import com.wangzan101.mika.task.McpTaskHub
+import com.wangzan101.mika.task.McpHttpRuntime
 import com.wangzan101.mika.task.FileChildRunStore
 import com.wangzan101.mika.task.TriggerRuntime
 
@@ -80,6 +81,8 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
     /** 各任务的标签池共用的标签总数上限。 */
     val resources = ResourceScheduler()
     val mcpTasks by lazy { McpTaskHub(this) }
+    /** MCP HTTP JSON-RPC(本机回环);开关见 [FeatureFlags]。 */
+    val mcpHttp by lazy { McpHttpRuntime(this) }
     val childRuns by lazy { FileChildRunStore(java.io.File(filesDir, "children-v3.json")) }
     override val tabBudget get() = resources.tabBudget
 
@@ -258,6 +261,8 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
         scope.launch { runCatching { WebFiles.clearStale(this@MikaApp, SandboxDirs(this@MikaApp).gate) } }
         // 运行环境没准备好(首次启动、Mika 升级后)就在后台准备,不联网、对用户不可见
         RuntimePreparer.ensure(this)
+        // MCP HTTP 传输(默认本机回环 + Bearer);LocalChannel 不受影响
+        scope.launch(Dispatchers.IO) { runCatching { mcpHttp.apply() } }
         // 沙箱就绪(启动时已就绪,或刚装好)就把技能目录核对一次:App 更新带来的脚本马上能用
         scope.launch {
             SandboxState.get(this@MikaApp).status.first { it is SandboxStatus.Ready }

@@ -191,7 +191,7 @@
 
 ### MCP
 
-`core/mcp/McpServer.kt`(低层工具会话、整任务提交)和 `core/cap/mcp/McpClient.kt`(按注解定风险、工具列表开局冻结)只有骨架和测试,没有传输层,用户用不到。App 一侧已有 `McpTaskHub`(`app/task/McpTaskHub.kt`)和 `TaskService` 的 `ACTION_START_MCP` / `ACTION_CANCEL_MCP`,等传输层接上就能收任务、取消任务。
+`core/mcp/McpServer.kt`(低层工具会话、整任务提交)和 `core/cap/mcp/McpClient.kt`(按注解定风险、工具列表开局冻结)仍是骨架;本机 HTTP 传输已接上:`HttpMcpTransport` / `HttpMcpConfig`(`core/mcp/`)在 App 里经 `McpHttpRuntime`(`app/task/McpHttpRuntime.kt`)挂到 `McpTaskHub`,整任务仍走 `TaskService` 的 `ACTION_START_MCP` / `ACTION_CANCEL_MCP`。默认只听 `127.0.0.1:18765`,`POST /mcp` 为 JSON-RPC,可选 Bearer;细节见 `docs/dev/mcp-http.md`。`LocalChannel` 不变。设备上工具会话尚未接到真机能力(传输层里 `enableToolSessions=false`),只开放整任务提交与取消。
 
 ## 7. 上下文与压缩
 

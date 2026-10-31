@@ -95,6 +95,42 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         prefs.edit().putFloat(CAPSULE_CARD_HEIGHT, fraction.coerceIn(0f, 1f)).apply()
     }
 
+    /** MCP HTTP 传输是否监听;默认开,只绑本机回环。 */
+    fun mcpHttpEnabled(): Boolean = prefs.getBoolean(MCP_HTTP_ENABLED, true)
+
+    fun setMcpHttpEnabled(on: Boolean) {
+        prefs.edit().putBoolean(MCP_HTTP_ENABLED, on).commit()
+    }
+
+    /** 监听地址,默认 127.0.0.1;改成非回环前务必设令牌。 */
+    fun mcpHttpHost(): String = prefs.getString(MCP_HTTP_HOST, null)?.takeIf { it.isNotBlank() } ?: "127.0.0.1"
+
+    fun setMcpHttpHost(host: String) {
+        prefs.edit().putString(MCP_HTTP_HOST, host.trim().ifBlank { "127.0.0.1" }).commit()
+    }
+
+    /** 监听端口,默认 18765;0 表示系统分配。 */
+    fun mcpHttpPort(): Int = prefs.getInt(MCP_HTTP_PORT, 18765).coerceIn(0, 65535)
+
+    fun setMcpHttpPort(port: Int) {
+        prefs.edit().putInt(MCP_HTTP_PORT, port.coerceIn(0, 65535)).commit()
+    }
+
+    /** 共享 Bearer;空则首次 [ensureMcpHttpToken] 时生成并写入。 */
+    fun mcpHttpToken(): String? = prefs.getString(MCP_HTTP_TOKEN, null)?.takeIf { it.isNotBlank() }
+
+    fun setMcpHttpToken(token: String?) {
+        prefs.edit().putString(MCP_HTTP_TOKEN, token?.takeIf { it.isNotBlank() }).commit()
+    }
+
+    /** 确保有非空令牌并返回(没有就生成)。 */
+    fun ensureMcpHttpToken(): String {
+        mcpHttpToken()?.let { return it }
+        val fresh = com.wangzan101.mika.task.McpHttpRuntime.newToken()
+        setMcpHttpToken(fresh)
+        return fresh
+    }
+
     companion object {
         private const val PREFS = "feature_flags"
         private const val SPEED_FLAGS = "speed_flags"
@@ -107,6 +143,10 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         private const val CAPSULE_SIDE = "capsule_side"
         private const val CAPSULE_HEIGHT = "capsule_height"
         private const val CAPSULE_CARD_HEIGHT = "capsule_card_height"
+        private const val MCP_HTTP_ENABLED = "mcp_http_enabled"
+        private const val MCP_HTTP_HOST = "mcp_http_host"
+        private const val MCP_HTTP_PORT = "mcp_http_port"
+        private const val MCP_HTTP_TOKEN = "mcp_http_token"
 
         fun get(context: Context) = FeatureFlags(context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE))
     }
