@@ -750,6 +750,13 @@ class TaskRun(
             handoverRef = null
             sideScope = null
             withContext(Dispatchers.IO + NonCancellable) {
+                // 外部 MCP 派的任务:结束时把虚拟屏上最后那个 App 挪到主屏,停在任务最后的页面
+                if (mcpExternalId != null) runCatching {
+                    phone?.let { p -> p.display.current?.let { d ->
+                        val top = p.shell.topTaskId(d.displayId)
+                        if (top > 0) p.shell.moveTask(top, Display.DEFAULT_DISPLAY)
+                    } }
+                }.onFailure { Log.w(TAG, "move last app to main failed", it) }
                 // 前面哪步抛错,屏和网页显示也照放(按建的反序)
                 try {
                     record?.let { r ->
