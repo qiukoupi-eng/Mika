@@ -349,8 +349,8 @@ CLI 测试另需 Python 3.10+,可用 `-PmikaPython=/path/to/python3` 指定解�
 
 <a href="https://star-history.com/#wangzan101/Mika&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&theme=dark&v=20261031-1751" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&v=20261031-1751" width="600" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&theme=dark&v=20261101-0403" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&v=20261101-0403" width="600" />
   </picture>
 </a>
 
