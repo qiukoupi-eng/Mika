@@ -87,23 +87,7 @@ class GeminiModel(
             .build()
     }
 
-    private fun mapError(status: Int, retryAfter: String?, body: String): ModelError {
-        val err = try { json.parseToJsonElement(body).jsonObject["error"] as? JsonObject } catch (e: Exception) { null }
-        val st = (err?.get("status") as? JsonPrimitive)?.contentOrNull.orEmpty()
-        val msg = (err?.get("message") as? JsonPrimitive)?.contentOrNull ?: body
-        val lower = msg.lowercase()
-        ModelAccessErrors.of(status, body, model)?.let { return it }
-        return when {
-            status == 401 || status == 403 -> ModelError.Auth()
-            // 这个模型额度为零的 429 上面已认成用不了;其余 429 按可重试限流处理(其限流与额度文案混用,无法可靠区分)
-            status == 429 || st == "RESOURCE_EXHAUSTED" -> ModelError.RateLimited(HttpSupport.retryAfterMs(retryAfter))
-            status == 404 -> ModelError.ModelNotFound(model)
-            status == 413 || (status == 400 && lower.contains("token") &&
-                (lower.contains("exceed") || lower.contains("too long") || lower.contains("maximum"))) -> ModelError.ContextTooLong()
-            status in 500..599 -> ModelError.Server(status)
-            else -> ModelError.BadResponse("HTTP $status ${body.take(200)}")
-        }
-    }
+    private fun mapError(status: Int, retryAfter: String?, body: String): ModelError = ModelHttp.geminiError(status, retryAfter, body, model)
 
     // Gemini 不接受 additionalProperties / $schema / $id 等 OpenAPI 子集之外的键
     private val rejectedKeys = setOf("additionalProperties", "\$schema", "\$id", "\$defs")
