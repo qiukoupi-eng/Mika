@@ -719,10 +719,10 @@ class AgentLoop(
     }
 
     /**
-     * 用户这句话里他自己打的字:带着屏幕时是附言,带着浏览器页的页面说明时是说明后面的话,都没有时是原话;只发了屏幕、只选了字时为空。
+     * 用户这句话里他自己打的字:屏幕的说明和浏览器页的页面说明先后去掉(两样都带着时也都去掉),都没有时是原话;只发了屏幕、只选了字时为空。
      * 给模型的那句带着固定的英文说明、插话标记,后面还可能接着运行时状态,不能拿来判断用户用的语言。
      */
-    private fun ownWords(raw: String, shown: UserScreenTurns.Rendered?): String = shown?.words ?: tools.userWords(raw)
+    private fun ownWords(raw: String, shown: UserScreenTurns.Rendered?): String = tools.userWords(shown?.words ?: raw)
 
     private suspend fun channelLine(matched: List<KnowledgeEntry>): String? {
         val facts = channelFacts ?: return null
