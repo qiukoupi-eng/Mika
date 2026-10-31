@@ -216,6 +216,12 @@ interface ScreenPort {
     suspend fun openApp(packageName: String, cold: Boolean = false): ActionResult
 
     /**
+     * 打开装在另一份用户 [userId] 里的那份 [packageName](分身、工作资料,见 [appCopies]);其余同 [openApp]。
+     * 那份用户不能用、或那里没装这个 App 时失败 copy_not_found。不支持的端口返回 unsupported。
+     */
+    suspend fun openAppCopy(packageName: String, userId: Int, cold: Boolean = false): ActionResult = ActionResult.Failed("unsupported")
+
+    /**
      * 在 Agent 的屏上打开一个链接或安卓设置页([action] 为 null 时按 VIEW 打开 [uri]);[packageName] 限定由哪个 App 打开。
      * 失败原因:link_unresolved(没有 App 能打开)、invalid_link、app_in_use_by_user。不支持的端口返回 unsupported。
      */
@@ -258,6 +264,9 @@ interface ScreenPort {
 
     /** 也装在这台手机另一份用户里(分身、工作资料等)的 App:包名 → 那几份用户的名字。查不到或不支持时为空。 */
     suspend fun otherProfiles(): Map<String, List<String>> = emptyMap()
+
+    /** 能打开的另一份 App(装在分身、工作资料一类的另一份用户里,规则见 [AppCopies]);查不到或不支持时为空。 */
+    suspend fun appCopies(): List<AppCopy> = emptyList()
 
     /** 屏幕诊断;端口不支持时为 null,由调用方按元素列表粗判。 */
     suspend fun checkScreen(): ScreenCheck? = null

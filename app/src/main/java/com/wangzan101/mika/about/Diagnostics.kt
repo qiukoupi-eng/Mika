@@ -54,6 +54,11 @@ data class DiagnosticsSnapshot(
         val wifiConnected: Boolean?,
         /** 最近一次配对或连接失败的原文(渲染时脱敏)。 */
         val lastError: String?,
+        /**
+         * 另一份用户里的 App(分身、工作资料):内置助手对每份别的用户的判定(编号、标记、类型、资料组,不含名字)和能打开的另一份有几个;
+         * 助手没连着或问不到为 null。
+         */
+        val appCopies: String? = null,
     )
 
     data class Recovery(
@@ -191,6 +196,7 @@ object Diagnostics {
         line("attention channel", importance(p.attentionChannelImportance))
         line("Wi-Fi", when (p.wifiConnected) { true -> "connected"; false -> "not connected"; null -> "unknown" })
         line("last error", p.lastError?.takeIf { it.isNotBlank() }?.take(MAX_ERROR) ?: "none")
+        line("app copies", p.appCopies ?: "unknown")
     }
 
     private fun StringBuilder.section(name: String) {

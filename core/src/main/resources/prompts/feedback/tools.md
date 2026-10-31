@@ -114,6 +114,9 @@ This action was not done: the previous action had just opened an app on the user
 ## failure.app_not_found
 That app is not installed or has no launchable screen. Use phone_list_apps to find the exact package.
 
+## failure.copy_not_found
+There is no such copy of that app that Mika may open. Use phone_list_apps and pass a user value exactly as listed for that package, or leave user out to open the main app.
+
 ## failure.app_not_in_front
 The app was started but did not come to the foreground within a few seconds, so it is not open on Mika's screen. Look at the screen before deciding: it may still be starting, or something else (a dialog, another app) is in front.
 

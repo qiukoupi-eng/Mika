@@ -3,7 +3,7 @@
 ### invalid: unknown argument
 {"ok":false,"error":"invalid_arguments","message":"bogus: unknown argument for phone_tap; allowed: ref, snapshotId, x, y, target, element, role, clicks. To act on an element, use its ref and snapshotId from the elements of the latest screen read or of the screen in the last action result.","recoverable":true,"moreTools":"From your next call on you also have the full phone tools (phone_observe, phone_list_elements, phone_tap, phone_scroll and the rest), with their descriptions and how to use them."}
 ### invalid: unknown argument (no refs)
-{"ok":false,"error":"invalid_arguments","message":"bogus: unknown argument for phone_launch_app; allowed: package, cold.","recoverable":true}
+{"ok":false,"error":"invalid_arguments","message":"bogus: unknown argument for phone_launch_app; allowed: package, cold, user.","recoverable":true}
 ### invalid: not json
 {"ok":false,"error":"invalid_arguments","message":"arguments: not valid JSON","recoverable":true}
 ### invalid: not an object
