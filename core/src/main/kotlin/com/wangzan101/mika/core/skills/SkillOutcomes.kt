@@ -1,10 +1,14 @@
 package com.wangzan101.mika.core.skills
 
+import com.wangzan101.mika.core.agent.LearnGate
 import com.wangzan101.mika.core.agent.RunOutcome
 import com.wangzan101.mika.core.agent.TaskState
 
 @Suppress("EnumEntryName")
-/** [unreviewed]:办完了但什么也没核对(回答里没有可核对的值),不说明技能灵不灵,停用时不算。 */
+/**
+ * [verified]:办成了([LearnGate]),试用据此转正式(存下的名字沿用,旧记录照样读);
+ * [unverified]:判下来办成,核查却没通过;[unreviewed]:没判成结局,不说明技能灵不灵,停用时不算。
+ */
 enum class SkillResult { verified, unverified, failed, verifier_rejected, unreviewed }
 
 /**
@@ -47,7 +51,8 @@ object SkillOutcomes {
 
     /**
      * 任务结局对应的结果;取消的不记(null)。[outcome] 是交出回答后判的结局([RunOutcome]):
-     * 回答如实说没办成、只办了一部分的算 failed;没判成的不说明技能灵不灵,算 unreviewed。
+     * 回答如实说没办成、只办了一部分的算 failed;没判成的不说明技能灵不灵,算 unreviewed;
+     * 办成的按 [LearnGate] 算 verified(没跑核查也算),核查跑过却没通过的算 unverified。
      */
     fun resultOf(end: TaskState, outcome: RunOutcome): SkillResult? = when (end) {
         is TaskState.Succeeded -> when {
@@ -55,8 +60,7 @@ object SkillOutcomes {
             // 退回一次后仍有没对上的:照着技能做也没做对,和以前被核查退回一样(判没判成都是)
             end.unconfirmed.isNotEmpty() -> SkillResult.verifier_rejected
             outcome == RunOutcome.Unknown -> SkillResult.unreviewed
-            end.verified -> SkillResult.verified
-            !end.reviewed -> SkillResult.unreviewed
+            LearnGate.done(end, outcome) -> SkillResult.verified
             else -> SkillResult.unverified
         }
         is TaskState.Failed -> if (VERIFIER_REJECTED_MARK in end.reason) SkillResult.verifier_rejected else SkillResult.failed

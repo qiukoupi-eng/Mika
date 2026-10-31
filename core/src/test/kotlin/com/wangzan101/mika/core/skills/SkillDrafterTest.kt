@@ -86,21 +86,21 @@ class SkillDrafterTest {
         }
 
     @Test fun eligibilityRules() {
-        assertNull(Eligibility.check(runEvents(), null, TOOLS, verified = true))
-        assertEquals("not_verified", Eligibility.check(runEvents(), null, TOOLS, verified = false))
-        assertEquals("not_succeeded", Eligibility.check(runEvents(outcome = "failed"), null, TOOLS, verified = true))
-        assertEquals("too_few_actions", Eligibility.check(runEvents(actions = 4), null, TOOLS, verified = true))
-        assertEquals("takeover_skipped", Eligibility.check(runEvents(extra = listOf(RunEvent.Takeover(50, "login", "skipped", 10, 0))), null, TOOLS, verified = true))
-        assertNull(Eligibility.check(runEvents(extra = listOf(RunEvent.Takeover(50, "login", "complete", 10, 3))), null, TOOLS, verified = true))
-        assertEquals("confirmation_declined", Eligibility.check(runEvents(extra = listOf(RunEvent.Confirmation(50, "send", null, null, null, "declined"))), null, TOOLS, verified = true))
-        assertNull(Eligibility.check(runEvents(extra = listOf(RunEvent.Confirmation(50, "send", null, null, null, "approved"))), null, TOOLS, verified = true))
-        assertEquals("followed_personal_skill", Eligibility.check(runEvents(), "send-wechat-message", TOOLS, verified = true))
-        assertEquals("takeover_user_finished", Eligibility.check(runEvents(extra = listOf(RunEvent.Takeover(50, "payment", "user_finished", 10, 4))), null, TOOLS, verified = true))
+        assertNull(Eligibility.check(runEvents(), null, TOOLS, done = true))
+        assertEquals("not_done", Eligibility.check(runEvents(), null, TOOLS, done = false))
+        assertEquals("not_succeeded", Eligibility.check(runEvents(outcome = "failed"), null, TOOLS, done = true))
+        assertEquals("too_few_actions", Eligibility.check(runEvents(actions = 4), null, TOOLS, done = true))
+        assertEquals("takeover_skipped", Eligibility.check(runEvents(extra = listOf(RunEvent.Takeover(50, "login", "skipped", 10, 0))), null, TOOLS, done = true))
+        assertNull(Eligibility.check(runEvents(extra = listOf(RunEvent.Takeover(50, "login", "complete", 10, 3))), null, TOOLS, done = true))
+        assertEquals("confirmation_declined", Eligibility.check(runEvents(extra = listOf(RunEvent.Confirmation(50, "send", null, null, null, "declined"))), null, TOOLS, done = true))
+        assertNull(Eligibility.check(runEvents(extra = listOf(RunEvent.Confirmation(50, "send", null, null, null, "approved"))), null, TOOLS, done = true))
+        assertEquals("followed_personal_skill", Eligibility.check(runEvents(), "send-wechat-message", TOOLS, done = true))
+        assertEquals("takeover_user_finished", Eligibility.check(runEvents(extra = listOf(RunEvent.Takeover(50, "payment", "user_finished", 10, 4))), null, TOOLS, done = true))
         // 出错的动作不算步数
         val withErrors = runEvents().map { e ->
             if (e is RunEvent.ToolResult && e.tool == "phone_tap") e.copy(resultJson = """{"ok":false,"error":"ref_expired"}""") else e
         }
-        assertEquals("too_few_actions", Eligibility.check(withErrors, null, TOOLS, verified = true))
+        assertEquals("too_few_actions", Eligibility.check(withErrors, null, TOOLS, done = true))
     }
 
     @Test fun digestOmitsTypedTextAndScreens() {

@@ -114,8 +114,11 @@ class AgentLoopReplayTest {
         assertTrue(gaveUp.sink.all.none { it is RunEvent.Verifier })
         assertEquals(0, gaveUp.store.m["r1"]!!.successes)
 
-        // 回答里没有可核对的值、也没请核查:没核对过,不记成功
-        assertEquals(0, run().store.m["r1"]!!.successes)
+        // 回答里没有可核对的值、也没请核查:判下来办成就记成功(学习看结局,不看核查)
+        assertEquals(1, run().store.m["r1"]!!.successes)
+        // 核对过却没对上(退回一次后仍标成未确认):不记成功
+        val doubtful = run(main = FakeModel(text("写好了,在「旧草稿 42 号」里"), text("写好了,在「旧草稿 42 号」里")))
+        assertEquals(0, doubtful.store.m["r1"]!!.successes)
     }
 
     @Test fun routeSuccessOnlyWhenJudgedDone() {

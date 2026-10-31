@@ -1,0 +1,13 @@
+package com.wangzan101.mika.core.agent
+
+/**
+ * 一次运行能不能当成「办成了」来学:个人技能和 App 知识的起草、经验路线的记录与成功计数、
+ * 试用的技能和 App 知识转正式,都只问这一处。
+ *
+ * 看交出回答后判的结局([OutcomeJudge]),不看最终核查:交出了回答([TaskState.Succeeded])、结局是 [RunOutcome.Done]、
+ * 没有退回一次后仍没对上的值;核查跑过的([TaskState.Succeeded.reviewed])还要核实通过——跑过却没通过照样挡住,没跑不挡。
+ */
+object LearnGate {
+    fun done(end: TaskState, outcome: RunOutcome): Boolean =
+        end is TaskState.Succeeded && outcome == RunOutcome.Done && end.unconfirmed.isEmpty() && !end.doubtful
+}

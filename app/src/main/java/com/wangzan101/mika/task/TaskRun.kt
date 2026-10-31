@@ -54,6 +54,7 @@ import com.wangzan101.mika.core.replay.RouteMatcher
 import com.wangzan101.mika.core.replay.RouteRecorder
 import com.wangzan101.mika.replay.FileRouteStore
 import com.wangzan101.mika.core.agent.JudgedOutcome
+import com.wangzan101.mika.core.agent.LearnGate
 import com.wangzan101.mika.core.agent.OutcomeJudge
 import com.wangzan101.mika.core.agent.StopSummary
 import com.wangzan101.mika.core.assembly.knownTools
@@ -871,7 +872,7 @@ class TaskRun(
 
     /**
      * 结果交给用户之后调用(不拖慢、不改交出的回答):回答按用户的要求判结局([OutcomeJudge],轻量模型优先),
-     * 记进运行记录和这一轮对话;只有办成的才记路线、给回放的路线记成功。
+     * 记进运行记录和这一轮对话;只有办成的([LearnGate])才记路线、给回放的路线记成功。
      * 放弃、失败、取消的不判(结局已经清楚),返回 null;判不成是 [RunOutcome.Unknown]。
      */
     suspend fun settleOutcome(end: TaskState, conversations: ConversationStore): JudgedOutcome? {
@@ -886,8 +887,8 @@ class TaskRun(
                 .onFailure { Log.w(TAG, "could not save run outcome", it) }
         }
         k.agent.noteOutcome(judged.outcome)
-        // 只有办成、核查通过的才记成路线;从落盘的运行事件里取。带着用户屏幕的话意思在屏幕上,不按字记路线
-        if (k.routesOn && judged.outcome == RunOutcome.Done && end.verified && runId != null && !UserScreenMessage.has(goal)) k.runStore?.let { s ->
+        // 只有办成的才记成路线([LearnGate]);从落盘的运行事件里取。带着用户屏幕的话意思在屏幕上,不按字记路线
+        if (k.routesOn && LearnGate.done(end, judged.outcome) && runId != null && !UserScreenMessage.has(goal)) k.runStore?.let { s ->
             saveRoute(goal, withContext(Dispatchers.IO) { s.events(runId) }, k.dispatcher.index)
         }
         return judged
@@ -927,7 +928,7 @@ class TaskRun(
         }
     }
 
-    /** 核查通过的成功记成路线;记不成(不该记、写盘失败)不影响任务结局。 */
+    /** 办成的运行记成路线;记不成(不该记、写盘失败)不影响任务结局。 */
     private suspend fun saveRoute(goal: String, events: List<RunEvent>, tools: ToolIndex) = withContext(Dispatchers.IO) {
         runCatching {
             val route = RouteRecorder.record(goal, events, System.currentTimeMillis(), tools) ?: return@runCatching

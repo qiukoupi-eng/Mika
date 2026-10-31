@@ -70,10 +70,9 @@ class RouteRecorderTest {
         assertNull(RouteRecorder.record(goal, events, 0, TOOLS))
     }
 
-    @Test fun notVerifiedPassMeansNoRoute() {
-        val failed = run().map { if (it is RunEvent.Verifier) RunEvent.Verifier(5, "cannot_verify", "{}") else it }
-        assertNull(RouteRecorder.record(goal, failed, 1, TOOLS))
-        assertNull(RouteRecorder.record(goal, run().filter { it !is RunEvent.Verifier }, 1, TOOLS))
+    @Test fun onlySucceededRunsMakeRoutes() {
+        // 办没办成由调用方按 LearnGate 判;没跑核查的运行照样记得下
+        assertNotNull(RouteRecorder.record(goal, run().filter { it !is RunEvent.Verifier }, 1, TOOLS))
         val ended = run().map { if (it is RunEvent.TaskEnded) RunEvent.TaskEnded(6, "failed", "x") else it }
         assertNull(RouteRecorder.record(goal, ended, 1, TOOLS))
     }

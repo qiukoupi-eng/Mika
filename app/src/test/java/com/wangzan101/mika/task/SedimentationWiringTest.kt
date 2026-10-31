@@ -56,10 +56,13 @@ class SedimentationWiringTest {
         runBlocking { learning(off, learn = false, model = offModel).learn(after(events())) }
         assertTrue(off.drafts.isEmpty() && offModel.requests.isEmpty())
 
-        // 只从核实过的任务学:没核对过的不起草
-        val notVerified = MapSkills()
-        runBlocking { learning(notVerified, learn = true).learn(after(events(), end = TaskState.Succeeded("ok", verified = false, reviewed = false))) }
-        assertTrue(notVerified.drafts.isEmpty())
+        // 学习看结局不看核查:没跑核查、判下来办成的照样起草;核查跑过却没通过的不起草
+        val unreviewed = MapSkills()
+        runBlocking { learning(unreviewed, learn = true).learn(after(events(), end = TaskState.Succeeded("ok", verified = false, reviewed = false))) }
+        assertEquals(listOf("draft-1"), unreviewed.drafts.keys.toList())
+        val doubtful = MapSkills()
+        runBlocking { learning(doubtful, learn = true).learn(after(events(), end = TaskState.Succeeded("ok", verified = false, note = "x"))) }
+        assertTrue(doubtful.drafts.isEmpty())
 
         // 回答核实过,但判下来只办了一部分、没办成或没判成:不起草
         for (o in listOf(RunOutcome.Partial, RunOutcome.NotPossible, RunOutcome.Unknown)) {
@@ -112,6 +115,10 @@ class SedimentationWiringTest {
         runBlocking { learning(ok, learn = true).learn(after(events(extra = used))) }
         assertEquals(listOf("verified"), ok.get("wechat-msg")!!.outcomes)
         assertTrue(ok.drafts.isEmpty())
+        // 没跑核查、判下来办成:也算照着做成了
+        val unreviewed = MapSkills(skill)
+        runBlocking { learning(unreviewed, learn = true).learn(after(events(extra = used), TaskState.Succeeded("ok", verified = false, reviewed = false))) }
+        assertEquals(listOf("verified"), unreviewed.get("wechat-msg")!!.outcomes)
         // 回答如实说只办了一部分:照着技能做没办成,记 failed
         val partial = MapSkills(skill)
         runBlocking { learning(partial, learn = true).learn(after(events(extra = used), outcome = RunOutcome.Partial)) }

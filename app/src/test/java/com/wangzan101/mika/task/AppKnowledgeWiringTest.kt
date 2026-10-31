@@ -39,9 +39,9 @@ class AppKnowledgeWiringTest {
         return out
     }
 
-    private fun aftermath(events: List<RunEvent>) = RunAftermath("c1", "r1", "查看闲鱼", TaskState.Succeeded("已查看"),
+    private fun aftermath(events: List<RunEvent>, outcome: com.wangzan101.mika.core.agent.RunOutcome = com.wangzan101.mika.core.agent.RunOutcome.Done) = RunAftermath("c1", "r1", "查看闲鱼", TaskState.Succeeded("已查看", verified = false, reviewed = false),
         emptyList(), emptyList(), emptyList(), emptySet(), knownTools(), { events }, knowledge = knowledge,
-        outcome = com.wangzan101.mika.core.agent.RunOutcome.Done)
+        outcome = outcome)
 
     @Test fun draftRequiresApprovalThenVerifiedTrial() = runBlocking {
         val files = AppKnowledgeFiles(tmp.root)

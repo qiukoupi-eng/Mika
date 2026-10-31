@@ -45,7 +45,7 @@ sealed interface TaskState {
      * 核对过而且都对上时 [verified] 为 true;核对过却没能核实时 [verified] 为 false,[note] 是原因。
      * [unconfirmed] 是退回一次后仍没对上的那几处(回答照样交出,这几处标成未确认)。
      * [sources] 是代码从证据账本里找到的、支撑回答的那几次读取(模型不写依据)。
-     * 学东西(经验路线、个人技能)只从核实过的任务学。
+     * 学东西(经验路线、个人技能、App 知识)看判过的结局,不看这里的核对,见 [LearnGate]。
      */
     data class Succeeded(
         val answer: String, val verified: Boolean = true, val note: String? = null,

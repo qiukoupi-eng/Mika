@@ -43,12 +43,12 @@ private val ACTION_VERBS = setOf(Verb.Tap, Verb.Scroll, Verb.Swipe, Verb.TypeTex
 object Eligibility {
     const val MIN_ACTIONS = 5
 
-    /** null = 可以起草;否则是不起草的原因。[verified]:任务结局核实过(只从核实过的任务学)。 */
-    fun check(events: List<RunEvent>, followedPersonalSkill: String?, tools: ToolIndex, verified: Boolean): String? {
+    /** null = 可以起草;否则是不起草的原因。[done]:这次运行算办成了([com.wangzan101.mika.core.agent.LearnGate])。 */
+    fun check(events: List<RunEvent>, followedPersonalSkill: String?, tools: ToolIndex, done: Boolean): String? {
         val ended = events.filterIsInstance<RunEvent.TaskEnded>().lastOrNull()
         return when {
             ended?.outcome != "succeeded" -> "not_succeeded"
-            !verified -> "not_verified"
+            !done -> "not_done"
             // 出错的动作不算步数(结果可能被截短,按原文判)
             events.count { it is RunEvent.ToolResult && tools.verb(it.tool) in ACTION_VERBS && !it.resultJson.contains("\"ok\":false") } < MIN_ACTIONS -> "too_few_actions"
             events.any { it is RunEvent.Takeover && it.outcome == "skipped" } -> "takeover_skipped"

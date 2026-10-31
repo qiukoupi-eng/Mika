@@ -2,6 +2,7 @@ package com.wangzan101.mika.task
 
 import com.wangzan101.mika.R
 import com.wangzan101.mika.i18n.tr
+import com.wangzan101.mika.core.agent.LearnGate
 import com.wangzan101.mika.core.agent.RunOutcome
 import com.wangzan101.mika.core.agent.TaskState
 import com.wangzan101.mika.core.knowledge.FrontMatter
@@ -51,13 +52,13 @@ data class RunAftermath(
     val events: suspend () -> List<RunEvent>,
     val origin: RunOrigin = RunOrigin.Ui,
     val knowledge: KnowledgeStore? = null,
-    /** 交出回答后判的结局;只从办成([RunOutcome.Done])的学。没判成、没判过为 [RunOutcome.Unknown]。 */
+    /** 交出回答后判的结局;只从办成的学([LearnGate])。没判成、没判过为 [RunOutcome.Unknown]。 */
     val outcome: RunOutcome = RunOutcome.Unknown,
 )
 
 /**
  * 任务结束后:记下用到的个人技能的结果(可能自动停用)、从用户的话里提取记忆、办成的任务起草技能。
- * 办成按交出回答后判的结局([RunAftermath.outcome])算,不按「交出了回答」。
+ * 办成按交出回答后判的结局([RunAftermath.outcome])算,不按「交出了回答」,也不要求跑过最终核查([LearnGate])。
  * 全在结果通知发出之后的后台协程里做([launchAfter]);哪一步出错都不影响任务结局。
  *
  * 不起草的情形另加一条:这次走的是回放的路线([RunEvent.Replay] 有对上的步)——路线已经记住了,
@@ -84,7 +85,7 @@ class RunLearning(
         val used = events.filterIsInstance<RunEvent.SkillUsed>()
         val skillNotes = recordOutcomes(used, a.end, a.outcome).toMutableList()
         val trialNames = events.filterIsInstance<RunEvent.State>().filter { it.name == "knowledge_trial_used" }.map { it.detail }.distinct()
-        trialNames.forEach { name -> guarded(null) { appDrafts?.recordTrial(name, a.outcome == RunOutcome.Done && (a.end as? TaskState.Succeeded)?.verified == true) } }
+        trialNames.forEach { name -> guarded(null) { appDrafts?.recordTrial(name, LearnGate.done(a.end, a.outcome)) } }
 
         val changes = a.saved.toMutableList()
         val store = store
@@ -103,7 +104,7 @@ class RunLearning(
         }
 
         // 做法只从办成的学:回答如实说没办成、只办了一部分,或没判成的,不起草
-        val done = learnable && a.outcome == RunOutcome.Done
+        val done = learnable && LearnGate.done(a.end, a.outcome)
         if (done) draft(a, events, used.map { it.name }.distinct())?.let(skillNotes::add)
         if (done) draftApp(a, events)?.let(skillNotes::add)
         return RunNotes(a.conversationId, a.runId.orEmpty(), MemoryExtractor.notes(changes), a.usedMemory, skillNotes)
@@ -134,7 +135,7 @@ class RunLearning(
         // 照着个人技能做成的只记一次结果,不再起草
         val followed = used.firstOrNull().takeIf { SkillOutcomes.resultOf(a.end, a.outcome) == SkillResult.verified }
         val done = a.end as? TaskState.Succeeded
-        if (Eligibility.check(events, followed, a.tools, verified = done?.verified == true) != null) return null
+        if (Eligibility.check(events, followed, a.tools, done = LearnGate.done(a.end, a.outcome)) != null) return null
         val r = guarded(null) {
             yieldToForeground()
             d.draft(DraftInput(runId, a.goal, done?.answer.orEmpty(), done?.sources.orEmpty(), events, a.toolNames, a.tools), skills, catalog)
@@ -156,7 +157,7 @@ class RunLearning(
         val knowledge = a.knowledge ?: return null
         val runId = a.runId ?: return null
         val done = a.end as? TaskState.Succeeded ?: return null
-        if (!switches.learnSkills || !done.verified || events.any { it is RunEvent.Replay && it.matched }) return null
+        if (!switches.learnSkills || !LearnGate.done(a.end, a.outcome) || events.any { it is RunEvent.Replay && it.matched }) return null
         val packages = events.filterIsInstance<RunEvent.Observed>().mapNotNull { e ->
             e.place?.takeIf { it.kind == PlaceKind.App }?.name
         }.distinct()

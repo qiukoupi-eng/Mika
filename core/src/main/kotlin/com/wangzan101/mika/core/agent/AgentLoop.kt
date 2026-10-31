@@ -55,7 +55,6 @@ import com.wangzan101.mika.core.tool.ToolDispatcher
 import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.tool.Verb
 import com.wangzan101.mika.core.replay.RouteMatcher
-import com.wangzan101.mika.core.verify.Verdict
 import com.wangzan101.mika.core.verify.Verifier
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.CancellationException
@@ -201,8 +200,6 @@ class AgentLoop(
     @Volatile private var interruptedStep = 0
     /** 本对话之前几轮用户说的话,只给核查器理解追问;不含干活模型的任何东西。 */
     private var earlierGoals: List<String> = emptyList()
-    /** 最后一次核查结论;路线计数要和回放结果一起看。 */
-    private var lastVerdict: Verdict? = null
     /** 本次运行的结局;判过结局后路线计数要用([noteOutcome])。 */
     @Volatile private var lastEnd: TaskState? = null
     private val review = AnswerReview(tools, verifier, ::emit, ::now)
@@ -236,7 +233,6 @@ class AgentLoop(
             origin = runProvenance.origin.takeIf { it != RunOrigin.Ui }?.name?.lowercase()))
         var end: TaskState? = null
         replay?.reset()
-        lastVerdict = null
         lastEnd = null
         try {
             end = runLoop(task, priorTurns, inbox)
@@ -285,12 +281,12 @@ class AgentLoop(
     }
 
     /**
-     * 交出的回答判过结局([OutcomeJudge])之后调用:回放走完的路线只在办成([RunOutcome.Done])时记一次成功。
+     * 交出的回答判过结局([OutcomeJudge])之后调用:回放走完的路线只在办成([LearnGate])时记一次成功。
      * 失败、取消的任务不判也不用调用;不调用就不记成功。
      */
     suspend fun noteOutcome(outcome: RunOutcome) {
         val end = lastEnd ?: return
-        if (outcome == RunOutcome.Done) replay?.noteResult(end, lastVerdict)
+        replay?.noteResult(end, outcome)
     }
 
     /** 交回接管的结局;结局作为 hand_to_user 的工具结果交给模型。 */
@@ -901,7 +897,6 @@ class AgentLoop(
             _state.value = TaskState.Running(step, VERIFYING_NOTE, reason = VERIFYING_NOTE,
                 preview = (_state.value as? TaskState.Running)?.preview)
         }
-        r.verdict?.let { lastVerdict = it }
         val missing = r.unconfirmed
         if (missing.isNotEmpty() && history != null && !gapsNudged) {
             gapsNudged = true
