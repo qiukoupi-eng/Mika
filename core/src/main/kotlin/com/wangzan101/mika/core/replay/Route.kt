@@ -33,7 +33,7 @@ data class Anchors(val packageName: String?, val texts: List<String>)
 @Serializable
 data class RouteStep(val tool: String, val argsJson: String, val target: Selector?, val before: Anchors, val after: Anchors)
 
-/** 一条核查通过的成功做法。[template] 是把原话里的槽值换成 `{n}` 之后的句子。 */
+/** 一条办成过的做法。[template] 是把原话里的槽值换成 `{n}` 之后的句子。 */
 @Serializable
 data class Route(
     val id: String,

@@ -11,6 +11,9 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.wangzan101.mika.MikaApp
+import com.wangzan101.mika.memory.MemoryRuntime
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.sh
 import com.wangzan101.mika.core.agent.TaskState
@@ -27,6 +30,23 @@ import com.wangzan101.mika.settings.RoleChoice
 import com.wangzan101.mika.task.TaskService
 import com.wangzan101.mika.ui.MainActivity
 import com.wangzan101.mika.ui.typeAndSend
+import com.wangzan101.mika.ui.awaitOne
+import com.wangzan101.mika.ui.appString
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import com.wangzan101.mika.R
+import com.wangzan101.mika.browser.PageAskModel
+import com.wangzan101.mika.browser.PageConversations
+import com.wangzan101.mika.browser.UserBrowser
+import com.wangzan101.mika.core.cap.web.AttachedPage
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInput
 import org.junit.After
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -46,12 +66,26 @@ import com.wangzan101.mika.core.cap.phone.OperatingPace
  * - 跑任务:`-e liveGoal <目标> -e liveRun <记录目录名> [-e liveTimeoutSec 600] [-e liveOnTakeover cancel|handback]
  *   [-e livePace fast|standard|human] [-e liveMoveAwayAtStep N] [-e liveCancelAtStep N]`,运行 [runGoal]。经由真实界面:在输入框里写目标、点发送。
  *   liveCancelAtStep:到第 N 步时像点停止键一样停掉任务,再等停止后的交代记进对话(写进 result.txt 的 summary)。
+ *   `-e liveKeepCheckSec N`:任务结束后看有没有留在后台运行的那一页(web_keep_open),有就隔 N 秒读两次页面里的媒体播放进度
+ *   (video/audio 的 currentTime,同源的才读得到)和一个只计数的计时器,写进 result.txt 的 kept*(keptPage、keptMediaAdvanced、
+ *   keptTimerAdvanced、keptNotification),再存一张它的画面 kept-frame.png;那一页不关,留着给人看。
  *   livePace:在 App 里操作的节奏 fast / standard / human(缺省 fast,跑得快;不改设置里的),比较快慢时传 standard。
  *   liveMoveAwayAtStep:到第 N 步时把虚拟屏上的 App 挪到主屏(模拟用户在主屏打开了同一个 App),
  *   记下暂停状态和通知,几秒后像点通知上的「继续」一样恢复。
  *
+ * - 在浏览器页上问:`-e liveUrl <网址> -e liveGoal <问题> -e liveRun <记录目录名> [-e liveTimeoutSec 600] [-e liveDesktop true]
+ *   [-e liveNew true] [-e liveTouchAtStep N -e liveResumeAfterSec S] [-e liveOnTakeover cancel|handback]`,运行 [runPageAsk]。
+ *   经由真实界面:侧栏进浏览器,打开网址(liveDesktop 时换成电脑版),等页面加载完,在网页底下「问问 Mika」里写问题、点发送
+ *   (liveNew 时先点「新对话」),这一页借给那个任务。liveTouchAtStep:到第 N 步时经窗口在网页上用手指往上划一下
+ *   (和真人一样经 PageFrame,不点到链接),记下有没有暂停、横幅和小卡片出没出来,等 S 秒(缺省 5)后点横幅上的「继续」,记下恢复。
+ *   不给 liveTouchAtStep 时,任务里因「你在操作」而暂停算失败(Mika 自己的点按、滚动不该让任务暂停),记录照写。
+ *   result.txt 在 runGoal 那些之外还有:borrowed(页面借给了任务)、firstToolCalls、urlsOpened(web_navigate 打开过的网址)、
+ *   reopenedSameUrl(又打开了这一页,不该有)、userTabUrlAtEnd、pausedByTouch、resumed、pauses(各种暂停的次数)、userPauses、
+ *   conversationId、pageOrigin、listedAsWeb(侧栏里这条对话带「网页」小标签)。每一步、暂停、恢复、结束、侧栏各截一张主屏(step-NN.png 等)。
+ *
  * 记录写到 App 外部文件目录 acceptance/<liveRun>/:log.txt(每步模型说的话、工具调用与结果摘要)、
- * result.txt(模型、目标、结果、步数、用时、最终回答)、虚拟屏每步画面与主屏截图。
+ * result.txt(模型、目标、结果、步数、用时、最终回答)、虚拟屏每步画面与主屏截图;
+ * 传了 `-e liveSettleSec N` 时等至多 N 秒让结局判定和学习做完,学到的写进 learned.txt。
  */
 @RunWith(AndroidJUnit4::class)
 class LiveRunTest {
@@ -126,6 +160,10 @@ class LiveRunTest {
         val recorder = Recorder(::note)
         testTasks.modelFactory = { ctx, s -> TaskEnvironment.defaultModelFactory(ctx, s)?.let { recorder.wrap(it) } }
         note("model=${cfg.model} pace=${pace.name.lowercase()} goal=$goal")
+        // 学习在任务结束后的进程级作用域里跑;开局记下那里已有几件常驻的事,收尾时等它回到这个数
+        val memory = MemoryRuntime.of(context)
+        val learningJob = memory.scope.coroutineContext[Job]!!
+        val resident = learningJob.children.count { it.isActive }
 
         compose.typeAndSend(goal!!)
         // 发出去就收起键盘:对话页下面的后台屏小画面才露得出来,和真人发完就收键盘一样
@@ -223,11 +261,294 @@ class LiveRunTest {
             is TaskState.Failed -> end.reason
             else -> ""
         }
+        // liveSettleSec:等交出之后的结局判定和学习做完,把学到的写进 learned.txt
+        val settleMs = (args.getString("liveSettleSec")?.toLong() ?: 0) * 1000
+        if (settleMs > 0) {
+            val settled = DeviceSupport.pollUntil(settleMs) { true.takeIf { learningJob.children.count { it.isActive } <= resident } } != null
+            note("learning settled=$settled")
+            File(dir, "learned.txt").writeText(learned(memory))
+        }
+        val keepSec = args.getString("liveKeepCheckSec")?.toLongOrNull() ?: 0
+        val kept = if (keepSec > 0) keptPageCheck(keepSec, dir, ::note) else ""
         File(dir, "result.txt").writeText(
             "model=${cfg.model}\ngoal=$goal\noutcome=$outcome\nsteps=${recorder.calls}\nmaxStep=$lastStep\n" +
                 "takeovers=$takeovers\npauses=$pausesHandled\nwallSec=$wall\ninputTokens=${recorder.inTokens}\noutputTokens=${recorder.outTokens}\n" +
-                "answer=$answer\n" + (summary?.let { "summary=$it\n" } ?: ""),
+                "answer=$answer\n" + (summary?.let { "summary=$it\n" } ?: "") + kept,
         )
+    }
+
+    /**
+     * 任务结束后留在后台的那一页还在不在跑:隔 [seconds] 秒读两次页面里媒体的播放进度和一个只计数的计时器(只为这次验收放进页面,
+     * 不碰页面自己的东西),存一张它那块显示的画面。返回写进 result.txt 的几行。
+     */
+    private fun keptPageCheck(seconds: Long, dir: File, note: (String) -> Unit): String {
+        val keeper = (context.applicationContext as MikaApp).pageKeeper
+        val page = keeper.page.value
+        val tab = keeper.keptTab()
+        if (page == null || tab == null) {
+            note("no kept page after the run")
+            return "keptPage=none\n"
+        }
+        val probe = "(function(){if(!window.__keepCheck){window.__keepCheck=0;setInterval(function(){window.__keepCheck++},200);}" +
+            "return JSON.stringify({timer:window.__keepCheck,media:Array.from(document.querySelectorAll('video,audio')).map(function(m){return {t:m.currentTime,paused:m.paused}})});})()"
+        fun read(): org.json.JSONObject? {
+            val latch = java.util.concurrent.CountDownLatch(1)
+            var raw: String? = null
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                if (tab.destroyed) latch.countDown() else tab.view.evaluateJavascript(probe) { raw = it; latch.countDown() }
+            }
+            latch.await(5, java.util.concurrent.TimeUnit.SECONDS)
+            return raw?.let { r -> runCatching { org.json.JSONObject(org.json.JSONTokener(r).nextValue() as String) }.getOrNull() }
+        }
+        val first = read()
+        Thread.sleep(seconds * 1000)
+        val second = read()
+        note("kept page ${page.host}: before=$first after=$second")
+        fun times(o: org.json.JSONObject?) = o?.optJSONArray("media")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).optDouble("t") } }.orEmpty()
+        val before = times(first)
+        val after = times(second)
+        val mediaAdvanced = after.indices.any { i -> before.getOrNull(i)?.let { after[i] > it } == true }
+        val timerAdvanced = (second?.optInt("timer") ?: 0) > (first?.optInt("timer") ?: 0)
+        kotlinx.coroutines.runBlocking { kotlinx.coroutines.withTimeoutOrNull(5_000) { keeper.frames().filterNotNull().first() } }?.let { bmp ->
+            File(dir, "kept-frame.png").outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        val notified = mikaNotifications().contains(appString(R.string.kept_notif_title))
+        // WebView 只能在主线程上问
+        var keptUrl: String? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { keptUrl = if (tab.destroyed) null else tab.view.url }
+        return "keptPage=${page.host}\nkeptUrl=$keptUrl\nkeptMedia=${before.size}\nkeptMediaAdvanced=$mediaAdvanced\n" +
+            "keptTimerAdvanced=$timerAdvanced\nkeptPageAlive=${!tab.destroyed && keeper.page.value?.id == page.id}\nkeptNotification=$notified\n"
+    }
+
+    @Test
+    fun runPageAsk() {
+        val url = args.getString("liveUrl")
+        val goal = args.getString("liveGoal")
+        assumeTrue(url != null && goal != null)
+        val run = args.getString("liveRun") ?: "page"
+        val timeoutMs = (args.getString("liveTimeoutSec")?.toLong() ?: 600) * 1000
+        val onTakeover = args.getString("liveOnTakeover") ?: "cancel"
+        val touchAt = args.getString("liveTouchAtStep")?.toInt() ?: -1
+        val resumeAfterMs = (args.getString("liveResumeAfterSec")?.toLong() ?: 5) * 1000
+        testTasks.evalHooks.operatingPace = OperatingPace.parse(args.getString("livePace")) ?: OperatingPace.FAST
+        val dir = File(context.getExternalFilesDir(null), "acceptance/$run").apply { deleteRecursively(); mkdirs() }
+        val log = File(dir, "log.txt")
+        fun note(s: String) = log.appendText("[${System.currentTimeMillis()}] $s\n")
+        val instr = InstrumentationRegistry.getInstrumentation()
+        val app = context.applicationContext as MikaApp
+        val store = ProviderStore.get(context)
+        val cfg = store.configFor(ModelRole.Main) ?: error("no main model configured")
+        val recorder = Recorder(::note)
+        testTasks.modelFactory = { ctx, s -> TaskEnvironment.defaultModelFactory(ctx, s)?.let { recorder.wrap(it) } }
+        note("model=${cfg.model} url=$url goal=$goal")
+
+        // 侧栏进浏览器,打开网址,等页面加载完
+        compose.onNodeWithContentDescription(appString(R.string.chat_menu)).performClick()
+        compose.awaitOne(appString(R.string.drawer_browser)).performClick()
+        compose.waitForIdle()
+        val browser = UserBrowser.of(context)
+        compose.runOnUiThread { browser.open(url!!)?.let { error("cannot open $url: $it") } }
+        fun loaded() = DeviceSupport.pollUntil(30_000) { browser.page.value?.takeIf { !it.loading && it.progress >= 100 } } != null
+        note("page loaded=${loaded()}")
+        if (args.getString("liveDesktop") == "true") {
+            compose.runOnUiThread { browser.setDesktop(true) }
+            Thread.sleep(1000)
+            note("desktop page loaded=${loaded()}")
+        }
+        Thread.sleep(1500)
+        compose.waitUntil(10_000) { compose.onAllNodesWithTag("page-ask-bar").fetchSemanticsNodes().isNotEmpty() }
+        if (args.getString("liveNew") == "true" && compose.onAllNodesWithTag("page-ask-fresh").fetchSemanticsNodes().isNotEmpty()) {
+            compose.onNodeWithTag("page-ask-fresh").performClick()
+        }
+        mainShot(dir, "step-00")
+        val before = DeviceTaskState.runs.value.toSet()
+        compose.onNodeWithTag("page-ask-field").performTextInput(goal!!)
+        compose.onNodeWithTag("page-ask-send").performSemanticsAction(SemanticsActions.OnClick)
+        compose.waitForIdle()
+        val task = DeviceSupport.pollUntil(15_000) {
+            DeviceTaskState.runs.value.firstOrNull { it !in before && AttachedPage.parse(it.goal).words == goal.trim() }
+        } ?: error("the page question did not start a task: runs=${DeviceTaskState.runs.value.map { it.goal.take(60) }}")
+        val conversationId = task.conversationId
+        note("task ${task.key} conversation=$conversationId")
+        val t0 = System.currentTimeMillis()
+
+        var lastStep = -1
+        var last: TaskState? = null
+        var borrowed = false
+        var pauses = 0
+        var userPauses = 0
+        var takeovers = 0
+        var asked = false
+        var touched = false
+        var pausedByTouch = false
+        var resumed = false
+        var end: TaskState? = null
+        // 暂停按状态流里出现过的每一个算(轮询会漏掉短暂的暂停,也会漏掉触摸后到恢复前测试自己等着的那段)
+        val seen = java.util.Collections.synchronizedList(mutableListOf<TaskState>())
+        val watch = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            var prev: TaskState? = null
+            task.state.collect { st ->
+                if (st is TaskState.Held && prev !is TaskState.Held) seen += st
+                prev = st
+            }
+        }
+        while (System.currentTimeMillis() - t0 < timeoutMs) {
+            val s = task.state.value
+            if (browser.loans.lentTo.value == conversationId) borrowed = true
+            if (s != last) {
+                note("state $s")
+                if (s is TaskState.WaitingInput) asked = true
+                last = s
+            }
+            if (s is TaskState.Running && s.step != lastStep) {
+                lastStep = s.step
+                compose.mainClock.advanceTimeBy(250)
+                mainShot(dir, "step-%02d".format(s.step))
+            }
+            if (touchAt > 0 && !touched && s is TaskState.Running && s.step >= touchAt) {
+                touched = true
+                note("finger swipe on the page at step ${s.step}: ${swipeOnPage()}")
+                pausedByTouch = DeviceSupport.pollUntil(3_000) { true.takeIf { PageAskModel.pausedForUser(task.state.value) } } != null
+                compose.mainClock.advanceTimeBy(500)
+                compose.waitForIdle()
+                val banner = compose.onAllNodesWithTag("page-paused-banner").fetchSemanticsNodes().isNotEmpty()
+                val card = compose.onAllNodesWithTag("page-card").fetchSemanticsNodes().isNotEmpty()
+                note("paused by touch=$pausedByTouch banner=$banner card=$card state=${task.state.value}")
+                mainShot(dir, "paused")
+                Thread.sleep(resumeAfterMs)
+                note("still paused after ${resumeAfterMs / 1000}s: ${PageAskModel.pausedForUser(task.state.value)}")
+                if (banner) compose.onNodeWithTag("page-paused-resume").performClick() else TaskService.resume(context, task.key)
+                resumed = DeviceSupport.pollUntil(5_000) { true.takeIf { !PageAskModel.pausedForUser(task.state.value) } } != null
+                note("resumed=$resumed state=${task.state.value}")
+                compose.waitForIdle()
+                mainShot(dir, "resumed")
+            }
+            if (s is TaskState.WaitingTakeover && takeovers == 0) {
+                takeovers++
+                Thread.sleep(800)
+                mainShot(dir, "takeover")
+                note("takeover requested; action=$onTakeover")
+                if (onTakeover == "handback") TaskService.handBack(context, runKey = task.key) else TaskService.cancel(context, task.key)
+            }
+            if (s is TaskState.Succeeded || s is TaskState.Failed || s == TaskState.Cancelled) {
+                end = s
+                break
+            }
+            compose.mainClock.advanceTimeBy(250)
+            Thread.sleep(250)
+        }
+        val wall = (System.currentTimeMillis() - t0) / 1000.0
+        if (end == null) {
+            note("timeout, cancelling")
+            TaskService.cancel(context, task.key)
+        }
+        Thread.sleep(1500)
+        watch.cancel()
+        synchronized(seen) {
+            pauses = seen.size
+            userPauses = seen.count(PageAskModel::pausedForUser)
+            note("pauses: ${seen.joinToString { (it as TaskState.Held).reason.why }}")
+        }
+        compose.mainClock.advanceTimeBy(500)
+        compose.waitForIdle()
+        mainShot(dir, "end")
+        val userTabUrl = browser.page.value?.url
+        val origin = app.conversations.pageOrigin(conversationId)
+        val urls = recorder.toolCalls.filter { it.first == "web_navigate" }.mapNotNull { Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(it.second)?.groupValues?.get(1) }
+        val reopened = urls.any { PageConversations.pageKey(it) == PageConversations.pageKey(url!!) }
+        // 回到对话页、打开侧栏:这条对话带「网页」小标签。先收起通知栏和悬浮通知(盖在上面截不到侧栏);
+        // 界面测试的时钟要推着走,侧栏滑出来的动画才会走完
+        fun menuShown() = compose.onAllNodesWithContentDescription(appString(R.string.chat_menu)).fetchSemanticsNodes().isNotEmpty()
+        for (i in 0 until 8) {
+            if (menuShown()) break
+            compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+            compose.mainClock.advanceTimeBy(600)
+            compose.waitForIdle()
+        }
+        var listedAsWeb = false
+        for (attempt in 1..3) {
+            sh("cmd statusbar collapse")
+            Thread.sleep(1500)
+            runCatching { compose.onNodeWithContentDescription(appString(R.string.chat_menu)).performSemanticsAction(SemanticsActions.OnClick) }
+                .onFailure { note("menu not clickable: $it") }
+            repeat(8) {
+                compose.mainClock.advanceTimeBy(250)
+                Thread.sleep(150)
+            }
+            compose.waitForIdle()
+            listedAsWeb = DeviceSupport.pollUntil(5_000) {
+                compose.mainClock.advanceTimeBy(250)
+                true.takeIf { compose.onAllNodesWithTag("conversation-web", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            } != null
+            val drawerOpen = compose.onAllNodesWithTag("drawer").fetchSemanticsNodes().isNotEmpty()
+            note("drawer attempt $attempt: open=$drawerOpen webTag=$listedAsWeb")
+            if (drawerOpen) break
+        }
+        mainShot(dir, "drawer")
+        val outcome = when (end) {
+            is TaskState.Succeeded -> "succeeded"
+            is TaskState.Failed -> "failed"
+            TaskState.Cancelled -> if (takeovers > 0) "takeover(cancelled)" else "cancelled"
+            else -> "timeout"
+        }
+        val answer = when (end) {
+            is TaskState.Succeeded -> end.answer
+            is TaskState.Failed -> end.reason
+            else -> ""
+        }
+        File(dir, "result.txt").writeText(
+            "model=${cfg.model}\nurl=$url\ngoal=$goal\noutcome=$outcome\nsteps=${recorder.calls}\nmaxStep=$lastStep\n" +
+                "takeovers=$takeovers\nasked=$asked\npauses=$pauses\nuserPauses=$userPauses\nwallSec=$wall\n" +
+                "inputTokens=${recorder.inTokens}\noutputTokens=${recorder.outTokens}\n" +
+                "borrowed=$borrowed\nfirstToolCalls=${recorder.toolCalls.take(5).joinToString(" ; ") { "${it.first} ${it.second.take(120)}" }}\n" +
+                "urlsOpened=${urls.joinToString(" ")}\nreopenedSameUrl=$reopened\nuserTabUrlAtEnd=$userTabUrl\n" +
+                "touchAtStep=$touchAt\npausedByTouch=$pausedByTouch\nresumed=$resumed\n" +
+                "conversationId=$conversationId\npageOrigin=${origin?.let { "${it.host} ${it.url} ${it.title}" }}\nlistedAsWeb=$listedAsWeb\n" +
+                "answer=$answer\n",
+        )
+        // Mika 自己的点按、滚动不该让任务以为用户在操作
+        if (touchAt <= 0) check(userPauses == 0) { "the run paused as if the user touched the page ($userPauses times) though nobody did" }
+        else check(pausedByTouch && resumed) { "touch at step $touchAt: paused=$pausedByTouch resumed=$resumed" }
+    }
+
+    /** 在浏览器页的网页上经窗口用手指往上划一小段(网页上半截,面板盖不到;划动不会点到链接);返回划在哪。 */
+    private fun swipeOnPage(): String {
+        val instr = InstrumentationRegistry.getInstrumentation()
+        var at: IntArray? = null
+        var size = 0 to 0
+        instr.runOnMainSync {
+            fun find(v: android.view.View): android.webkit.WebView? = when (v) {
+                is android.webkit.WebView -> v.takeIf { it.isShown }
+                is android.view.ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { find(v.getChildAt(it)) }
+                else -> null
+            }
+            find(compose.activity.window.decorView)?.let { w ->
+                at = IntArray(2).also(w::getLocationOnScreen)
+                size = w.width to w.height
+            }
+        }
+        val o = at ?: return "no page view"
+        val x = o[0] + size.first / 2f
+        val y0 = o[1] + size.second * 0.3f
+        val down = android.os.SystemClock.uptimeMillis()
+        fun send(action: Int, y: Float, t: Long) {
+            val e = android.view.MotionEvent.obtain(down, t, action, x, y, 0).apply { source = android.view.InputDevice.SOURCE_TOUCHSCREEN }
+            instr.sendPointerSync(e)
+            e.recycle()
+        }
+        send(android.view.MotionEvent.ACTION_DOWN, y0, down)
+        for (i in 1..5) send(android.view.MotionEvent.ACTION_MOVE, y0 - i * 12f, down + i * 16L)
+        send(android.view.MotionEvent.ACTION_UP, y0 - 60f, down + 100)
+        return "x=$x y=$y0"
+    }
+
+    /** 此刻学到的全部:个人技能(在用与草稿)、App 知识的各份补充、记住的路线条数。 */
+    private fun learned(memory: MemoryRuntime): String = buildString {
+        val skills = memory.skills()
+        skills.list().forEach { appendLine("skill ${it.name} status=${it.status} outcomes=${it.outcomes}\n${it.markdown}\n") }
+        skills.drafts().forEach { (id, s) -> appendLine("skill-draft $id ${s.name}\n${s.markdown}\n") }
+        memory.appKnowledge().all().forEach { appendLine("app ${it.appName} stage=${it.stage} lesson=${it.lesson} revises=${it.revises} trials=${it.trialOutcomes}\n${it.markdown}\n") }
+        appendLine("routes=${(context.applicationContext as MikaApp).routes.count()}")
     }
 
     /** Mika 当前通知的标题、正文和按钮(从 dumpsys notification 里摘)。 */
@@ -255,6 +576,8 @@ class LiveRunTest {
         @Volatile var calls = 0
         @Volatile var inTokens = 0
         @Volatile var outTokens = 0
+        /** 模型调过的工具(名字, 参数),按先后。 */
+        val toolCalls: MutableList<Pair<String, String>> = java.util.Collections.synchronizedList(mutableListOf())
 
         fun wrap(inner: ChatModel) = object : ChatModel {
             override val capabilities = inner.capabilities
@@ -278,7 +601,10 @@ class LiveRunTest {
                 reply.parts.forEach { p ->
                     when (p) {
                         is Part.Text -> note("  say: ${p.text.take(500).replace('\n', ' ')}")
-                        is Part.ToolCall -> note("  tool: ${p.name} ${p.argsJson.take(300)}")
+                        is Part.ToolCall -> {
+                            toolCalls += p.name to p.argsJson
+                            note("  tool: ${p.name} ${p.argsJson.take(300)}")
+                        }
                         is Part.Thinking -> note("  think: ${p.text.take(200).replace('\n', ' ')}")
                         else -> Unit
                     }

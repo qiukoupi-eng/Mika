@@ -1,5 +1,11 @@
 package com.wangzan101.mika.capsule
 
+import kotlinx.coroutines.delay
+
+import androidx.compose.runtime.produceState
+
+import com.wangzan101.mika.ui.KeptPageCopy
+
 import com.wangzan101.mika.R
 import com.wangzan101.mika.i18n.tr
 import android.graphics.Bitmap
@@ -155,6 +161,8 @@ interface CardActions {
     fun captureScreen()
     /** 附件条上的 ×:不要这张截图。 */
     fun dropScreen()
+    /** 留在后台运行的那一页的卡片上的「关闭网页」。 */
+    fun closeKeptPage() {}
 }
 
 /** 截下来、挂在输入框上面等着发的一屏:[thumb] 是缩略图(不让截图的页面没有)。 */
@@ -211,6 +219,7 @@ fun CapsuleCard(
             zoomed && preview != null -> Zoomed(preview, actions)
             card is CardView.Detail -> Detail(card, preview, actions, elapsed, h, handle, inputRow)
             card is CardView.Chat -> ChatCard(card, thread, actions, elapsed, h, handle, inputRow)
+            card is CardView.Kept -> KeptCard(card, preview, actions, h, handle)
         }
     }
 }
@@ -388,7 +397,7 @@ private fun InputField(field: CardInput, ui: CardInputUi, actions: CardActions, 
 
 /** 输入框右边的停止键:黑底圆钮里一个方块,同对话页输入栏。 */
 @Composable
-private fun StopKey(onStop: () -> Unit) {
+internal fun StopKey(onStop: () -> Unit) {
     val c = MikaTheme.colors
     Box(
         Modifier.testTag("capsule-stop").size(KeySize).clip(MikaShapes.Pill).background(c.ink)
@@ -520,9 +529,58 @@ private fun Detail(
     }
 }
 
+/**
+ * 留在后台运行的那一页的卡片:标题「后台网页 · 还剩 1 小时 52 分」,实时画面(它那块显示的最新一帧,点一下放大),
+ * 站点和来自哪个对话,下面「打开对话」「关闭网页」。按内容高。剩下的时间每分钟走一次。
+ */
+@Composable
+private fun KeptCard(card: CardView.Kept, preview: Bitmap?, actions: CardActions, height: Dp, handle: Modifier) {
+    val c = MikaTheme.colors
+    val p = card.page
+    val now by produceState(System.currentTimeMillis(), p.id) {
+        while (true) {
+            delay(KEPT_TICK_MS)
+            value = System.currentTimeMillis()
+        }
+    }
+    CardFrame(height, fixed = false) {
+        Header(tr(R.string.kept_card_title), tr(R.string.kept_card_left, KeptPageCopy.duration(p.closesAt - now)), actions, handle)
+        Column(Modifier.padding(top = 10.dp).weight(1f, fill = false).fillMaxWidth().verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (preview != null) {
+                val image = remember(preview) { preview.asImageBitmap() }
+                Box(
+                    Modifier.testTag("kept-live").fillMaxWidth().aspectRatio(ratio(preview)).clip(ScreenShape)
+                        .border(1.dp, c.glassEdge, ScreenShape).background(Color.Black)
+                        .clickable(role = Role.Image, onClickLabel = CardCopy.SCREEN) { actions.zoom(true) }
+                        .semantics { contentDescription = tr(R.string.kept_card_live) },
+                ) {
+                    Image(image, null, Modifier.fillMaxWidth(), contentScale = ContentScale.FillWidth)
+                }
+            }
+            Text(p.host, style = Strong, color = c.ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                listOf(tr(R.string.kept_card_from, ScreenCopy.plain(p.goal).let { if (it.length > TITLE_MAX) it.take(TITLE_MAX) + "…" else it }), tr(R.string.kept_card_live))
+                    .joinToString(" · "),
+                style = Sub, color = c.ink2, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Row(Modifier.padding(top = 12.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(Modifier.weight(1f).testTag("kept-open")) { Action(tr(R.string.kept_open_chat), ButtonKind.Tonal) { actions.openMika(p.conversationId) } }
+            // 关闭是红字的淡红按钮,和别的按钮分开
+            Box(
+                Modifier.weight(1f).height(40.dp).testTag("kept-close").clip(MikaShapes.Pill).background(c.badSoft)
+                    .clickable(role = Role.Button, onClick = actions::closeKeptPage),
+                contentAlignment = Alignment.Center,
+            ) { Text(tr(R.string.kept_close), style = Strong, color = c.bad) }
+        }
+    }
+}
+
+private const val KEPT_TICK_MS = 30_000L
+
 /** 要你点的按钮(接管、同意、选项、继续),固定在卡片中间那段的下面,不跟着滚。 */
 @Composable
-private fun Pinned(content: CardContent?, key: String, actions: CardActions) {
+internal fun Pinned(content: CardContent?, key: String, actions: CardActions) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         when (content) {
             is CardContent.Takeover -> {
@@ -581,10 +639,10 @@ private fun ChatCard(
 
 /**
  * 对话的来回(旧的在上):打开时最新那句你说的话停在顶上;滚到顶往前多加载几轮,列表按每条的 key 停在原处;
- * 往下长的字只在你本来就在底部时跟着往下(同对话页);来了新的一问时滚到它。
+ * 往下长的字只在你本来就在底部时跟着往下(同对话页);来了新的一问时滚到它。[footer] 排在最后一条后面。
  */
 @Composable
-private fun ThreadList(thread: ChatThread, conversationId: String?, actions: CardActions) {
+internal fun ThreadList(thread: ChatThread, conversationId: String?, actions: CardActions, footer: (@Composable () -> Unit)? = null) {
     val c = MikaTheme.colors
     val state = rememberLazyListState(initialFirstVisibleItemIndex = thread.anchor)
     var following by remember { mutableStateOf(false) }
@@ -640,11 +698,21 @@ private fun ThreadList(thread: ChatThread, conversationId: String?, actions: Car
                     color = if (item.kind.needsYou) c.warn else c.ink3, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 )
                 // 表格、代码块在自己那块里左右滑,不撑宽卡片;链接另开任务打开,浮层里也能点
-                is ThreadItem.Answer -> MarkdownText(item.text, Body.copy(color = c.ink), Modifier.fillMaxWidth().padding(bottom = 8.dp), streaming = item.streaming)
+                is ThreadItem.Answer -> if (!item.cut) {
+                    MarkdownText(item.text, Body.copy(color = c.ink), Modifier.fillMaxWidth().padding(bottom = 8.dp), streaming = item.streaming)
+                } else Column(Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    // 被插话打断的那段:淡色,下面一行小字(和对话页同一句话)
+                    MarkdownText(item.text, Body.copy(color = c.ink2), Modifier.fillMaxWidth(), streaming = false)
+                    Text(tr(R.string.steer_interrupted_reply), Modifier.padding(top = 2.dp), style = Sub, color = c.ink3)
+                }
             }
         }
+        // 接在来回后面的一段(浏览器页面板里此刻的步骤):紧跟着最后一条,跟到底部时一起往下
+        footer?.let { f -> item(FOOTER_KEY) { f() } }
     }
 }
+
+private const val FOOTER_KEY = "thread-footer"
 
 /** 卡片来回里截图缩略图的宽。 */
 private val ThreadThumbWidth = 78.dp
@@ -655,9 +723,10 @@ private const val END_OFFSET = 1_000_000
 /**
  * 干活中的步骤(旧的在上):按内容高、最多 [max] 高。放不下时最新一步留在底下,旧的在上面截掉、顶上淡出,往上滚看更早的;
  * 来了新的一步时,本来就在底部才跟着往下,往上翻着看时不拽回去(同 [ThreadList])。
+ * [tags] 和 [steps] 一一对应:那一步在哪(「网页」「App」),写成步骤前面的小标签;没有为 null。
  */
 @Composable
-private fun Steps(steps: List<String>, max: Dp) {
+internal fun Steps(steps: List<String>, max: Dp, tags: List<String?> = emptyList()) {
     val c = MikaTheme.colors
     // 倒着排:第 0 项是最新一步,贴在底下
     val state = rememberLazyListState()
@@ -689,10 +758,18 @@ private fun Steps(steps: List<String>, max: Dp) {
             val i = steps.lastIndex - j
             val current = j == 0
             StepItem(if (current) StepState.Current else StepState.Done, first = i == 0, last = current, dotY = 11.dp) {
-                Text(
-                    steps[i], Modifier.padding(vertical = 2.dp), style = if (current) Step.copy(fontWeight = FontWeight.Medium) else Step,
-                    color = if (current) c.ink else c.ink2, maxLines = 2, overflow = TextOverflow.Ellipsis,
-                )
+                Row(verticalAlignment = Alignment.Top) {
+                    tags.getOrNull(i)?.let { t ->
+                        Text(
+                            t, Modifier.padding(top = 3.dp, end = 5.dp).background(c.accentSoft, RoundedCornerShape(6.dp)).padding(horizontal = 5.dp),
+                            style = TextStyle(fontSize = 10.5.sp, lineHeight = 15.sp, fontWeight = FontWeight.Medium), color = c.accent, maxLines = 1,
+                        )
+                    }
+                    Text(
+                        steps[i], Modifier.padding(vertical = 2.dp), style = if (current) Step.copy(fontWeight = FontWeight.Medium) else Step,
+                        color = if (current) c.ink else c.ink2, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }

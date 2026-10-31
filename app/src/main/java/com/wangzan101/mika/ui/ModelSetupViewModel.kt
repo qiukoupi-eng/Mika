@@ -21,10 +21,20 @@ import com.wangzan101.mika.settings.ProbeResult
 import com.wangzan101.mika.settings.ProviderStore
 import com.wangzan101.mika.settings.RoleChoice
 import com.wangzan101.mika.settings.RoleChoices
+import com.wangzan101.mika.settings.ChatGptSignIns
+import com.wangzan101.mika.settings.AccountOutcome
+import com.wangzan101.mika.settings.DevicePrompt
+import com.wangzan101.mika.settings.SignInTarget
 import com.wangzan101.mika.core.chatgpt.ChatGptAuth
 import com.wangzan101.mika.core.chatgpt.SignInException
 import com.wangzan101.mika.core.chatgpt.SignInFailure
 import com.wangzan101.mika.core.chatgpt.signInWithChatGpt
+import com.wangzan101.mika.core.oauth.AccountSignInException
+import com.wangzan101.mika.core.oauth.AccountSignInFailure
+import com.wangzan101.mika.core.oauth.DeviceChallenge
+import com.wangzan101.mika.core.oauth.OpenRouterAuth
+import com.wangzan101.mika.core.oauth.XaiAuth
+import com.wangzan101.mika.core.oauth.signInWithOpenRouter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -51,14 +61,42 @@ sealed interface ListState {
 data class ChatGptAccount(val email: String, val signedIn: Boolean)
 
 /**
- * 「用 ChatGPT 登录」要用到的系统能力:在浏览器里打开授权页、登录完回到 Mika、回调后浏览器里显示的网页。
+ * 除 ChatGPT 以外用账号登录的几家:xAI / Grok 走设备码(浏览器里核对短码),OpenRouter 走官方的 PKCE 授权(本机回调换 Key)。
+ * ChatGPT 的登录另有一套(见 [ModelSetupViewModel.signInWithChatGpt]),界面上和它们并排。
+ */
+enum class AccountProvider(val target: SignInTarget) {
+    Xai(SignInTarget.Xai), OpenRouter(SignInTarget.OpenRouter);
+
+    companion object {
+        fun of(target: SignInTarget): AccountProvider? = entries.firstOrNull { it.target == target }
+    }
+}
+
+/** 一家账号登录的账号。[label] 是给人看的账号名(邮箱等,可能为空);退出登录后 [signedIn] 为假。没有这家服务商时为 null。 */
+data class SubscriptionAccount(val label: String, val signedIn: Boolean)
+
+/**
+ * 正在进行或刚失败的账号登录。没在登录、也没有失败时 [provider] 为 null。
+ * 设备码登录时 [userCode] 是给用户看的短码,[openUrl] 是核对过主机的验证页,[expiresAtMs] 是短码失效的时间。
+ */
+data class AccountSignInUi(
+    val provider: AccountProvider? = null,
+    val running: Boolean = false,
+    val userCode: String = "",
+    val openUrl: String = "",
+    val expiresAtMs: Long = 0,
+    val failure: String? = null,
+)
+
+/**
+ * 用账号登录要用到的系统能力:在浏览器里打开授权页、登录完回到 Mika、本机回调收到后浏览器里显示的网页。
  * 界面给出(要 Context);测试里不给,就不能登录。
  */
-interface ChatGptBrowser {
+interface SignInBrowser {
     fun open(url: String)
     fun returnToApp()
-    /** [params] 里有 `error` 表示用户在授权页取消了。 */
-    fun page(params: Map<String, String>): String
+    /** 回调处理完之后回给浏览器的网页:[failure] 为 null 是登录成功,否则是失败的原因(和界面上同一句)。 */
+    fun page(failure: String?): String
 }
 
 /**
@@ -152,6 +190,14 @@ data class ModelSetupUi(
     val chatGptWelcome: Boolean = false,
     /** 退出登录时 ChatGPT 那边没确认注销(本机令牌已清)。 */
     val chatGptRevokeUnconfirmed: Boolean = false,
+    /** 已连接的 Grok 订阅;没有这家时为 null。 */
+    val xaiAccount: SubscriptionAccount? = null,
+    /** 用 OpenRouter 账号授权连上的那一家;没有时为 null。 */
+    val openRouterAccount: SubscriptionAccount? = null,
+    /** xAI、OpenRouter 的登录进度。 */
+    val accountSignIn: AccountSignInUi = AccountSignInUi(),
+    /** 刚用账号登录成功的服务商 id:界面打开它的详情页(看账号和模型、设主模型),打开后清掉。 */
+    val signedInProvider: String? = null,
     /**
      * 刚存下服务商时试调用的说明(见 [ModelSetupViewModel.testAndSave]):先试的模型没通过、主模型用了哪个,
      * 或一个都没通过、要用户自己选;再测试、选了主模型时清掉。
@@ -198,9 +244,17 @@ data class ModelSetupUi(
      * 有列表的服务商,模型是从列表里选的,不算。
      */
     fun unverified(p: Provider): List<String> =
-        if (p.kind == ProviderConfig.Kind.ChatGpt || p.models?.isEmpty() != true) emptyList()
+        if (p.kind == ProviderConfig.Kind.ChatGpt || p.kind == ProviderConfig.Kind.Xai || p.models?.isEmpty() != true) emptyList()
         else roles.referenced.mapNotNull { id -> configs.firstOrNull { it.id == id && it.providerId == p.id }?.model }
             .distinct().filter { it !in p.verifiedModels }
+
+    /** 用账号登录的这一家已经退出了登录(ChatGPT、xAI 的令牌清了,OpenRouter 的 Key 删了)。 */
+    fun signedOut(p: Provider): Boolean = when {
+        p.kind == ProviderConfig.Kind.ChatGpt -> chatGptAccount?.signedIn != true
+        p.kind == ProviderConfig.Kind.Xai -> xaiAccount?.signedIn != true
+        p.signIn != null -> p.id !in keyed
+        else -> false
+    }
 
     /** 这个用途明确选的是不是这个模型(「用主模型」不算)。 */
     fun picked(role: ModelRole, providerId: String, model: String): Boolean {
@@ -219,18 +273,69 @@ class ModelSetupViewModel(
     private val store: ProviderStore,
     private val scope: CoroutineScope,
     private val io: CoroutineDispatcher = Dispatchers.IO,
-    private val chatGptBrowser: ChatGptBrowser? = null,
+    private val browser: SignInBrowser? = null,
+    /** 登录跑在哪:界面给的是 App 那一份(退到后台、界面重建都不断,期间开前台服务);测试里就用 [scope]。 */
+    private val signIns: ChatGptSignIns = ChatGptSignIns(scope),
 ) {
     private val _state = MutableStateFlow(snapshot(ModelSetupUi(AddForm.of(ProviderPresets.all.first()))))
     val state: StateFlow<ModelSetupUi> = _state.asStateFlow()
 
     private var testJob: Job? = null
-    private var signInJob: Job? = null
     private val refreshJobs = mutableMapOf<String, Job>()
 
     init {
         // 别处(开发者选项等)改了存储时跟着更新
         scope.launch { merge(store.providers, store.configs, store.roles).collect { sync() } }
+        // 登录在别处结束(通知上取消了)或界面重建前就开始了:跟着它的进度
+        scope.launch {
+            signIns.running.collect { running ->
+                val prompt = signIns.devicePrompt
+                val target = signIns.target
+                _state.update {
+                    when {
+                        running && target == SignInTarget.ChatGpt && it.chatGptSignIn == ListState.Idle ->
+                            it.copy(chatGptSignIn = ListState.Running)
+                        !running && it.chatGptSignIn == ListState.Running -> snapshot(it.copy(chatGptSignIn = ListState.Idle))
+                        running && AccountProvider.of(target) != null -> it.copy(
+                            accountSignIn = it.accountSignIn.copy(
+                                provider = AccountProvider.of(target),
+                                running = true,
+                                userCode = prompt?.userCode ?: it.accountSignIn.userCode,
+                                openUrl = prompt?.openUrl ?: it.accountSignIn.openUrl,
+                                expiresAtMs = prompt?.expiresAtMs ?: it.accountSignIn.expiresAtMs,
+                            ),
+                        )
+                        !running && it.accountSignIn.running -> snapshot(it.copy(accountSignIn = AccountSignInUi()))
+                        else -> it
+                    }
+                }
+            }
+        }
+        // 设备码的短码可能在界面重建之后才来
+        scope.launch {
+            signIns.device.collect { prompt ->
+                if (prompt == null) return@collect
+                val provider = AccountProvider.of(signIns.target) ?: return@collect
+                _state.update {
+                    it.copy(accountSignIn = it.accountSignIn.copy(
+                        provider = provider, running = true,
+                        userCode = prompt.userCode, openUrl = prompt.openUrl, expiresAtMs = prompt.expiresAtMs,
+                    ))
+                }
+            }
+        }
+        // 账号登录的结果交给现在这个界面(登录可能是重建前的那个界面开始的)
+        scope.launch {
+            signIns.outcome.collect { o ->
+                if (o == null) return@collect
+                val provider = AccountProvider.of(o.target) ?: return@collect
+                _state.update {
+                    if (o.providerId != null) snapshot(it.copy(accountSignIn = AccountSignInUi(), formOpen = false, signedInProvider = o.providerId))
+                    else it.copy(accountSignIn = AccountSignInUi(provider = provider, failure = o.failure))
+                }
+                signIns.consumeOutcome(o)
+            }
+        }
     }
 
     private fun snapshot(ui: ModelSetupUi): ModelSetupUi {
@@ -241,6 +346,10 @@ class ModelSetupViewModel(
             chatGptAccount = store.chatGptProvider()?.let { p ->
                 store.chatGptSession(p.id).let { ChatGptAccount(it?.email.orEmpty(), it?.signedIn == true) }
             },
+            xaiAccount = store.xaiProvider()?.let { p ->
+                store.accountSession(p.id).let { SubscriptionAccount(it?.label.orEmpty(), it?.signedIn == true) }
+            },
+            openRouterAccount = store.openRouterAccount()?.let { p -> SubscriptionAccount("", store.hasKey(p.id)) },
         )
     }
 
@@ -360,16 +469,21 @@ class ModelSetupViewModel(
     /**
      * 试调用的结论:通过、[model] 没调用工具、失败([message] 是给人看的原因)。
      * 失败是那个模型自己的问题(这个账号用不了、没有这个模型、不支持工具)时 [modelReason] 是短的原因,换一个模型可能就行;
-     * [notAvailable] 为真是没开通或没权限。
+     * [notAvailable] 为真是没开通或没权限;[serverSide] 为真是服务端出错(5xx),可能只是这一个模型的上游挂了,见 [probe]。
      */
     private sealed interface ProbeOutcome {
         data object Passed : ProbeOutcome
         data class NoToolCall(val model: String) : ProbeOutcome
-        data class Failed(val message: String, val modelReason: String? = null, val notAvailable: Boolean = false) : ProbeOutcome
+        data class Failed(
+            val message: String, val modelReason: String? = null,
+            val notAvailable: Boolean = false, val serverSide: Boolean = false,
+        ) : ProbeOutcome
     }
 
-    /** 先试、没通过的一个模型:[reason] 是短的原因。 */
-    private data class Rejected(val model: String, val reason: String, val notAvailable: Boolean)
+    /** 先试、没通过的一个模型:[reason] 是短的原因;[serverSide] 为真是服务端出错(5xx),见 [probe]。 */
+    private data class Rejected(
+        val model: String, val reason: String, val notAvailable: Boolean, val serverSide: Boolean = false,
+    )
 
     /** 有列表时试调用的结果:[Blocked] 是第一个就因为模型以外的原因失败,不存;[Done] 见 [probe]。 */
     private sealed interface ListProbe {
@@ -382,14 +496,21 @@ class ModelSetupViewModel(
      * 列出模型后按 [ModelOptions.candidates] 的先后(没有就第一个)让模型调用一次工具(见 [probeModel]),至多试
      * [PROBE_CANDIDATES] 个:通过就停;没通过、是那个模型自己的问题就试下一个。第一个因为别的原因失败为 [ListProbe.Blocked];
      * 之后的因为别的原因失败就不再试(Key 已证明是对的),和都没通过一样处理。列表里一个能用的也没有时算通过、不试。
+     *
+     * 服务端出错(5xx)不一定整家不可用:聚合服务商把很多上游的模型放在同一个列表里,其中一个上游挂了也会这样。
+     * 所以 5xx 先按这个模型没通过记下、接着试下一个:后面有通过的,就说明是那个模型的问题,照常保存;
+     * 试的全都是这样,才当成整家不可用,不存。只碰到过 5xx 时 Key 还没证明是对的,这之后再碰到别的原因失败也照旧不存。
      */
     private suspend fun probe(f: AddForm, baseUrl: String, key: String?, models: List<ListedModel>): ListProbe {
         // 用 ChatGPT 登录不走这张表单(登录本身就核对过了);表单只给 Key 的接口类型,这里再挡一次
-        if (f.kind == ProviderConfig.Kind.ChatGpt) return ListProbe.Done(null, emptyList())
+        if (f.kind == ProviderConfig.Kind.ChatGpt || f.kind == ProviderConfig.Kind.Xai) {
+            return ListProbe.Done(null, emptyList())
+        }
         val base = (ProviderPresets.forBaseUrl(baseUrl) ?: ProviderPresets.custom).capabilities
         val options = ModelOptions.merge(models, base)
         val order = ModelOptions.candidates(options, f.familyTokens).ifEmpty { listOfNotNull(options.firstOrNull()?.id) }
         val rejected = mutableListOf<Rejected>()
+        var firstServerError: String? = null
         for ((i, model) in order.take(PROBE_CANDIDATES).withIndex()) {
             val caps = options.first { it.id == model }.capabilities
             val endpoint = models.firstOrNull { it.id == model }?.endpoint
@@ -397,14 +518,22 @@ class ModelSetupViewModel(
                 ProbeOutcome.Passed -> return ListProbe.Done(model, rejected)
                 is ProbeOutcome.NoToolCall -> rejected += Rejected(model, tr(R.string.model_reason_no_tools), notAvailable = false)
                 is ProbeOutcome.Failed -> when {
-                    o.modelReason != null -> rejected += Rejected(model, o.modelReason, o.notAvailable)
-                    i == 0 -> return ListProbe.Blocked(o.message)
+                    o.modelReason != null -> {
+                        rejected += Rejected(model, o.modelReason, o.notAvailable, o.serverSide)
+                        if (o.serverSide && firstServerError == null) firstServerError = o.message
+                    }
+                    // 前面只有 5xx 时 Key 还没证明是对的:再碰到 Key、网络、地址、超时这类,照旧不存
+                    firstServerError != null || i == 0 -> return ListProbe.Blocked(o.message)
                     else -> {
                         rejected += Rejected(model, o.message, notAvailable = false)
                         break
                     }
                 }
             }
+        }
+        // 试的全都是服务端出错:多半整家不可用,不存
+        if (rejected.isNotEmpty() && rejected.all { it.serverSide }) {
+            return ListProbe.Blocked(firstServerError ?: rejected.first().reason)
         }
         return ListProbe.Done(null, rejected)
     }
@@ -456,6 +585,11 @@ class ModelSetupViewModel(
                     else tr(R.string.model_probe_not_found, model, ModelSetupCopy.modelExample(exampleKind)),
                     tr(R.string.model_reason_not_found),
                 )
+                // 5xx:可能只是这一个模型的上游挂了,先按它没通过算,由 [probe] 决定还试不试下一个
+                is ModelError.Server -> ProbeOutcome.Failed(
+                    tr(R.string.model_probe_failed, model, e.message.orEmpty()),
+                    tr(R.string.model_reason_server, "HTTP ${e.status}"), serverSide = true,
+                )
                 else -> ProbeOutcome.Failed(tr(R.string.model_probe_failed, model, e.message.orEmpty()))
             }
         }
@@ -474,20 +608,22 @@ class ModelSetupViewModel(
 
     /**
      * 打开浏览器登录 ChatGPT,回调后换令牌、核对,列出模型,存成(或更新)ChatGPT 服务商,回到 Mika。
-     * 还没有主模型时选它的一个模型为主模型。第一次注册成功后说明一次在用套餐额度。失败说原因。
+     * 还没有主模型时选它的一个模型为主模型。第一次注册成功后说明一次在用套餐额度。失败说原因(并记下给诊断信息)。
+     * 跑在 [signIns] 里:用户在浏览器里登录时 Mika 在后台,不能跟着界面走。
      */
     fun signInWithChatGpt() {
-        val browser = chatGptBrowser ?: return
-        if (_state.value.chatGptSignIn == ListState.Running) return
+        val browser = browser ?: return
+        if (_state.value.chatGptSignIn == ListState.Running || signIns.running.value) return
         _state.update { it.copy(chatGptSignIn = ListState.Running, chatGptRevokeUnconfirmed = false) }
-        signInJob = scope.launch {
+        signIns.start {
             val (listProblem, first) = try {
                 withContext(io) {
                     val (hostId, clientId) = store.chatGptRegistration()
                     val existing = store.chatGptProvider()
                     val session = signInWithChatGpt(
                         store.chatGptAuth, hostId, clientId, existing?.let { store.chatGptSession(it.id) },
-                        openBrowser = browser::open, onRegistered = store::rememberChatGptClient, page = browser::page,
+                        openBrowser = browser::open, onRegistered = store::rememberChatGptClient,
+                        page = { e -> browser.page(e?.let { ModelsCopy.chatGptFailure(it.reason, it.code) }) },
                     )
                     val listed = store.listModels(ProviderConfig.Kind.ChatGpt, ChatGptAuth.API_BASE, session.accessToken)
                     val p = store.connectChatGpt(session, (listed as? ModelListResult.Ok)?.models ?: existing?.models.orEmpty())
@@ -500,10 +636,11 @@ class ModelSetupViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                val reason = (e as? SignInException)?.reason ?: SignInFailure.Network
+                val failure = e as? SignInException ?: SignInException(SignInFailure.Network, e.message.orEmpty(), e)
+                signIns.recordFailure(failure)
                 browser.returnToApp()
-                _state.update { it.copy(chatGptSignIn = ListState.Failed(ModelsCopy.chatGptFailure(reason))) }
-                return@launch
+                _state.update { it.copy(chatGptSignIn = ListState.Failed(ModelsCopy.chatGptFailure(failure.reason, failure.code))) }
+                return@start
             }
             browser.returnToApp()
             val id = store.chatGptProvider()?.id
@@ -518,11 +655,108 @@ class ModelSetupViewModel(
 
     /** 放弃正在进行的登录(本机回调随之关掉)。 */
     fun cancelChatGptSignIn() {
-        signInJob?.cancel()
+        signIns.cancel()
         _state.update { it.copy(chatGptSignIn = ListState.Idle) }
     }
 
     fun dismissChatGptWelcome() = _state.update { it.copy(chatGptWelcome = false) }
+
+    /**
+     * 用账号登录 xAI 或 OpenRouter:xAI 在浏览器里打开核对过的验证页、界面留下短码,等用户确认;
+     * OpenRouter 打开授权页,同意后回到本机回调、换到一把属于用户的 Key。
+     * 成功后列出模型、存下这一家,还没有主模型时选一个,再打开它的详情页([ModelSetupUi.signedInProvider])。
+     * 失败只说类别和错误代码(并记下给诊断信息)。和 ChatGPT 一样跑在 [signIns] 里:用户在浏览器里时 Mika 在后台。
+     */
+    fun signInWithAccount(provider: AccountProvider) {
+        val browser = browser ?: return
+        if (signIns.running.value || _state.value.accountSignIn.running || _state.value.chatGptSignIn == ListState.Running) return
+        _state.update { it.copy(accountSignIn = AccountSignInUi(provider = provider, running = true)) }
+        val started = signIns.start(
+            target = provider.target,
+            noticeTitle = tr(R.string.account_signin_notif_title),
+            noticeBody = tr(R.string.account_signin_notif_body),
+        ) {
+            try {
+                val (p, failed) = withContext(io) {
+                    val (p, listed) = when (provider) {
+                        AccountProvider.Xai -> connectXai(browser)
+                        AccountProvider.OpenRouter -> connectOpenRouter(browser)
+                    }
+                    if (store.roles.value.main == null) {
+                        val options = ModelOptions.ofProvider(p, store.list())
+                        (ModelOptions.defaultMain(options) ?: options.firstOrNull()?.id)?.let { m -> use(ModelRole.Main, p, m, options) }
+                    }
+                    p to (listed as? ModelListResult.Failed)
+                }
+                browser.returnToApp()
+                _state.update {
+                    it.copy(listing = if (failed != null) it.listing + (p.id to ListState.Failed(failed.message)) else it.listing - p.id)
+                }
+                signIns.finishAccount(AccountOutcome(provider.target, providerId = p.id))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val failure = e as? AccountSignInException ?: AccountSignInException(AccountSignInFailure.Network, cause = e)
+                signIns.recordAccountFailure(provider.name, failure.reason.name, failure.code)
+                browser.returnToApp()
+                signIns.finishAccount(AccountOutcome(provider.target, failure = ModelsCopy.accountFailure(failure)))
+            }
+        }
+        if (!started) _state.update { it.copy(accountSignIn = AccountSignInUi()) }
+    }
+
+    /** xAI 设备码登录,列出模型,存成(或更新)那一家。 */
+    private suspend fun connectXai(browser: SignInBrowser): Pair<Provider, ModelListResult> {
+        val session = store.xaiAuth.signIn(openBrowser = browser::open, onChallenge = ::publishDevice)
+        val existing = store.xaiProvider()
+        val listed = store.listModels(ProviderConfig.Kind.Xai, session.apiBase.ifBlank { XaiAuth.API_BASE }, session.accessToken)
+        return store.connectAccount(session, (listed as? ModelListResult.Ok)?.models ?: existing?.models.orEmpty()) to listed
+    }
+
+    /** OpenRouter 授权换 Key,列出模型,按 OpenRouter 预设存下(或更新)那一家。 */
+    private suspend fun connectOpenRouter(browser: SignInBrowser): Pair<Provider, ModelListResult> {
+        val key = signInWithOpenRouter(store.openRouterAuth, browser::open, page = { e -> browser.page(e?.let(ModelsCopy::accountFailure)) })
+        val existing = store.openRouterAccount()
+        val listed = store.listModels(ProviderConfig.Kind.OpenAiCompat, OpenRouterAuth.API_BASE, key)
+        return store.connectOpenRouter(key, (listed as? ModelListResult.Ok)?.models ?: existing?.models.orEmpty()) to listed
+    }
+
+    /** 把短码留在界面上。打开浏览器由登录流程自己做,这里不再开一次。 */
+    private fun publishDevice(c: DeviceChallenge) {
+        val openUrl = c.verificationUriComplete ?: c.verificationUri
+        val expiresAt = System.currentTimeMillis() + c.expiresInSec * 1000
+        // 界面经 signIns.device 接着显示(重建后的界面也收得到)
+        signIns.showDevice(DevicePrompt(c.userCode, openUrl, expiresAt))
+    }
+
+    fun cancelAccountSignIn() {
+        signIns.cancel()
+        _state.update { it.copy(accountSignIn = AccountSignInUi()) }
+    }
+
+    fun dismissAccountFailure() = _state.update { it.copy(accountSignIn = AccountSignInUi()) }
+
+    /** 详情页打开过了。 */
+    fun signedInShown() = _state.update { it.copy(signedInProvider = null) }
+
+    /** 退出账号登录:xAI 清本机令牌,OpenRouter 删本机的 Key;服务商和用途留着,再登录接着用。 */
+    fun signOutAccount(providerId: String) {
+        scope.launch {
+            withContext(io) {
+                val p = store.provider(providerId) ?: return@withContext
+                if (p.kind == ProviderConfig.Kind.Xai) store.signOutAccount(providerId) else store.signOutOpenRouter(providerId)
+            }
+            _state.update { snapshot(it.copy(listing = it.listing - providerId)) }
+        }
+    }
+
+    /** 把这家默认的那个模型(见 [ModelOptions.defaultMain])设为主模型。 */
+    fun useAsMain(providerId: String) {
+        val p = store.provider(providerId) ?: return
+        val options = ModelOptions.ofProvider(p, store.list())
+        val m = ModelOptions.defaultMain(options) ?: options.firstOrNull()?.id ?: return
+        pick(ModelRole.Main, providerId, m)
+    }
 
     /** 退出 ChatGPT 登录:服务端注销、本机清令牌;服务商和用途不动,再登录就能接着用。 */
     fun signOutChatGpt(providerId: String) {
@@ -533,6 +767,11 @@ class ModelSetupViewModel(
     }
 
     // ---------- 用途 ----------
+
+    fun setReasoningEffort(role: ModelRole, effort: String?) {
+        store.setReasoningEffort(role, effort)
+        sync()
+    }
 
     /** 把 [providerId] 下的 [model] 用作 [role](选择页和「用作」面板都走这里):没有配置的当场建一条。 */
     fun pick(role: ModelRole, providerId: String, model: String) {
@@ -642,8 +881,12 @@ class ModelSetupViewModel(
         _state.value.providers.filter { it.models == null && _state.value.listing[it.id] == null && listable(it) }.forEach { refresh(it.id) }
     }
 
-    /** 退出了登录的 ChatGPT 列不了模型,等再登录。 */
-    private fun listable(p: Provider) = p.kind != ProviderConfig.Kind.ChatGpt || store.chatGptSession(p.id)?.signedIn == true
+    /** 退出了登录的列不了模型,等再登录。 */
+    private fun listable(p: Provider) = if (p.signIn != null) store.hasKey(p.id) else when (p.kind) {
+        ProviderConfig.Kind.ChatGpt -> store.chatGptSession(p.id)?.signedIn == true
+        ProviderConfig.Kind.Xai -> store.accountSession(p.id)?.signedIn == true
+        else -> true
+    }
 
     /** 换 Key,然后用新 Key 重新列一次模型。 */
     fun changeKey(providerId: String, apiKey: String) {
@@ -661,7 +904,12 @@ class ModelSetupViewModel(
         scope.launch {
             withContext(io) {
                 // ChatGPT 的先在服务端注销登录,再删
-                if (store.provider(providerId)?.kind == ProviderConfig.Kind.ChatGpt) store.signOutChatGpt(providerId)
+                when (store.provider(providerId)?.kind) {
+                    ProviderConfig.Kind.ChatGpt -> store.signOutChatGpt(providerId)
+                    ProviderConfig.Kind.Xai -> store.signOutAccount(providerId)
+                    else -> Unit
+                }
+                // OpenRouter 授权来的 Key 随服务商一起删;OpenRouter 那边的 Key 要用户自己到 Keys 页面删
                 store.removeProvider(providerId)
             }
             _state.update { snapshot(it.copy(listing = it.listing - providerId)) }

@@ -11,7 +11,7 @@ import kotlinx.serialization.json.contentOrNull
 import java.util.UUID
 
 /**
- * 把一次核查通过的成功运行记成路线。只看 [RunEvent.ActionTarget] 与接管、追问、确认、障碍、核查、结局一类事件;
+ * 把一次办成的运行记成路线。只看 [RunEvent.ActionTarget] 与接管、追问、确认、障碍、结局一类事件;
  * 有任何一项说明这次不该记(要用户出手、付款、密码框、防截屏、用了浏览器工具或沙箱工具),返回 null。
  */
 object RouteRecorder {
@@ -27,10 +27,10 @@ object RouteRecorder {
     /**
      * 输入的字只能是本次原话里恰好出现一次的片段(记成槽);不是的(固定词、追问来的、从别处抄来的)整条不记,
      * 路线里永远不存用户没在原话里说过的字。目标元素的名字在原话里出现时也必须绑成槽,回放时按新原话认。
+     * 办没办成由调用方按 [com.wangzan101.mika.core.agent.LearnGate] 判过才来记,这里只看路线本身记不记得下。
      */
     fun record(goal: String, events: List<RunEvent>, nowMs: Long, tools: ToolIndex): Route? {
         if (events.lastOrNull { it is RunEvent.TaskEnded }?.let { (it as RunEvent.TaskEnded).outcome } != "succeeded") return null
-        if (events.lastOrNull { it is RunEvent.Verifier }?.let { (it as RunEvent.Verifier).verdict } != "pass") return null
         if (events.any { spoils(it, tools) }) return null
         if (events.any { it is RunEvent.ActionTarget && it.incomplete }) return null
 

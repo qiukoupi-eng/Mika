@@ -101,6 +101,12 @@ class BuiltinShellEngine(
 
     override val paired: Boolean get() = platform.paired()
 
+    override val restart: HelperRestart get() = when {
+        platform.paired() -> HelperRestart.Wireless
+        platform.usbStarted() -> HelperRestart.UsbCommand
+        else -> HelperRestart.None
+    }
+
     private fun initialStatus(): BuiltinShellStatus = when {
         helper.value != null -> BuiltinShellStatus.Running
         // 电脑起过的助手可能还活着,等它来交接
@@ -127,8 +133,9 @@ class BuiltinShellEngine(
                     if (!platform.paired()) platform.setUsbStarted(true)
                     _status.value = BuiltinShellStatus.Running
                 } else if (!platform.paired()) {
-                    // App 刚起来时还活着的助手会自己来交接:先等一会儿,再说它停了
-                    if (first && platform.usbStarted()) {
+                    // App 刚起来时还活着的助手会自己来交接;用着用着断了也可能是正在换一个新的来交接:
+                    // 都先等一会儿再说它停了,免得界面一闪「已停止」
+                    if (platform.usbStarted()) {
                         _status.value = BuiltinShellStatus.Connecting
                         schedule(graceMs)
                     } else {
@@ -262,7 +269,8 @@ class BuiltinShellEngine(
 
     override fun startDiscovery() {
         synchronized(this) {
-            if (discoveryJob?.isActive == true) return
+            // 还在找也重新开始:用户又回到配对这件事上了,找的时限从现在算
+            discoveryJob?.cancel()
             _discovery.value = PairingDiscovery.Searching
             discoveryJob = scope.launch {
                 val port = withContext(io) { platform.findPairingPort(discoveryTimeoutMs) }

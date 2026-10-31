@@ -62,15 +62,4 @@ class LaunchChooserTest {
         assertTrue(hint, Feedback.format("launch.chooser", "pkg" to choice.packageName) in hint)
         assertFalse("app_switched" in r.content)
     }
-
-    @Test fun listAppsMarksAppsInOtherProfiles() = runTest {
-        val screen = object : ScreenPort by FakeScreen() {
-            override suspend fun listApps() = listOf("com.example.chat" to "Chat", "com.example.notes" to "Notes")
-            override suspend fun otherProfiles() = mapOf("com.example.chat" to listOf("分身应用"))
-        }
-        val r = toolDispatcher(screen).executeRead(Part.ToolCall("a", "phone_list_apps", "{}"))
-        val apps = r.content["apps"]!!.jsonArray.map { it.jsonObject }
-        assertEquals(listOf("分身应用"), apps[0]["alsoIn"]!!.jsonArray.map { it.jsonPrimitive.content })
-        assertFalse("alsoIn" in apps[1])
-    }
 }

@@ -25,6 +25,19 @@ class ConversationStoreTest {
         assertNotEquals(id, b.newConversation())
     }
 
+    /** 留在后台运行的那一页(站点)和它后来关掉的原因跟着那一轮存下;没留页的轮次不写这两个字段。 */
+    @Test fun persistsKeptPage() {
+        val dir = tmp.newFolder("c")
+        val a = ConversationStore(dir)
+        val id = a.newConversation()
+        a.append(id, Turn("播放课程,挂着别关", "开始播放了", "succeeded", runId = "r1", keptPage = "course.example.com"))
+        a.append(id, Turn("谢谢", "不客气", "succeeded", runId = "r2"))
+        assertEquals(listOf("course.example.com", null), ConversationStore(dir).turns(id).map { it.keptPage })
+        a.updateTurn(id, "r1") { it.copy(keptPageClosed = "expired") }
+        assertEquals("expired", ConversationStore(dir).turns(id).first().keptPageClosed)
+        assertFalse("keptPage" in java.io.File(dir, "$id.json").readText().substringAfter("谢谢"))
+    }
+
     /** 这一轮用过的能力组跟着存下(下一轮开局据此预先展开);没用过的不写这个字段。 */
     @Test fun persistsUsedGroups() {
         val dir = tmp.newFolder("c")
@@ -34,6 +47,30 @@ class ConversationStoreTest {
         a.append(id, Turn("谢谢", "不客气", "succeeded"))
         assertEquals(listOf(listOf("phone", "web"), emptyList()), ConversationStore(dir).turns(id).map { it.groups })
         assertFalse("groups" in java.io.File(dir, "$id.json").readText().substringAfter("谢谢"))
+    }
+
+    /** 插话打断的那段回复和插话一一对应存下;没打断过的轮次不写这个字段,旧文件读出来是空的。 */
+    @Test fun persistsInterruptedReplies() {
+        val dir = tmp.newFolder("c")
+        val a = ConversationStore(dir)
+        val id = a.newConversation()
+        a.append(id, Turn("查天气", "明天多云", "succeeded", steers = listOf("改成查明天", "顺便看看后天"), interruptedReplies = listOf("今天晴", "")))
+        a.append(id, Turn("谢谢", "不客气", "succeeded", steers = listOf("好")))
+        val read = ConversationStore(dir).turns(id)
+        assertEquals(listOf(listOf("今天晴", ""), emptyList()), read.map { it.interruptedReplies })
+        assertEquals(listOf("改成查明天", "顺便看看后天"), read.first().steers)
+        assertFalse("interruptedReplies" in java.io.File(dir, "$id.json").readText().substringAfter("谢谢"))
+    }
+
+    /** 插话之前已经说完的回复同样一一对应存下;没有时不写这个字段。 */
+    @Test fun persistsFinishedReplies() {
+        val dir = tmp.newFolder("c")
+        val a = ConversationStore(dir)
+        val id = a.newConversation()
+        a.append(id, Turn("查天气", "明天多云", "succeeded", steers = listOf("改成查明天"), finishedReplies = listOf("今天晴,最高 25 度。")))
+        a.append(id, Turn("谢谢", "不客气", "succeeded", steers = listOf("好")))
+        assertEquals(listOf(listOf("今天晴,最高 25 度。"), emptyList()), ConversationStore(dir).turns(id).map { it.finishedReplies })
+        assertFalse("finishedReplies" in java.io.File(dir, "$id.json").readText().substringAfter("谢谢"))
     }
 
     /** 删对话:对话文件、标题、挪到一边的损坏文件、临时文件都删掉,列表里没有了,别的对话不动;删完发一次改动。 */
@@ -49,11 +86,15 @@ class ConversationStoreTest {
         java.io.File(dir, "$id.json.tmp").writeText("x")
         store.append(other, Turn("订票", "好了", "succeeded"))
         val changes = mutableListOf<String>()
+        val deletions = mutableListOf<String>()
         val job = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { store.changes.collect { changes += it } }
+        val gone = launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { store.deletions.collect { deletions += it } }
         store.delete(id)
         kotlinx.coroutines.yield()
         job.cancel()
+        gone.cancel()
         assertEquals(listOf(id), changes)
+        assertEquals(listOf(id), deletions)
         assertEquals(listOf("$other.json"), dir.list()!!.sorted())
         assertEquals(listOf(other), store.list().map { it.id })
         assertEquals(emptyList<Turn>(), store.turns(id))
@@ -217,12 +258,41 @@ class ConversationStoreTest {
     @Test fun announcesChangedConversations() = kotlinx.coroutines.test.runTest {
         val s = ConversationStore(tmp.newFolder("c"))
         val seen = mutableListOf<String>()
+        val deleted = mutableListOf<String>()
         backgroundScope.launch(kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)) { s.changes.collect { seen += it } }
+        backgroundScope.launch(kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler)) { s.deletions.collect { deleted += it } }
         s.append("a", Turn("查天气", "晴", "succeeded", runId = "r1", usedMemory = listOf("m1")))
         s.append("b", Turn("订票", "好了", "succeeded"))
         s.updateTurn("a", "r1") { it.copy(outcome = "晴转多云") }
         s.updateTurn("a", "missing") { it }
         s.stripMemory(setOf("m1"))
         assertEquals(listOf("a", "b", "a", "a"), seen)
+        // 只有删对话才发 deletions
+        assertEquals(emptyList<String>(), deleted)
+    }
+
+    /** 从哪一页开始的对话:记在旁边的 .page 文件里,列表里带着;旧对话没有它照常读;删对话一起删掉。 */
+    @Test fun pageOriginPersistsAndIsOptional() {
+        val dir = tmp.newFolder("c")
+        val a = ConversationStore(dir)
+        val plain = a.newConversation()
+        a.append(plain, Turn("查天气", "晴", "succeeded"))
+        val paged = a.newConversation()
+        assertTrue(a.setPageOrigin(paged, PageOrigin("https://shop.example.com/s?k=1", "shop.example.com", "搜索")))
+        a.append(paged, Turn("挑一个", "好", "succeeded"))
+        val b = ConversationStore(dir)
+        assertEquals(PageOrigin("https://shop.example.com/s?k=1", "shop.example.com", "搜索"), b.pageOrigin(paged))
+        assertEquals(null, b.pageOrigin(plain))
+        val listed = b.list().associateBy { it.id }
+        assertEquals("shop.example.com", listed.getValue(paged).page?.host)
+        assertEquals(null, listed.getValue(plain).page)
+        // 对话文件的格式不变:没有多出来的字段
+        assertFalse(java.io.File(dir, "$paged.json").readText().contains("shop.example.com"))
+        // 坏了的 .page 当作没有
+        java.io.File(dir, "$plain.page").writeText("{not json")
+        assertEquals(null, b.pageOrigin(plain))
+        b.delete(paged)
+        assertFalse(java.io.File(dir, "$paged.page").exists())
+        assertFalse(b.setPageOrigin(paged, PageOrigin("https://a.example/", "a.example")))
     }
 }

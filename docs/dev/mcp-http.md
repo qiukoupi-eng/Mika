@@ -65,10 +65,10 @@ curl -s http://127.0.0.1:18765/mcp \
 
 ## 与 LocalChannel 的关系
 
-对话界面与通知仍走 `LocalChannel`。HTTP 只多一条 MCP 整任务入口,经 `McpTaskHub` → `TaskService.startMcp`,手机虚拟屏 / 无障碍路径不变。
+对话界面与通知仍走 `LocalChannel`。HTTP 只多一条 MCP 整任务入口,经 `RemoteTaskHub` → `TaskService.startMcp`,手机虚拟屏 / 无障碍路径不变。
 
 ## 相关代码
 
 - `HttpMcpConfig` / `HttpMcpTransport` — `core/mcp/`
 - `McpHttpRuntime` — `app/task/McpHttpRuntime.kt`
-- `McpTaskHub` / `TaskService` — 既有整任务生命周期
+- `RemoteTaskHub` / `TaskService` — 既有整任务生命周期

@@ -104,6 +104,8 @@ class MainActivity : ComponentActivity() {
         monitor.start()
         // 每次打开都悄悄查一次新版本(两分钟内连着打开的只查一次),失败不吭声
         (application as MikaApp).updates.autoCheckInBackground()
+        // 电脑连接开着、服务却不在(被系统停过、从后台没能起来):界面在前台时补起来
+        (application as MikaApp).mcp.ensureRunning()
     }
 
     override fun onResume() {
@@ -360,19 +362,6 @@ private fun MikaRoot(store: ProviderStore, monitor: SystemStatusMonitor, activit
             onCheck = app.updates::checkInBackground,
             onOpenUrl = { openInBrowser(context, it) },
             onSaveQr = { QrImage.saveToPictures(context) },
-            onAskMikaToJoin = {
-                // 和悬浮胶囊开始任务一样:新对话里交给服务(别的任务在跑时排上),再回到对话页看它跑
-                val gap = AboutCopy.groupTaskGap(check)
-                if (gap != null) {
-                    Toast.makeText(context, gap.message, Toast.LENGTH_SHORT).show()
-                    gap.fix?.let(onFix) ?: nav.push(Route.Settings)
-                } else {
-                    val id = ConversationStore.shared(context).newConversation()
-                    TaskService.start(context, MikaLinks.GROUP_TASK, id, queue = true)
-                    app.chat.openConversation(id)
-                    nav.reset()
-                }
-            },
             onOpenLicense = { nav.push(Route.License) },
             onBack = back,
             diagnostics = {

@@ -66,7 +66,7 @@ fun PhoneOpsScreen(
                 MikaIcons.Hand, stringResource(R.string.settings_a11y), stringResource(R.string.settings_a11y_sub), first = true,
                 onClick = check.problems.firstOrNull { it is Problem.Accessibility }?.let { { onProblem(it) } },
             ) { RowValue(a11yText, a11yTone) }
-            // 安卓 13 以下手机功能整个不可用,不列这一行(系统版本那一行已说明)
+            // 安卓 12 以下手机功能不可用,不列这一行(系统版本那一行已说明)
             if (status.sdkInt >= Prerequisites.MIN_SDK) {
                 val helper = status.builtinShell
                 val (hText, hTone) = PhoneSetupCopy.statusValue(helper)
@@ -115,7 +115,7 @@ fun PhoneOpsScreen(
                     onClick = if (paired) ({ confirmUnpair = true }) else null,
                 )
             }
-            FooterNote(PhoneSetupCopy.USAGE_NOTE)
+            FooterNote(PhoneSetupCopy.usageNote(status.helperRestart))
         }
     }
     if (confirmUnpair) {
@@ -260,6 +260,8 @@ object CapsuleSettingsCopy {
     val TITLE: String get() = tr(R.string.capsule_settings_title)
     val SUBTITLE: String get() = tr(R.string.capsule_settings_sub)
     val FOOTNOTE: String get() = tr(R.string.capsule_settings_foot)
+    /** 系统可能关掉后台的 App,胶囊跟着不见:请用户在系统设置里放行。 */
+    val BACKGROUND: String get() = tr(R.string.capsule_settings_background)
 
     fun label(mode: CapsuleMode): String = when (mode) {
         CapsuleMode.Off -> tr(R.string.capsule_mode_off)
@@ -287,10 +289,11 @@ fun CapsuleScreen(mode: CapsuleMode, onMode: (CapsuleMode) -> Unit, onBack: () -
             }
         }
         FooterNote(CapsuleSettingsCopy.FOOTNOTE)
+        FooterNote(CapsuleSettingsCopy.BACKGROUND)
     }
 }
 
-/** 设置 › 语言:跟随系统、中文、English;选了马上换,界面跟着重建。 */
+/** 设置 › 语言:跟随系统、简体中文、繁體中文、English;选了马上换,界面跟着重建。 */
 @Composable
 fun LanguageScreen(language: AppLanguage, onLanguage: (AppLanguage) -> Unit, onBack: () -> Unit) {
     PageScaffold(stringResource(R.string.language_title), onBack) {
@@ -305,12 +308,13 @@ fun LanguageScreen(language: AppLanguage, onLanguage: (AppLanguage) -> Unit, onB
     }
 }
 
-/** 语言的名字:中文、English 总用它自己的写法,「跟随系统」按当前语言写。 */
+/** 语言的名字:简体中文、繁體中文、English 总用它自己的写法,「跟随系统」按当前语言写。 */
 @Composable
 fun languageLabel(l: AppLanguage): String = stringResource(
     when (l) {
         AppLanguage.System -> R.string.language_system
-        AppLanguage.Chinese -> R.string.language_chinese
+        AppLanguage.SimplifiedChinese -> R.string.language_simplified_chinese
+        AppLanguage.TraditionalChinese -> R.string.language_traditional_chinese
         AppLanguage.English -> R.string.language_english
     },
 )
@@ -359,8 +363,16 @@ fun RoutesScreen(count: Int?, onClear: () -> Unit, onBack: () -> Unit) {
     }
 }
 
-/** 设置 › 恢复与修复:手机操作的几个授权开关。 */
+/** 设置 › 恢复与修复:手机操作的几个授权开关,下面是兼容性自检的入口。 */
 @Composable
-fun RecoveryScreen(onBack: () -> Unit) {
-    PageScaffold(stringResource(R.string.settings_recovery), onBack) { RecoverySwitches() }
+fun RecoveryScreen(onBack: () -> Unit, onOpenSelfCheck: () -> Unit = {}) {
+    PageScaffold(stringResource(R.string.settings_recovery), onBack) {
+        RecoverySwitches()
+        GroupCard {
+            ListRow(
+                MikaIcons.Bug, stringResource(R.string.selfcheck_title), stringResource(R.string.selfcheck_row_sub), first = true,
+                onClick = onOpenSelfCheck,
+            ) { RowChevron() }
+        }
+    }
 }

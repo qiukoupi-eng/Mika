@@ -1,6 +1,8 @@
 package com.wangzan101.mika.ui
 
 import com.wangzan101.mika.R
+import com.wangzan101.mika.core.oauth.AccountSignInException
+import com.wangzan101.mika.core.oauth.AccountSignInFailure
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
 import androidx.compose.ui.res.stringResource
@@ -150,7 +152,7 @@ internal fun ProviderRow(p: Provider, line: String, first: Boolean, warning: Str
                 Text(p.name.take(1).uppercase(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = c.ink)
             }
             Column(Modifier.weight(1f)) {
-                Text(p.name, style = MikaType.Body, color = c.ink, maxLines = 1)
+                Text(ModelsCopy.providerName(p), style = MikaType.Body, color = c.ink, maxLines = 1)
                 Text(line, Modifier.padding(top = 2.dp), style = MikaType.Caption, color = c.ink3)
                 warning?.let { Text(it, Modifier.padding(top = 2.dp).testTag("provider-warning-${p.name}"), style = MikaType.Caption, color = c.warn) }
             }
@@ -215,7 +217,7 @@ fun RolePickerContent(ui: ModelSetupUi, role: ModelRole, actions: RolePickerActi
             if (q.isNotEmpty() && shown.isEmpty()) return@forEach
             anyShown = true
             val state = ui.listing[p.id]
-            GroupLabel(p.name)
+            GroupLabel(ModelsCopy.providerName(p))
             if (shown.isNotEmpty() || manual) {
                 GroupCard {
                     shown.take(PICK_AT_MOST).forEachIndexed { i, o ->
@@ -278,10 +280,12 @@ class ProviderDetailActions(
     val showAll: () -> Unit = {},
     /** 在用、没核实过的手填模型再试调用一次(见 [ModelSetupUi.unverified])。 */
     val retest: () -> Unit = {},
-    /** ChatGPT 服务商:再登录、退出登录、打开 ChatGPT 的用量页。 */
+    /** 用账号登录的服务商(ChatGPT、xAI、OpenRouter):再登录、退出登录、打开对方的用量或账号页。 */
     val signIn: () -> Unit = {},
     val signOut: () -> Unit = {},
     val manageUsage: () -> Unit = {},
+    /** 把这家默认的模型设为主模型(账号登录的详情里那一行)。 */
+    val useAsMain: () -> Unit = {},
 )
 
 /**
@@ -296,10 +300,12 @@ fun ProviderDetailContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetail
     var using by remember { mutableStateOf<ModelOption?>(null) }
     val state = ui.listing[p.id]
     val list = ui.sortedOptions(p)
-    Page(p.name, onBack) {
+    Page(ModelsCopy.providerName(p), onBack) {
         GroupLabel(ModelsCopy.CONNECTION)
         if (p.kind == ProviderConfig.Kind.ChatGpt) {
             ChatGptConnection(ui, state, actions)
+        } else if (p.kind == ProviderConfig.Kind.Xai || p.signIn == ProviderStore.OPENROUTER_SIGN_IN) {
+            AccountConnection(ui, p, state, actions)
         } else {
             GroupCard {
                 ListRow(null, ModelsCopy.STATUS, first = true) {
@@ -319,7 +325,10 @@ fun ProviderDetailContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetail
         }
         (state as? ListState.Failed)?.let { FooterNote(ModelSetupCopy.failed(it.message), color = c.bad) }
 
-        GroupLabel(ModelsCopy.MODELS)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            GroupLabel(ModelsCopy.MODELS, Modifier.weight(1f))
+            BarIconButton(MikaIcons.Refresh, ModelsCopy.REFRESH, actions.refresh, enabled = state != ListState.Running)
+        }
         if (list.isNotEmpty()) {
             GroupCard {
                 list.take(MODEL_PREVIEW).forEachIndexed { i, o -> ModelRow(o, ui.rolesOf(p.id, o.id), first = i == 0) { using = o } }
@@ -380,7 +389,7 @@ fun ProviderDetailContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetail
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text(ModelsCopy.deleteTitle(p.name)) },
+            title = { Text(ModelsCopy.deleteTitle(ModelsCopy.providerName(p))) },
             text = { Text(ModelsCopy.deleteBody(ui.rolesOf(p))) },
             confirmButton = {
                 TextButton({
@@ -428,6 +437,46 @@ private fun ChatGptConnection(ui: ModelSetupUi, state: ListState?, actions: Prov
 }
 
 /**
+ * 用 xAI 或 OpenRouter 账号登录的连接:账号、状态、设为主模型、打开对方的账号页(OpenRouter 是 Keys 页面)、退出或再登录。
+ * 退出只清这台手机上的登录信息(xAI 的令牌、OpenRouter 换来的 Key),服务商、模型和用途都留着。
+ */
+@Composable
+private fun AccountConnection(ui: ModelSetupUi, p: Provider, state: ListState?, actions: ProviderDetailActions) {
+    val c = MikaTheme.colors
+    val kind = if (p.kind == ProviderConfig.Kind.Xai) SignInKind.Xai else SignInKind.OpenRouter
+    val account = if (kind == SignInKind.Xai) ui.xaiAccount else ui.openRouterAccount
+    val signedIn = account?.signedIn == true
+    val (_, waiting, failure) = ui.signInState(kind)
+    GroupCard {
+        account?.label?.takeIf { it.isNotEmpty() }?.let { label -> ListRow(null, ModelsCopy.CHATGPT_ACCOUNT, first = true) { RowValue(label) } }
+        ListRow(null, ModelsCopy.STATUS, first = account?.label.isNullOrEmpty()) {
+            when {
+                !signedIn -> RowValue(ModelsCopy.CHATGPT_SIGNED_OUT, ValueTone.Warn)
+                state == ListState.Running -> RowValue(ModelsCopy.LISTING)
+                state is ListState.Failed -> RowValue(ModelsCopy.LIST_FAILED, ValueTone.Bad)
+                else -> RowValue(ModelsCopy.CHATGPT_SIGNED_IN, ValueTone.Ok)
+            }
+        }
+    }
+    GroupCard {
+        // 主模型已经在这家就不放这一行
+        val isMain = ui.configFor(ModelRole.Main)?.providerId == p.id
+        if (signedIn && !isMain && ui.options(p).isNotEmpty()) {
+            ListRow(null, ModelsCopy.SET_MAIN, ModelsCopy.SET_MAIN_NOTE, first = true, onClick = actions.useAsMain) { RowChevron() }
+        }
+        ListRow(null, ModelsCopy.accountManage(kind), titleColor = c.accent, first = !(signedIn && !isMain && ui.options(p).isNotEmpty()), onClick = actions.manageUsage) { RowChevron() }
+        if (signedIn) {
+            ListRow(null, ModelsCopy.CHATGPT_SIGN_OUT, ModelsCopy.SIGN_OUT_NOTE, titleColor = c.bad, onClick = actions.signOut)
+        } else {
+            ListRow(null, if (waiting) ModelsCopy.SIGN_IN_RUNNING else ModelsCopy.signInStart(kind), titleColor = c.accent, onClick = actions.signIn)
+        }
+    }
+    FooterNote(ModelsCopy.accountNote(kind, signedIn))
+    if (signedIn && kind == SignInKind.Xai) FooterNote(ModelsCopy.XAI_403_NOTE, Modifier.testTag("account-403-note"), color = c.warn)
+    failure?.let { FooterNote(it, color = c.bad) }
+}
+
+/**
  * 「<服务商> · 全部模型」:搜索框固定在顶栏下面,列表只在下面滚(模型多时按需排版);右上角刷新重新列一次。
  * 点模型同样弹出「用作」。
  */
@@ -442,7 +491,7 @@ fun AllModelsContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetailActio
     val shown = all.filter { q.isEmpty() || it.id.contains(q, ignoreCase = true) }
     PageBackground {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars).windowInsetsPadding(WindowInsets.ime)) {
-            TopBar(ModelsCopy.allModelsTitle(p.name), MikaIcons.Back, onBack, stringResource(R.string.back), right = {
+            TopBar(ModelsCopy.allModelsTitle(ModelsCopy.providerName(p)), MikaIcons.Back, onBack, stringResource(R.string.back), right = {
                 BarIconButton(MikaIcons.Refresh, ModelsCopy.REFRESH, actions.refresh, enabled = state != ListState.Running)
             })
             Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp)) {
@@ -505,7 +554,7 @@ private fun UseAsSheet(ui: ModelSetupUi, p: Provider, model: String, onUse: (Mod
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface, shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp).testTag("use-as")) {
             Text(model, Modifier.padding(horizontal = 16.dp), style = ModelIdStyle, color = c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(ModelsCopy.useAsSubtitle(p.name), Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp), style = MikaType.Caption, color = c.ink3)
+            Text(ModelsCopy.useAsSubtitle(ModelsCopy.providerName(p)), Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp), style = MikaType.Caption, color = c.ink3)
             ModelRole.entries.forEachIndexed { i, role ->
                 val on = ui.picked(role, p.id, model)
                 RadioRow(
@@ -585,19 +634,109 @@ object ModelsCopy {
     val CHATGPT_SIGNED_OUT_NOTE: String get() = tr(R.string.chatgpt_signed_out_note)
     val CHATGPT_REVOKE_UNCONFIRMED: String get() = tr(R.string.chatgpt_revoke_unconfirmed)
 
-    /** 用 ChatGPT 登录没成的原因。 */
-    fun chatGptFailure(reason: SignInFailure): String = tr(
-        when (reason) {
-            SignInFailure.Denied -> R.string.chatgpt_fail_denied
-            SignInFailure.StateMismatch, SignInFailure.ClientMismatch -> R.string.chatgpt_fail_mismatch
-            SignInFailure.NoClientId -> R.string.chatgpt_fail_no_client
-            SignInFailure.TimedOut -> R.string.chatgpt_fail_timed_out
-            SignInFailure.Exchange -> R.string.chatgpt_fail_exchange
-            SignInFailure.IdToken -> R.string.chatgpt_fail_id_token
-            SignInFailure.NoPlanScope -> R.string.chatgpt_fail_no_plan
-            SignInFailure.Network -> R.string.chatgpt_fail_network
-        },
-    )
+    /**
+     * 用 ChatGPT 登录没成的原因(界面和回调网页共用)。说得出具体原因的照说;只有服务端说了套餐、权限,
+     * 或授予的权限里没有套餐那一项时才提 Plus、Pro;别的被拒带上错误代码 [code](不是机密)。
+     */
+    fun chatGptFailure(reason: SignInFailure, code: String? = null): String = when (reason) {
+        SignInFailure.Denied -> tr(R.string.chatgpt_fail_denied)
+        SignInFailure.StateMismatch, SignInFailure.ClientMismatch -> tr(R.string.chatgpt_fail_mismatch)
+        SignInFailure.NoClientId -> tr(R.string.chatgpt_fail_no_client)
+        SignInFailure.TimedOut -> tr(R.string.chatgpt_fail_timed_out)
+        SignInFailure.Exchange -> tr(R.string.chatgpt_fail_exchange, code?.takeIf { it.isNotBlank() } ?: "unknown")
+        SignInFailure.CodeExpired -> tr(R.string.chatgpt_fail_code_expired)
+        SignInFailure.Region -> tr(R.string.chatgpt_fail_region)
+        SignInFailure.Blocked -> tr(R.string.chatgpt_fail_blocked)
+        SignInFailure.IdToken -> tr(R.string.chatgpt_fail_id_token)
+        SignInFailure.NoPlanScope -> tr(R.string.chatgpt_fail_no_plan)
+        SignInFailure.Network -> tr(R.string.chatgpt_fail_network)
+    }
+
+    // ---------- 用账号登录(xAI、OpenRouter;ChatGPT 的在上面) ----------
+
+    val SIGN_IN_GROUP: String get() = tr(R.string.signin_group)
+    val KEY_GROUP: String get() = tr(R.string.signin_key_group)
+    val SIGN_IN_RUNNING: String get() = tr(R.string.signin_running)
+    val SIGN_IN_USE_KEY: String get() = tr(R.string.signin_use_key)
+    val SIGN_IN_BUSY: String get() = tr(R.string.signin_busy)
+
+    /** 界面上服务商的名字:授权来的 OpenRouter 加一句来历,和用户自己填 Key 的那一家分得开。 */
+    fun providerName(p: Provider): String =
+        if (p.signIn == ProviderStore.OPENROUTER_SIGN_IN) tr(R.string.signin_openrouter_name, p.name) else p.name
+    val XAI_CODE_TITLE: String get() = tr(R.string.signin_xai_code_title)
+    val XAI_CODE_BODY: String get() = tr(R.string.signin_xai_code_body)
+    val XAI_CODE_COPY_REOPEN: String get() = tr(R.string.signin_xai_code_copy_reopen)
+    val XAI_CODE_WAITING: String get() = tr(R.string.signin_xai_code_waiting)
+    val XAI_403_NOTE: String get() = tr(R.string.signin_xai_403_note)
+    val SET_MAIN: String get() = tr(R.string.signin_set_main)
+    val SET_MAIN_NOTE: String get() = tr(R.string.signin_set_main_note)
+    val SIGN_OUT_NOTE: String get() = tr(R.string.signin_sign_out_note)
+    /** xAI 的账号页。 */
+    const val ACCOUNT_MANAGE_URL = "https://accounts.x.ai"
+
+    fun codeValid(minutes: Int) = tr(R.string.signin_xai_code_valid, minutes)
+
+    /** 「用账号登录」一组里每家下面那一行小字。 */
+    fun signInRowLine(kind: SignInKind) = when (kind) {
+        SignInKind.ChatGpt -> tr(R.string.signin_row_chatgpt)
+        SignInKind.Xai -> tr(R.string.signin_row_xai)
+        SignInKind.OpenRouter -> tr(R.string.signin_row_openrouter)
+    }
+
+    fun signInTitle(kind: SignInKind) = when (kind) {
+        SignInKind.ChatGpt -> CHATGPT_TITLE
+        SignInKind.Xai -> tr(R.string.signin_xai_title)
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_title)
+    }
+
+    fun signInBody(kind: SignInKind) = when (kind) {
+        SignInKind.ChatGpt -> CHATGPT_BODY
+        SignInKind.Xai -> tr(R.string.signin_xai_body)
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_body)
+    }
+
+    /** 登录前要先说清的风险(黄底);没有为 null。 */
+    fun signInRisk(kind: SignInKind): String? = if (kind == SignInKind.Xai) tr(R.string.signin_xai_risk) else null
+
+    /** 登录前的补充说明(灰底);没有为 null。 */
+    fun signInInfo(kind: SignInKind): String? = when (kind) {
+        SignInKind.ChatGpt -> null
+        SignInKind.Xai -> tr(R.string.signin_stored_note)
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_note)
+    }
+
+    fun signInStart(kind: SignInKind) = when (kind) {
+        SignInKind.ChatGpt -> CHATGPT_CONTINUE
+        SignInKind.Xai -> tr(R.string.signin_continue)
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_authorize)
+    }
+
+    fun signInWaiting(kind: SignInKind) = when (kind) {
+        SignInKind.ChatGpt -> CHATGPT_WAITING
+        SignInKind.Xai -> tr(R.string.signin_xai_starting)
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_waiting)
+    }
+
+    fun accountManage(kind: SignInKind) = when (kind) {
+        SignInKind.OpenRouter -> tr(R.string.signin_openrouter_manage)
+        else -> tr(R.string.account_manage_xai)
+    }
+
+    /** 账号登录详情下面的说明:在用什么、退出后怎样。 */
+    fun accountNote(kind: SignInKind, signedIn: Boolean) = when (kind) {
+        SignInKind.OpenRouter -> tr(if (signedIn) R.string.signin_openrouter_signed_in_note else R.string.signin_openrouter_signed_out_note)
+        else -> tr(if (signedIn) R.string.account_signed_in_note_xai else R.string.account_signed_out_note)
+    }
+
+    fun accountFailure(e: AccountSignInException): String = when (e.reason) {
+        AccountSignInFailure.Denied -> tr(R.string.account_fail_denied)
+        AccountSignInFailure.Expired -> tr(R.string.account_fail_expired)
+        AccountSignInFailure.TimedOut -> tr(R.string.account_fail_timed_out)
+        AccountSignInFailure.Rejected -> tr(R.string.account_fail_rejected, e.code ?: "unknown")
+        AccountSignInFailure.NoSubscription -> tr(R.string.account_fail_no_sub)
+        AccountSignInFailure.Network -> tr(R.string.account_fail_network)
+        AccountSignInFailure.BadIssuer -> tr(R.string.account_fail_issuer)
+    }
 
     /** 用途卡上的一行:[title] 是模型名([isModel])、「用主模型」「不用」或「未设置」([unset]),[subtitle] 是补充说明。 */
     data class RoleLine(val title: String, val subtitle: String, val isModel: Boolean = false, val unset: Boolean = false)
@@ -632,7 +771,7 @@ object ModelsCopy {
 
     /** 用途卡上写什么:选了模型写模型名和服务商;「用主模型」写主模型是谁;「不用」写只靠文字读屏。 */
     fun roleLine(ui: ModelSetupUi, role: ModelRole): RoleLine {
-        fun modelLine(cfg: ProviderConfig) = RoleLine(cfg.model, ui.providerOf(cfg)?.name ?: cfg.name, isModel = true)
+        fun modelLine(cfg: ProviderConfig) = RoleLine(cfg.model, ui.providerOf(cfg)?.let(::providerName) ?: cfg.name, isModel = true)
         val main = ui.configFor(ModelRole.Main)
         return when (val choice = ui.roles[role]) {
             null -> RoleLine(UNSET, if (ui.providers.isEmpty()) MAIN_ADD_FIRST else MAIN_PICK, unset = true)
@@ -675,6 +814,7 @@ object ModelsCopy {
         ProviderConfig.Kind.Gemini -> "Gemini"
         ProviderConfig.Kind.OpenAiResponses -> "OpenAI Responses"
         ProviderConfig.Kind.ChatGpt -> "ChatGPT"
+        ProviderConfig.Kind.Xai -> "xAI Responses"
     }
 
     fun shortUrl(url: String) = url.removePrefix("https://").removePrefix("http://")

@@ -27,6 +27,7 @@
     <string name="tool_open_page">打开网页</string>
     <string name="tool_switch_tab">切换网页标签</string>
     <string name="tool_switch_version">切换网页版本</string>
+    <string name="tool_keep_page">保持网页开着</string>
     <string name="tool_read_page">读网页</string>
     <string name="tool_downloads">查看下载</string>
     <string name="tool_network">查看网页收到的数据</string>
@@ -39,6 +40,7 @@
     <string name="tool_find_skill">查找技能</string>
     <string name="tool_read_knowledge">查看 App/网站知识</string>
     <string name="tool_read_skill">查看技能</string>
+    <string name="tool_save_skill">保存技能</string>
     <string name="tool_explain_failure">说明没办成的原因</string>
     <string name="tool_ask_user">问你一个问题</string>
     <string name="tool_takeover">请你接手</string>

@@ -13,11 +13,14 @@ import java.io.File
 
 /**
  * 「记忆与技能」的三个开关:[useMemory] 总开关(关 = 不检索、不注入、不提取、不提供记忆工具);
- * [autoRemember]「自动记住我说过的事」;[learnSkills]「从办成的任务里学技能」(评测结论出来前默认关)。
+ * [autoRemember]「自动记住我说过的事」;[learnSkills]「从办成的任务里学技能」(默认开,学到的要用户收下才用)。
  */
-data class MemorySwitches(val useMemory: Boolean = true, val autoRemember: Boolean = true, val learnSkills: Boolean = false)
+data class MemorySwitches(val useMemory: Boolean = true, val autoRemember: Boolean = true, val learnSkills: Boolean = true)
 
-/** 开关存成一个小 JSON 文件;读不懂按默认值。 */
+/**
+ * 开关存成一个小 JSON 文件;读不懂按默认值。
+ * 旧版本存下的文件没有 [LEARN_DEFAULT_APPLIED]:那时「学技能」默认关,读的时候升级一次打开;之后一存就带上它,用户手动关掉就保持关闭。
+ */
 class MemorySettings(private val file: File) {
     private val _switches = MutableStateFlow(read())
     val switches: StateFlow<MemorySwitches> = _switches.asStateFlow()
@@ -27,6 +30,7 @@ class MemorySettings(private val file: File) {
         file.parentFile?.mkdirs()
         file.writeText(buildJsonObject {
             put("useMemory", next.useMemory); put("autoRemember", next.autoRemember); put("learnSkills", next.learnSkills)
+            put(LEARN_DEFAULT_APPLIED, true)
         }.toString())
         _switches.value = next
     }
@@ -35,6 +39,12 @@ class MemorySettings(private val file: File) {
         val o = runCatching { Json.parseToJsonElement(file.readText()) as? JsonObject }.getOrNull() ?: return MemorySwitches()
         fun b(k: String, d: Boolean) = (o[k] as? JsonPrimitive)?.booleanOrNull ?: d
         val def = MemorySwitches()
-        return MemorySwitches(b("useMemory", def.useMemory), b("autoRemember", def.autoRemember), b("learnSkills", def.learnSkills))
+        val upgraded = b(LEARN_DEFAULT_APPLIED, false)
+        return MemorySwitches(b("useMemory", def.useMemory), b("autoRemember", def.autoRemember),
+            if (upgraded) b("learnSkills", def.learnSkills) else def.learnSkills)
+    }
+
+    private companion object {
+        const val LEARN_DEFAULT_APPLIED = "learnDefaultApplied"
     }
 }

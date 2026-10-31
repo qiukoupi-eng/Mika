@@ -23,8 +23,16 @@ data class Turn(
     val result: String? = null,
     /** 任务进行中用户插的、已交给这个任务的话(界面在那一轮下面显示)。 */
     val steers: List<String> = emptyList(),
+    /** 和 [steers] 一一对应:每句插话打断的那段回复里用户已经看到的字,没打断的是空串。只给界面显示,不进给模型的上文。 */
+    val interruptedReplies: List<String> = emptyList(),
+    /** 和 [steers] 一一对应:每句插话交给模型之前、已经说完显示出来的那段回复,没有的是空串。只给界面显示。 */
+    val finishedReplies: List<String> = emptyList(),
     /** 这一轮真的用过的能力组(手机、网页、沙箱……);下一轮开局预先展开,不进给模型的上文。 */
     val groups: List<String> = emptyList(),
+    /** 任务结束后留在后台接着运行的那一页的站点(见 web_keep_open);没留为 null。 */
+    val keptPage: String? = null,
+    /** 留下的那一页后来关掉的原因([com.wangzan101.mika.core.cap.web.KeptPageClose.wire]);还开着或没留为 null。 */
+    val keptPageClosed: String? = null,
 )
 
 object Conversation {
@@ -63,7 +71,12 @@ object Conversation {
             t.status == "cancelled" -> stopSummary(t)?.let { "the user stopped this task partway; before the stop: ${it.clip(clip)}" } ?: "the user cancelled this task"
             else -> "not finished, reason: ${t.outcome.clip(clip)}"
         }
-        return "$n. The user said: ${t.userText.clip(clip)}; $result"
+        // 任务结束后留下的那一页:下一轮被问到「还在播吗」时知道它还开着还是已经关了
+        val kept = t.keptPage?.let { host ->
+            if (t.keptPageClosed == null) "; after it Mika kept the page on $host running in the background"
+            else "; Mika kept the page on $host running after it, and that page has since been closed"
+        }.orEmpty()
+        return "$n. The user said: ${t.userText.clip(clip)}; $result$kept"
     }
 
     private fun String.clip(max: Int) = if (length <= max) this else take(max) + "…"

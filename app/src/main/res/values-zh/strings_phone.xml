@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="phone_title">设置手机操作</string>
-    <string name="phone_intro">Mika 在一块单独的虚拟屏上替你操作 App,你可以照常用手机。为此要借用安卓自带的「USB 调试」和「无线调试」:配对一次就行,之后 Mika 会自动连接,不需要电脑。网页和文件类的事不受影响,不设置也能做。</string>
+    <string name="phone_intro">Mika 在一块单独的虚拟屏上替你操作 App,你可以照常用手机。为此要借用安卓自带的「USB 调试」和「无线调试」:配对一次就行,之后 Mika 会自动连接,不需要电脑。网页和文件类的事不受影响,不设置也能做。开发者选项里 Mika 没提到的开关都不要动,有的会清除手机数据。</string>
     <string name="phone_later">稍后再说</string>
     <string name="phone_bar_title">手机操作</string>
     <string name="phone_skip_note">也可以先跳过,只用上网、文件和聊天;第一次要操作 App 时会再提醒。</string>
@@ -11,11 +11,11 @@
     <string name="phone_done_on">已打开</string>
     <string name="phone_step_dev_brief">在「关于手机」里连点「版本号」7 次</string>
     <string name="phone_step_usb">打开 USB 调试</string>
-    <string name="phone_step_usb_body">在「开发者选项」里找到「USB 调试」并打开,弹出提示时选「确定」。不需要插数据线:打开后,断开 Wi-Fi 时 Mika 也能继续操作手机。</string>
+    <string name="phone_step_usb_body">在「开发者选项」里找到「USB 调试」并打开,弹出提示时选「确定」。别的开关不要动,有的会清除手机数据。不需要插数据线:打开后,断开 Wi-Fi 时 Mika 也能继续操作手机。</string>
     <string name="phone_open_dev_options">打开开发者选项</string>
     <string name="phone_step_usb_brief">断开 Wi-Fi 时也能继续操作</string>
     <string name="phone_step_a11y">打开 Mika 的无障碍</string>
-    <string name="phone_step_a11y_body">在系统的「无障碍」设置里找到 Mika 并打开。打开后,配对时 Mika 会自己读出配对码,不用手动填。也可以先跳过(推荐):配对后 Mika 会自己打开它,不会被系统的「受限制的设置」拦住,配对码这次从通知里填。</string>
+    <string name="phone_step_a11y_body">在系统的「无障碍」设置里找到 Mika 并打开。打开后,配对时 Mika 会自己读出配对码,不用手动填。也可以先跳过(推荐):配对后 Mika 会自己打开它,不会被系统的「受限制的设置」拦住,配对码这次从通知里填。如果系统提示「应用遮挡了权限请求」,先关掉其他 App 的悬浮窗或气泡,再试一次。</string>
     <string name="phone_step_a11y_action">去无障碍设置</string>
     <string name="phone_step_a11y_brief">配对时由 Mika 自己读出配对码</string>
     <string name="phone_step_wireless">打开无线调试</string>
@@ -121,9 +121,14 @@
     <string name="phone_connect_port_hint">在「无线调试」页面上，「IP 地址和端口」冒号后面的数字，比如 41235</string>
     <string name="phone_connect_port_submit">连接</string>
     <string name="fail_usb_stopped">手机助手已停止</string>
-    <string name="fail_usb_stopped_body">它是用电脑启动的,手机重启后就会停。在电脑上再运行一次 USB 启动命令,或配对无线调试让它自动恢复。</string>
-    <string name="phone_usb_toggle">用电脑启动(USB 数据线)</string>
-    <string name="phone_usb_body">插上 USB 数据线、打开「USB 调试」,在电脑上运行下面这条命令。手机重启后要再运行一次,或配对无线调试让它自动恢复。</string>
+    <string name="fail_usb_stopped_body">它是用 USB 启动命令启动的,不会自己回来(比如手机重启后)。再运行一次下面的命令就能接着用。</string>
+    <string name="phone_usb_ask">找不到无线调试？</string>
+    <string name="phone_usb_title">这台手机打不开无线调试？改用电脑启动</string>
+    <string name="phone_usb_body">用数据线连上电脑，在电脑上运行这条命令（在手机上能跑 adb 命令的其他方式也行）。手机重启后要再运行一次。</string>
     <string name="phone_usb_copy">复制</string>
     <string name="phone_usb_copied">命令已复制</string>
+    <string name="phone_usb_again_title">再运行一次启动命令</string>
+    <string name="phone_usb_again_body">用数据线连上电脑，在电脑上运行这条命令（在手机上能跑 adb 命令的其他方式也行）。每次手机重启后都要再运行一次。</string>
+    <string name="phone_success_note_usb">请保持 USB 调试开启;助手是用 USB 命令启动的,手机重启后不会自己回来:打开 Mika,再运行一次命令</string>
+    <string name="phone_usage_note_usb">Mika 的内置助手是用 USB 启动命令启动的,拔掉数据线也会继续运行。「USB 调试」(在开发者选项里)要一直开着,关掉后手机操作会停下。手机重启后助手不会自己回来:打开 Mika,再运行一次启动命令(在「设置手机操作」里可以复制)。如果这台手机有能用的「无线调试」,配对一次之后,重启后 Mika 就能自己重新连上。</string>
 </resources>

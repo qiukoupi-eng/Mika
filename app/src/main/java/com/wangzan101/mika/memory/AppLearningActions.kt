@@ -2,7 +2,6 @@ package com.wangzan101.mika.memory
 
 import android.content.Context
 import com.wangzan101.mika.chat.ConversationStore
-import com.wangzan101.mika.core.skills.SkillStatus
 import com.wangzan101.mika.ui.LearningActions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,7 +20,7 @@ class AppLearningActions(private val context: Context, private val memory: Memor
     // 恢复时清掉旧结果,免得下一次一不顺又马上被停用
     override suspend fun restoreSkill(name: String) {
         io { skills.update(name) {
-            it.copy(status = if (it.learnedFrom != null && "verified" !in it.outcomes) SkillStatus.trial else SkillStatus.active, outcomes = emptyList())
+            it.copy(status = it.restoredStatus(), outcomes = emptyList())
         } }
     }
     override suspend fun deleteSkill(name: String) = io { skills.remove(name) }

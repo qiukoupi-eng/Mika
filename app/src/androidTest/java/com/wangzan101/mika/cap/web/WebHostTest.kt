@@ -69,8 +69,12 @@ class WebHostTest {
         return raw.toIntOrNull() ?: throw AssertionError("$expr is not a number: $raw")
     }
 
-    private fun topResumed(): String? = DeviceSupport.sh("dumpsys activity activities").lines()
-        .map { it.trim() }.firstOrNull { it.startsWith("topResumedActivity") || it.startsWith("mTopResumedActivity") }
+    private fun topResumed(): String? {
+        val lines = DeviceSupport.sh("dumpsys activity activities").lines().map { it.trim() }
+        return lines.firstOrNull { it.startsWith("topResumedActivity") || it.startsWith("mTopResumedActivity") }
+            // 有的安卓 11、12 系统只在摘要里给出当前前台的 Activity
+            ?: lines.firstOrNull { it.startsWith("ResumedActivity:") }
+    }
 
     @Test
     fun rendersInBackgroundWithoutTouchingMainScreen() = runBlocking<Unit> {

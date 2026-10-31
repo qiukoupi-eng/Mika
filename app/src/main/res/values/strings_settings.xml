@@ -2,8 +2,9 @@
 <resources>
     <string name="language_title">Language</string>
     <string name="language_system">Follow system</string>
-    <string name="language_system_detail">Chinese on a Chinese system, English otherwise</string>
-    <string name="language_chinese" translatable="false">中文</string>
+    <string name="language_system_detail">Simplified or Traditional Chinese to match a Chinese system, English otherwise</string>
+    <string name="language_simplified_chinese" translatable="false">简体中文</string>
+    <string name="language_traditional_chinese" translatable="false">繁體中文</string>
     <string name="language_english" translatable="false">English</string>
     <string name="settings_basic">Basic</string>
     <string name="settings_model">Model</string>
@@ -41,7 +42,7 @@
     <string name="settings_a11y_sub">Reads and controls Mika’s virtual screen</string>
     <string name="settings_notif_progress_sub">Progress and “Needs you” alerts</string>
     <string name="settings_system_version">System version</string>
-    <string name="settings_android_focus">Android %1$s · On Android 13 background work may steal focus from your screen; Android 14+ recommended</string>
+    <string name="settings_android_focus">Android %1$s · On Android 12–13 background work may steal focus from your screen; Android 14+ recommended</string>
     <string name="settings_android">Android %1$s</string>
     <string name="settings_meets">Supported</string>
     <string name="settings_notif_master">All notifications</string>
@@ -68,6 +69,7 @@
     <string name="capsule_settings_title">Floating capsule</string>
     <string name="capsule_settings_sub">See task progress on screen while using other apps</string>
     <string name="capsule_settings_foot">The capsule is drawn using Mika’s accessibility service that’s already on, so no extra permission is needed. If that service is off or can’t draw, you’ll still get notifications.</string>
+    <string name="capsule_settings_background">Some phones close apps in the background. If the capsule disappears, allow Mika to run in the background and to start automatically in your phone’s system settings.</string>
     <string name="capsule_mode_off">Off</string>
     <string name="capsule_mode_tasks">During tasks</string>
     <string name="capsule_mode_always">Always</string>

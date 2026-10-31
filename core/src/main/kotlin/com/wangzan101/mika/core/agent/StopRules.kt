@@ -26,6 +26,9 @@ internal object StopRules {
     /** 提醒过一次,模型仍然回了空话(或又被输出上限截断)。 */
     fun noAnswer() = TaskState.Failed("模型停止了操作,没有给出回答。", FailKind.Model)
 
+    /** 退回过一次,模型的工具调用又以文字形式回来了(见 [LeakedToolCall]):不把原样的标记当回答交出。 */
+    fun toolCallAsText() = TaskState.Failed("模型的工具调用没有被服务端识别,原样作为文字返回了,没能执行。", FailKind.Model)
+
     /** 模型调用失败(重试过仍不行,或重试也没用)。 */
     fun modelFailed(e: Throwable): TaskState.Failed =
         if (e is ModelError) TaskState.Failed(userReason(e), FailKind.Model)
@@ -49,7 +52,7 @@ internal fun userReason(e: ModelError): String = when (e) {
     is ModelError.QuotaExceeded -> "模型账户额度已用完,请检查服务商账户的余额或套餐。"
     is ModelError.ModelNotFound ->
         if (e.model.isEmpty()) "找不到该模型,请到设置 › 模型检查模型名和 Base URL 是否正确。"
-        else "模型「${e.model}」在这个服务商那里不存在。去设置 › 模型,检查模型名(要填完整的模型 ID,比如 Gemini 的模型名类似 gemini-2.5-flash)或改用对应的预设。"
+        else "模型「${e.model}」在这个服务商那里不存在。去设置 › 模型,检查模型名(要填完整的模型 ID,比如 Gemini 的模型名类似 gemini-flash-latest)或改用对应的预设。"
     is ModelError.ModelNotAvailable ->
         "模型「${e.model.ifEmpty { "当前模型" }}」这个账号没开通或没权限用。去设置 › 模型换一个模型，或到服务商后台开通。"
     is ModelError.ToolsUnsupported ->
@@ -59,10 +62,14 @@ internal fun userReason(e: ModelError): String = when (e) {
     is ModelError.RateLimited -> "模型服务限流,重试后仍然请求太频繁。请稍后再试,或检查账户的调用频率限制。"
     is ModelError.Network -> "连接模型服务失败,重试后仍然不通。请检查网络和 Base URL。"
     is ModelError.Server -> "模型服务出错(HTTP ${e.status}),请稍后再试。"
+    is ModelError.StreamCut ->
+        "模型的回复还没传完,连接就在上游被断开了,重试后仍然如此。常见原因是网络不稳,或中转服务、网关的空闲超时太短(模型长时间思考时容易碰上)。请稍后再试。"
     is ModelError.BadResponse -> "${e.message}。请检查 Base URL 和接口类型是否匹配。"
     is ModelError.ChatGptLimitReached ->
         "ChatGPT 额度用完了,稍后再试。用量可以在 ChatGPT 设置 › 用量(chatgpt.com/settings/usage)查看;Plus 每 5 小时的额度和其他用 ChatGPT 登录的 App 共用。也可以先换一个模型。"
     is ModelError.ChatGptNotEligible ->
         "这个账号不能在其他 App 里用 ChatGPT 额度(需要 Plus 或 Pro,并且所在地区和账号设置允许)。${if (e.detail.isEmpty()) "" else "服务端说明:${e.detail}。"}可以换一个模型。"
-    is ModelError.SignInExpired -> "ChatGPT 登录已失效,请在设置 › 模型里重新用 ChatGPT 登录。"
+    is ModelError.SignInExpired -> "${e.account} 登录已失效,请在设置 › 模型里重新用 ${e.account} 登录。"
+    is ModelError.AccountPlanNotAllowed ->
+        "你的 ${e.account} 订阅档位不能用这个接口(HTTP 403)。${if (e.detail.isEmpty()) "" else "服务端说明:${e.detail}。"}可以改用 ${e.account} 的 API Key,或在设置 › 模型里换一个模型。"
 }

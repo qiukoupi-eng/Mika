@@ -1,6 +1,7 @@
 package com.wangzan101.mika.cap.phone.a11y
 
 import com.wangzan101.mika.core.uistate.ActionResult
+import com.wangzan101.mika.core.uistate.AppCopy
 import com.wangzan101.mika.core.uistate.ScreenCheck
 import com.wangzan101.mika.core.uistate.ScreenPort
 import com.wangzan101.mika.core.uistate.ScreenSnapshot
@@ -21,12 +22,13 @@ class PhoneUnavailable(val hint: String) : Exception(hint)
  * 用到时才接上的手机端口:第一次 launch_app / open_link 时才调 [acquire](连内置助手、等无障碍、备好虚拟屏);
  * 只用网页或沙箱的任务从头到尾不需要内置助手和无障碍。没接上之前读屏是一块空屏、其余动作报 no_app_open,
  * 和接上后还没打开 App 时一样。接不上时这次动作报 phone_unavailable(附怎么弄好),下次再试。
- * 装了哪些 App 只问包管理器([listApps]),不用接上。
+ * 装了哪些 App 只问包管理器([listApps]),不用接上;另一份用户里的 App 没接上时问 [appCopies](内置助手已连着才有,不为它去接)。
  */
 class LazyPhoneScreen(
     private val width: Int,
     private val height: Int,
     private val listApps: suspend () -> List<Pair<String, String>>,
+    private val appCopies: suspend () -> List<AppCopy> = { emptyList() },
     private val acquire: suspend () -> ScreenPort,
 ) : ScreenPort {
     private val lock = Mutex()
@@ -51,6 +53,8 @@ class LazyPhoneScreen(
     private fun unavailable() = ActionResult.Failed(PHONE_UNAVAILABLE, lastProblem)
 
     override suspend fun openApp(packageName: String, cold: Boolean): ActionResult = built()?.openApp(packageName, cold) ?: unavailable()
+    override suspend fun openAppCopy(packageName: String, userId: Int, cold: Boolean): ActionResult =
+        built()?.openAppCopy(packageName, userId, cold) ?: unavailable()
     override suspend fun openLink(action: String?, uri: String?, packageName: String?): ActionResult =
         built()?.openLink(action, uri, packageName) ?: unavailable()
     override suspend fun shareText(packageName: String, text: String): ActionResult = built()?.shareText(packageName, text) ?: unavailable()
@@ -99,6 +103,7 @@ class LazyPhoneScreen(
     override suspend fun listApps(): List<Pair<String, String>> = port?.listApps() ?: listApps.invoke()
     // 要问内置助手:没接上之前不为它去接(接不上会请用户设置),打开过 App 之后才有
     override suspend fun otherProfiles(): Map<String, List<String>> = port?.otherProfiles() ?: emptyMap()
+    override suspend fun appCopies(): List<AppCopy> = port?.appCopies() ?: appCopies.invoke()
     override suspend fun checkScreen(): ScreenCheck? = port?.checkScreen()
     override suspend fun isProtected() = port?.isProtected() ?: false
     override suspend fun frameGrid() = port?.frameGrid()

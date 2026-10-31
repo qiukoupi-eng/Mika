@@ -17,6 +17,11 @@ sealed class ModelError(message: String, cause: Throwable? = null) : Exception(m
     class ToolsUnsupported(val model: String = "") :
         ModelError(if (model.isEmpty()) "该模型不支持调用工具" else "模型「$model」不支持调用工具")
     class Network(cause: Throwable? = null) : ModelError("网络连接失败", cause)
+    /**
+     * 流式回复还没收尾(没有结束标记,也没有结束原因)连接就关了:多半是途中的网关、代理空闲超时或网络切换把连接掐断。
+     * 回复不完整、不能用,重发同一个请求通常就好;和接口配置无关。
+     */
+    class StreamCut : ModelError("回复还没传完,连接就被断开了")
     class Server(val status: Int) : ModelError("模型服务出错(HTTP $status)")
     class ContentRefused : ModelError("模型拒绝处理该内容")
     /** ChatGPT 套餐给其他 App 用的额度到了上限:不重试,等额度恢复或换模型。 */
@@ -24,8 +29,14 @@ sealed class ModelError(message: String, cause: Throwable? = null) : Exception(m
     /** 这个 ChatGPT 账号不能在其他 App 里用套餐额度(套餐不符、地区或账号策略不允许):不重试。 */
     class ChatGptNotEligible(val detail: String = "") :
         ModelError(if (detail.isEmpty()) "这个账号不能在其他 App 里用 ChatGPT 额度" else "这个账号不能在其他 App 里用 ChatGPT 额度: $detail")
-    /** 登录已失效(换新令牌被拒,或用户在账号里断开了这个 App),要重新登录。 */
-    class SignInExpired : ModelError("登录已失效,请重新登录")
+    /** 登录已失效(换新令牌被拒,或用户在账号里断开了这个 App),要重新登录。[account] 是哪一家的登录(界面上的名字)。 */
+    class SignInExpired(val account: String = "ChatGPT") : ModelError("登录已失效,请重新登录")
+    /**
+     * 用账号登录的(如 xAI)接口回 HTTP 403:登录是成功的,这个订阅档位却不能调这个接口。不重试;
+     * 改用这家的 API Key 才行。[account] 是哪一家,[detail] 是服务端的原话(截短),没有为空。
+     */
+    class AccountPlanNotAllowed(val account: String, val detail: String = "") :
+        ModelError("你的${account}订阅档位不能用这个接口")
     class BadResponse(detail: String = "", cause: Throwable? = null) :
         ModelError(if (detail.isEmpty()) "模型返回了无法解析的内容" else "模型返回了无法解析的内容: $detail", cause)
 }

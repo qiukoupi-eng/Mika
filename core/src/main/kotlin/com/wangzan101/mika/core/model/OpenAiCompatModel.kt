@@ -30,6 +30,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * 有的服务商要求工具调用前后的思考接着回传,不回传就拒绝。只回传从这个地址收到的,别家给的思考不发
  * (不认这个字段的服务商不会收到它)。[reasoningField] 是模型列表里写明的思考字段(`reasoning_content` 或
  * `reasoning`):写明了的,来历不明的思考(旧版本存下的历史)也按它回传。
+ * 选了思考强度时另发 `reasoning_effort`;服务商没在列表里写档位的,这里不会收到值。
  */
 class OpenAiCompatModel(
     baseUrl: String,
@@ -40,6 +41,8 @@ class OpenAiCompatModel(
     reasoningField: String? = null,
     /** 每个请求都带的头(客户端标识、服务商要的会话号等,见 [ClientHeaders]);Key 的头由适配器自己加。 */
     private val headers: Map<String, String> = emptyMap(),
+    /** 用户选的思考强度(`reasoning_effort`);null 不发。 */
+    private val reasoningEffort: String? = null,
 ) : StreamingChatModel {
     override val name: String get() = model
     private val endpoint = baseUrl.trimEnd('/') + "/chat/completions"
@@ -49,12 +52,18 @@ class OpenAiCompatModel(
     private companion object {
         val MARKABLE_ROLES = setOf("system", "user", "tool")
         val EPHEMERAL = buildJsonObject { put("type", "ephemeral") }
+        /** SSE 的最后一件:收到它才算说完。 */
+        const val STREAM_DONE = "[DONE]"
     }
 
     override suspend fun complete(system: String, messages: List<Message>, tools: List<ToolSpec>): ModelReply {
         val (status, retryAfter, text) = HttpSupport.execute(http, request(system, messages, tools, stream = false))
         if (status !in 200..299) throw mapError(status, retryAfter, text)
-        return parse(text)
+        // 有的兼容端点不守 OpenAI 的默认值:没让流式也照样回 SSE(本地、局域网上的自建服务常见)。按流读完再拼,别把 `data:` 当成坏 JSON。
+        if (!looksLikeEvents(text)) return parse(text)
+        val stream = OpenAiStream({}, ::parseUsage, ::thinking)
+        eventsOf(text).forEach(stream::accept)
+        return stream.finish()
     }
 
     override suspend fun completeStreaming(
@@ -84,6 +93,7 @@ class OpenAiCompatModel(
     private fun request(system: String, messages: List<Message>, tools: List<ToolSpec>, stream: Boolean, includeUsage: Boolean = true): Request {
         val payload = buildJsonObject {
             put("model", model)
+            reasoningEffort?.let { put("reasoning_effort", it) }
             // 思考只在带工具的请求里回传(工具调用一步接一步时要接着想);不带工具的旁路调用不需要
             val replayReasoning = tools.isNotEmpty()
             val wire = listOf(buildJsonObject { put("role", "system"); put("content", system) }) +
@@ -93,10 +103,14 @@ class OpenAiCompatModel(
             if (stream) {
                 put("stream", true)
                 if (includeUsage) putJsonObject("stream_options") { put("include_usage", true) }
+            } else {
+                // 写明不要流式:省掉这一项时有的兼容端点默认按 SSE 回
+                put("stream", false)
             }
         }
         return Request.Builder().url(endpoint)
             .withHeaders(headers)
+            .header("Accept", if (stream) "text/event-stream" else "application/json")
             .apply { if (!apiKey.isNullOrEmpty()) header("Authorization", "Bearer $apiKey") }
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
             .build()
@@ -230,6 +244,33 @@ class OpenAiCompatModel(
         }
     }
 
+    /** 整份回复是 SSE(`data: …` 一件件)还是一份 JSON。 */
+    private fun looksLikeEvents(body: String): Boolean {
+        val head = body.trimStart()
+        return head.startsWith("data:") || head.startsWith("event:")
+    }
+
+    /** 把整份 SSE 回复拆成一件件事件;内容已经收完,缺结束标记时补一个,当作正常说完。 */
+    private fun eventsOf(body: String): List<String> {
+        val out = mutableListOf<String>()
+        val data = mutableListOf<String>()
+        fun dispatch() {
+            if (data.isNotEmpty()) {
+                out += data.joinToString("\n")
+                data.clear()
+            }
+        }
+        body.lineSequence().forEach { line ->
+            when {
+                line.isEmpty() -> dispatch()
+                line.startsWith("data:") -> data += line.removePrefix("data:").removePrefix(" ")
+            }
+        }
+        dispatch()
+        if (out.lastOrNull() != STREAM_DONE) out += STREAM_DONE
+        return out
+    }
+
     private fun parse(text: String): ModelReply {
         try {
             val root = json.parseToJsonElement(text).jsonObject
@@ -255,7 +296,8 @@ class OpenAiCompatModel(
                 parts += Part.ToolCall(
                     c["id"]!!.jsonPrimitive.content,
                     fn["name"]!!.jsonPrimitive.content,
-                    fn["arguments"]?.jsonPrimitive?.contentOrNull ?: "{}",
+                    // 有的适配器对没有参数的工具给空串:当成 `{}`,否则调用方按 JSON 解析会失败
+                    fn["arguments"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() } ?: "{}",
                 )
             }
             val stop = when ((choice["finish_reason"] as? JsonPrimitive)?.contentOrNull) {
@@ -264,7 +306,8 @@ class OpenAiCompatModel(
                 "length" -> StopReason.MaxTokens
                 else -> if (parts.any { it is Part.ToolCall }) StopReason.ToolUse else StopReason.Other
             }
-            return ModelReply(parts, stop, parseUsage(root["usage"]))
+            // 有的模型会把工具调用标记直接吐进正文:先还原成调用,还原不了就剥掉,别把乱码交给界面(见 LeakedToolMarkup)
+            return LeakedToolMarkup.repair(ModelReply(parts, stop, parseUsage(root["usage"])))
         } catch (e: ModelError) {
             throw e
         } catch (e: Exception) {
@@ -312,7 +355,7 @@ private class OpenAiStream(
         chunks++
         usageOf(root["usage"])?.let { usage = it }
         val choice = (root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return
-        (choice["finish_reason"] as? JsonPrimitive)?.contentOrNull?.let { reason = it }
+        (choice["finish_reason"] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotEmpty)?.let { reason = it }
         val delta = choice["delta"] as? JsonObject ?: return
         ReasoningVia.fields.forEach { via ->
             (delta[via.field!!] as? JsonPrimitive)?.contentOrNull?.let { appendThinking(it, via) }
@@ -347,11 +390,14 @@ private class OpenAiStream(
     private fun appendVisible(t: String) {
         if (t.isEmpty()) return
         visible.append(t)
-        onText(visible.toString())
+        // 预览也先剥一遍:模型把工具调用标记吐进正文时,别让用户看着乱码流过去
+        onText(LeakedToolMarkup.stripMarkup(visible.toString()))
     }
 
     fun finish(): ModelReply {
-        if (!done || chunks == 0) throw ModelError.BadResponse("流式响应提前结束")
+        // 收到 finish_reason 就算回复完整:有的兼容端点不发 [DONE]。两样都没有是连接中途被断开
+        if (!done && reason == null) throw ModelError.StreamCut()
+        if (chunks == 0) throw ModelError.BadResponse("流式响应没有内容")
         val parts = buildList<Part> {
             thinkingVia?.takeIf { thinking.isNotEmpty() }?.let { add(thinkingOf(thinking.toString(), it)) }
             if (visible.isNotEmpty()) add(Part.Text(visible.toString()))
@@ -366,7 +412,7 @@ private class OpenAiStream(
             "length" -> StopReason.MaxTokens
             else -> if (calls.isNotEmpty()) StopReason.ToolUse else StopReason.Other
         }
-        return ModelReply(parts, stop, usage)
+        return LeakedToolMarkup.repair(ModelReply(parts, stop, usage))
     }
 }
 

@@ -1,6 +1,7 @@
 package com.wangzan101.mika.settings
 
 import com.wangzan101.mika.core.shell.BuiltinShellStatus
+import com.wangzan101.mika.core.shell.HelperRestart
 import com.wangzan101.mika.core.shell.PairingChannelHealth
 
 enum class AccessibilityState {
@@ -30,10 +31,14 @@ data class SystemStatus(
     val developerOptions: Boolean = false,
     /** 系统「无线调试」开着。 */
     val wirelessDebugging: Boolean = false,
+    /** 系统里根本没有「无线调试」这一项(没带这个功能):引导页据此给「改用电脑启动」。 */
+    val wirelessDebuggingMissing: Boolean = false,
     /** 系统「USB 调试」开着:开着时 Wi-Fi 断开助手也不停。 */
     val usbDebugging: Boolean = true,
     /** 系统可能拦着不让打开无障碍(安卓 13 起,没从应用商店装的 App 要先允许受限制的设置)。 */
     val restrictedSettings: Boolean = false,
+    /** 助手停了以后靠什么再起来:只用 USB 启动命令起过时,各处都不往无线调试引,说清要再运行命令。 */
+    val helperRestart: HelperRestart = HelperRestart.None,
 )
 
 fun SystemStatus.notificationOverview() = NotificationOverview.of(
@@ -41,7 +46,7 @@ fun SystemStatus.notificationOverview() = NotificationOverview.of(
 )
 
 sealed interface Problem {
-    /** 安卓 13 以下没有 Mika 需要的虚拟屏能力。 */
+    /** 安卓 12 以下未启用 Mika 的手机操作能力。 */
     data object SystemTooOld : Problem
     /** 内置助手没在运行(没设置、无线调试关着、正在连、出错)。 */
     data class PhoneHelper(val status: BuiltinShellStatus) : Problem
@@ -51,35 +56,36 @@ sealed interface Problem {
     data object NotificationsOff : Problem
     /** 「需要你处理」(接管、提问、确认)或「任务结果」的通知被调低了,不弹出,可能看不到;[attention]、[result] 说明是哪个。 */
     data class AttentionLowered(val attention: Boolean, val result: Boolean) : Problem
-    /** 不挡任务:安卓 13 的虚拟屏没有独立焦点,后台操作可能让主屏的输入焦点短暂丢失。 */
+    /** 不挡任务:安卓 12、13 的虚拟屏没有独立焦点,后台操作可能让主屏的输入焦点短暂丢失。 */
     data object FocusMayLeak : Problem
 }
 
 /** 开始任务前的检查;界面据此提示,任务入口据此拦住。 */
 object Prerequisites {
-    const val MIN_SDK = 33
+    /** 手机 App 操作的最低版本;聊天、网页和沙箱不需要这项能力。 */
+    const val MIN_SDK = 31
     /** 安卓 14 起虚拟屏能有自己的焦点,不再影响主屏。 */
     const val OWN_FOCUS_SDK = 34
     private fun isWarning(p: Problem) = p == Problem.NotificationsOff || p == Problem.FocusMayLeak || p is Problem.AttentionLowered
 
     data class Check(val problems: List<Problem>) {
-        /** 挡住任务的问题。内置助手、无障碍只在操作手机 App 时需要:缺了照样能开始(网页、沙箱的任务照常做),用到手机时再报。 */
+        /** 挡住任务的问题。手机操作的系统版本、内置助手、无障碍只在操作手机 App 时需要。 */
         val blockers: List<Problem> get() = problems.filter { !isWarning(it) && !phoneOnly(it) }
         val canStartTask: Boolean get() = blockers.isEmpty()
         /** 能操作手机 App。 */
         val phoneReady: Boolean get() = problems.none(::phoneOnly)
     }
 
-    private fun phoneOnly(p: Problem) = p is Problem.PhoneHelper || p is Problem.Accessibility
+    private fun phoneOnly(p: Problem) = p is Problem.SystemTooOld || p is Problem.PhoneHelper || p is Problem.Accessibility
 
     fun check(status: SystemStatus, hasMainModel: Boolean): Check = Check(
         buildList {
             if (status.sdkInt < MIN_SDK) add(Problem.SystemTooOld)
-            // 安卓 13 以下手机功能整个不可用,已由 SystemTooOld 说明
+            // 安卓 12 以下手机功能不可用,已由 SystemTooOld 说明
             if (status.sdkInt >= MIN_SDK && status.builtinShell != BuiltinShellStatus.Running) {
                 add(Problem.PhoneHelper(status.builtinShell))
             }
-            if (status.accessibility != AccessibilityState.On) add(Problem.Accessibility(status.accessibility))
+            if (status.sdkInt >= MIN_SDK && status.accessibility != AccessibilityState.On) add(Problem.Accessibility(status.accessibility))
             if (!hasMainModel) add(Problem.NoModel)
             if (!status.notificationsAllowed) add(Problem.NotificationsOff)
             else if (status.attentionLowered || status.resultLowered) add(Problem.AttentionLowered(status.attentionLowered, status.resultLowered))

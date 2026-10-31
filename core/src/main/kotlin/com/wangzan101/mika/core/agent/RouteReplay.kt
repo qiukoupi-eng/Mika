@@ -16,7 +16,6 @@ import com.wangzan101.mika.core.replay.Route
 import com.wangzan101.mika.core.replay.RouteMatcher
 import com.wangzan101.mika.core.tool.ToolDispatcher
 import com.wangzan101.mika.core.tool.Verb
-import com.wangzan101.mika.core.verify.Verdict
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -125,12 +124,10 @@ internal class RouteReplay(
         return looked?.place
     }
 
-    /** 回放走完且回答核对通过([verdict] 是最后一次核查模型的结论,没请它为 null):成功计数 +1、清掉连续失误。 */
-    suspend fun noteResult(end: TaskState, verdict: Verdict?) {
+    /** 回放走完且这次运行算办成了([LearnGate],[outcome] 是交出回答后判的结局):成功计数 +1、清掉连续失误。 */
+    suspend fun noteResult(end: TaskState, outcome: RunOutcome) {
         val (route, out) = replayed ?: return
-        // 回答核对通过才算一次成功:请过核查模型的要它判 pass,没请(回答里的值都对上了、没做不可逆的事)按字面核对
-        if (out !is ReplayOutcome.Completed || end !is TaskState.Succeeded || !end.verified || end.unconfirmed.isNotEmpty() ||
-            (verdict != null && verdict != Verdict.Pass)) return
+        if (out !is ReplayOutcome.Completed || !LearnGate.done(end, outcome)) return
         update(route.id) { it.copy(successes = it.successes + 1, consecutiveMisses = 0, missStep = null) }
     }
 

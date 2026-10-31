@@ -10,7 +10,9 @@ import android.database.ContentObserver
 import android.os.Build
 import android.provider.Settings
 import com.wangzan101.mika.cap.phone.a11y.ScreenAccessibility
+import com.wangzan101.mika.core.shell.A11yLossRecord
 import com.wangzan101.mika.core.shell.A11yObservation
+import com.wangzan101.mika.core.shell.A11yStartCheck
 import com.wangzan101.mika.core.shell.AccessibilityList
 import com.wangzan101.mika.core.shell.AccessibilityRepair
 import com.wangzan101.mika.core.shell.BootRestore
@@ -33,6 +35,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -109,10 +112,23 @@ class BuiltinShellRecovery(
         if (started) return
         started = true
         scope.launch { permissions.applyWhenRunning(control.status) }
-        scope.launch { accessibilityRepair.watch(serviceObservations(), control.status) }
+        val service = accessibility
+        // 启动时看一眼:被强行停止后系统会把服务从列表里拿掉,或者在列表里却迟迟不绑定;记下来给诊断信息
+        val initial = service.value
+        val seen = settings.accessibilitySeen
+        scope.launch {
+            val connected = withTimeoutOrNull(A11yStartCheck.CONNECT_WAIT_MS) { service.first { it.connected } } != null
+            A11yStartCheck.loss(initial, connected, seen)?.let {
+                settings.recordA11yLoss(A11yLossRecord(it, System.currentTimeMillis()))
+            }
+        }
+        scope.launch { service.collect { if (it.connected) settings.accessibilitySeen = true } }
+        scope.launch { accessibilityRepair.watch(service, control.status) }
     }
 
-    /** 系统列表里有没有 Mika(跟着系统设置的变化)和服务实例是否连着(跟着连上、断开)。 */
+    /** 系统列表里有没有 Mika(跟着系统设置的变化)和服务实例是否连着(跟着连上、断开)。整个进程一份。 */
+    val accessibility: StateFlow<A11yObservation> by lazy { serviceObservations() }
+
     private fun serviceObservations(): StateFlow<A11yObservation> {
         val cr = app.contentResolver
         val me = PermissionCommands.accessibilityService(app.packageName)

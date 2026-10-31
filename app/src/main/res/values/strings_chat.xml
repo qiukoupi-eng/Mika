@@ -75,6 +75,7 @@
     <string name="chat_wait_approval">Waiting for your OK</string>
     <string name="steer_received">Got it — next step</string>
     <string name="steer_joined">Added to the current task</string>
+    <string name="steer_interrupted_reply">Interrupted by your message</string>
     <string name="steer_next">Queued as the next task</string>
     <string name="steer_cancelled">Cancelled</string>
     <plurals name="chat_steps_done">
@@ -130,4 +131,15 @@
     <string name="source_none">No source was saved for this answer</string>
     <string name="source_image">Source screen</string>
     <string name="zoom_in">Zoom in</string>
+    <string name="chat_message_actions">Message options</string>
+    <string name="chat_copy">Copy</string>
+    <string name="chat_quote">Quote</string>
+    <string name="chat_select_text">Select text</string>
+    <string name="chat_copied">Copied</string>
+    <string name="chat_select_hint">Press and hold the text to select it</string>
+    <string name="chat_quote_remove">Remove quote</string>
+    <string name="chat_quoting_mika">Quoting Mika: %1$s</string>
+    <string name="chat_quoting_you">Quoting you: %1$s</string>
+    <string name="chat_edit_message">Edit message</string>
+    <string name="chat_withdraw_message">Withdraw message</string>
 </resources>

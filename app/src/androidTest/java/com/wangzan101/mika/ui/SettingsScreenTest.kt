@@ -1,5 +1,6 @@
 package com.wangzan101.mika.ui
 
+import com.wangzan101.mika.core.shell.HelperRestart
 import com.wangzan101.mika.ChineseUi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.getValue
@@ -134,11 +135,11 @@ class SettingsScreenTest {
 
     @Test
     fun noModelAndOldSystem() {
-        home(SystemStatus(32, BuiltinShellStatus.Running, AccessibilityState.EnabledNotRunning, notificationsAllowed = false), mainModel = null)
-        compose.onNodeWithText("系统版本太低").assertIsDisplayed()
+        home(SystemStatus(30, BuiltinShellStatus.Running, AccessibilityState.EnabledNotRunning, notificationsAllowed = false), mainModel = null)
+        compose.onNodeWithText("手机操作不可用").assertIsDisplayed()
         compose.onNodeWithText("未设置").assertIsDisplayed()
         compose.onNodeWithText("不支持").assertIsDisplayed()
-        // 安卓 13 以下手机操作整个不可用:不给恢复与修复
+        // 安卓 12 以下手机操作不可用:不给恢复与修复
         compose.onAllNodesWithText("恢复与修复").assertCountEquals(0)
     }
 
@@ -157,7 +158,7 @@ class SettingsScreenTest {
         compose.onNodeWithText("正常").assertIsDisplayed()
         compose.onNodeWithText("安卓 14").assertIsDisplayed()
         compose.onNodeWithText("满足").assertIsDisplayed()
-        compose.onNodeWithText(PhoneSetupCopy.USAGE_NOTE).assertExists()
+        compose.onNodeWithText(PhoneSetupCopy.usageNote(HelperRestart.None)).assertExists()
         compose.onNodeWithText(PhoneSetupCopy.REPAIR).performClick()
         assertEquals(1, repaired)
     }

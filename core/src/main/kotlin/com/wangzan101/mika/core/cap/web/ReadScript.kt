@@ -20,8 +20,13 @@ const val READ_SLEEP_MAX_MS = 5_000
  *   (document、window、location、fetch、state、args、sleep、getComputedStyle、URL、URLSearchParams)。
  * - 给的页面对象都是包装:读属性照读(读到的对象再包一层),写、删、定义属性、改原型一律报 read_only;
  *   函数只有登记过的只读方法(查找、读属性、量位置、迭代)能调,别的(点、聚焦、提交、改 DOM、开窗、跳转)都报 read_only。
- *   原生函数只拿到原件,模型拿到的永远是包装;模型能碰到的内置对象先冻住,改不了它们来截原件。
- * - 密码、隐藏字段、验证码、银行卡一类输入框的值读出来是 `***`,按 value 属性选元素不行(能逐位猜出值)。
+ *   原生函数只拿到原件,模型拿到的永远是包装;模型能碰到的内置对象先冻住、全局名设成只读,改不了它们来截原件或换掉检查要用的函数。
+ * - 密码、隐藏字段、验证码、银行卡一类输入框的值读出来是 `***`,输入框自己接口上只有 [SECRET_FIELD_PROPS] 能照读;
+ *   同源 iframe、shadow root、template 里的也一样(认节点用原生 getter,不用 instanceof)。innerHTML 一类在不属于任何窗口的副本上打码,不跑页面代码;
+ *   外层元素里有带字的秘密 textarea 时,textContent 一类也在副本上取。秘密 textarea 的子文本节点、秘密输入框的 value 属性节点读出来是 `***`,
+ *   拿到以后脱离了页面也是。
+ *   按 value 属性选元素不行(能逐位猜出值),选择器先照 CSS 的规矩还原再判断([SelectorPolicy])。
+ *   选择器、属性名参数先变成字符串、只变一次:检查的就是交给浏览器的那一个。
  * - 读脚本不碰网络:fetch 调用就报 blocked_network([NETWORK_MESSAGE]);XMLHttpRequest、sendBeacon、WebSocket、EventSource、
  *   new Image() 一类经包装调用、构造也报 blocked_network;建元素、改 src/href 本来就是改页面(read_only)。只能读页面已经有的东西。
  * - state 是这个标签的读取世界里一直留着的对象:同一页面上前后几次读脚本共用;页面换了文档就没了。
@@ -83,7 +88,18 @@ object ReadScriptProtocol {
     /** 读不得的属性:Cookie、本地存储一类(登录凭据常在里面)。 */
     val DENIED_PROPS = listOf("cookie", "localStorage", "sessionStorage", "indexedDB", "caches", "cookieStore", "credentials", "serviceWorker", "clipboard", "openDatabase")
 
-    /** 先冻住再交给模型的内置对象(连同原型):模型改不了它们,也就截不到包装里传的原件。 */
+    /**
+     * 秘密输入框(密码框、隐藏字段、验证码一类)自己接口(HTMLInputElement、HTMLTextAreaElement)上能照读的属性:页面定好的设定,不随填的内容变。
+     * 接口上别的属性读出来都是 `***`:valueAsNumber、valueAsDate、selectionStart / selectionEnd、textLength、validity、validationMessage,
+     * 以及浏览器以后新加的;方法照旧经包装,能不能调由 [READ_METHODS] 管。value、textContent 一类另按有没有值给 `***` 或空。
+     */
+    val SECRET_FIELD_PROPS = listOf(
+        "type", "name", "form", "labels", "list", "placeholder", "autocomplete", "disabled", "readOnly", "required", "willValidate",
+        "maxLength", "minLength", "size", "pattern", "min", "max", "step", "multiple", "dirName", "cols", "rows", "wrap",
+        "formAction", "formEnctype", "formMethod", "formNoValidate", "formTarget",
+    )
+
+    /** 先冻住再交给模型的内置对象(连同原型),全局名也设成只读:模型改不了它们,也就截不到包装里传的原件、换不掉检查要用的函数。 */
     private val FROZEN = PageScriptProtocol.ALLOWED_GLOBALS.filter { it !in setOf("undefined", "NaN", "Infinity") } + listOf("URL", "URLSearchParams")
 
     /** 模型代码第 1 行前面,编译后的源码还有几行(`(async function anonymous(…`、`) {`、`'use strict';`、`return (` 或空行)。 */
@@ -105,7 +121,7 @@ object ReadScriptProtocol {
   const freeze = O.freeze, isArray = Array.isArray, keysOf = O.keys, define = O.defineProperty, names = O.getOwnPropertyNames;
   const stringify = JSON.stringify, parseJson = JSON.parse, timer = G.setTimeout;
   const URL_ = G.URL, loc = G.location, doc = G.document;
-  const Elem = G.Element, Input = G.HTMLInputElement, Area = G.HTMLTextAreaElement, AttrNode = G.Attr;
+  const Elem = G.Element, Input = G.HTMLInputElement, Area = G.HTMLTextAreaElement;
   const MASK = '$MASK';
   const fixed = (o, k, v) => { try { define(o, k, { value: v, writable: false, enumerable: false, configurable: false }); } catch (e) {} };
   const fail = (code, message) => { const e = new Error(code + ': ' + message); e.code = code; return e; };
@@ -123,7 +139,8 @@ object ReadScriptProtocol {
 
   // 冻住模型碰得到的内置对象
   const ice = (x) => { if (x && (typeof x === 'object' || typeof x === 'function')) { try { freeze(x); } catch (e) {} } };
-  for (const n of ${js(FROZEN)}) { const v = G[n]; ice(v); if (v && typeof v === 'function') ice(v.prototype); }
+  // 全局名也设成只读:不然模型代码改写 String 就能让下面的检查失效,之后在这个世界里跑的读脚本也一样
+  for (const n of ${js(FROZEN)}) { const v = G[n]; ice(v); if (v && typeof v === 'function') ice(v.prototype); if (v !== undefined) fixed(G, n, v); }
   for (const f of fnKinds) ice(getProto(f));
   const arrayIter = getProto([][Symbol.iterator]());
   for (const p of [arrayIter, getProto(arrayIter), getProto(new Map().entries()), getProto(new Set().values()), getProto(''[Symbol.iterator]())]) ice(p);
@@ -151,16 +168,30 @@ object ReadScriptProtocol {
   }
   const ATTRS = new WeakMap();
   for (const [k, i] of [['getAttribute', 0], ['getAttributeNS', 1]]) { const d = Elem && getDesc(Elem.prototype, k); if (d && typeof d.value === 'function') ATTRS.set(d.value, i); }
-  const BY_VALUE = /\[\s*value\b/i;
-  const DENIED = new Set(${js(DENIED_PROPS)});
+${SelectorPolicy.JS}  const DENIED = new Set(${js(DENIED_PROPS)});
 
   // 不读值的输入框:密码框、隐藏字段,autocomplete 标着密码、银行卡、一次性验证码的
   const SECRET_AC = new Set(${js(PageScriptProtocol.SECRET_AUTOCOMPLETE)});
   const SECRET_TYPES = new Set(${js(PageScriptProtocol.SECRET_INPUT_TYPES)});
+  // 节点是哪种用原生 getter 读,不用 instanceof:同源 iframe 里的节点属于那个框架自己的一套接口,instanceof 认不出,原生 getter 照样认
+  const getterOf = (C, k) => { const d = C && getDesc(C.prototype, k); return d && d.get; };
+  const nodeTypeOf = getterOf(G.Node, 'nodeType'), localNameOf = getterOf(Elem, 'localName'), shadowHostOf = getterOf(G.ShadowRoot, 'host');
+  const native = (g, x) => { if (!g || x === null || typeof x !== 'object') return undefined; try { return apply(g, x, []); } catch (e) { return undefined; } };
+  // 节点类型按对象记下来(同一个对象的类型不会变):读属性前多半要先认一次类型,不是节点的对象(集合、矩形、样式一类)上
+  // nodeType 的原生 getter 每次都抛错,同一个对象只认一次
+  const kinds = new WeakMap();
+  const typeOf = (x) => {
+    if (x === null || typeof x !== 'object') return undefined;
+    let t = kinds.get(x);
+    if (t === undefined) { t = native(nodeTypeOf, x) || 0; kinds.set(x, t); }
+    return t || undefined;
+  };
+  const tagOf = (x) => (typeOf(x) === 1 ? native(localNameOf, x) : undefined);
   const secretNow = (el) => {
-    if (Input && el instanceof Input) {
+    const tag = tagOf(el);
+    if (tag === 'input') {
       if (SECRET_TYPES.has(String(el.type).toLowerCase())) return true;
-    } else if (!(Area && el instanceof Area)) return false;
+    } else if (tag !== 'textarea') return false;
     const ac = el.getAttribute('autocomplete');
     return !!ac && ac.toLowerCase().split(/\s+/).some((t) => SECRET_AC.has(t));
   };
@@ -176,25 +207,105 @@ object ReadScriptProtocol {
   } catch (e) {}
   markIn(doc);
   const secret = (el) => secretNow(el) || (!!el && typeof el === 'object' && wasSecret.has(el));
-  const SECRET_TEXT = new Set(['value', 'defaultValue', 'textContent', 'innerText', 'innerHTML', 'nodeValue']);
-  // HTML 里带着秘密输入框的 value 时,改在一份脱离页面的副本上打码再取
-  const html = (el, k) => {
-    let hit = secret(el);
-    if (!hit) for (const x of el.querySelectorAll('input, textarea')) if (secret(x)) { hit = true; break; }
-    if (!hit) return rget(el, k, el);
-    const c = el.cloneNode(true);
-    const all = [c];
-    for (const x of c.querySelectorAll('input, textarea')) all.push(x);
-    for (const x of all) if (secret(x)) { if (x.hasAttribute('value')) x.setAttribute('value', MASK); if (Area && x instanceof Area && x.textContent) x.textContent = MASK; }
-    return rget(c, k, c);
+  const SECRET_TEXT = new Set(['value', 'defaultValue', 'textContent', 'innerText', 'outerText', 'innerHTML', 'nodeValue']);
+  // 秘密输入框自己接口上的属性:只有页面定好、不随内容变的照读,别的(含浏览器以后新加的读值接口)都是 ***
+  const FIELD_SAFE = new Set(${js(SECRET_FIELD_PROPS)});
+  const fieldApi = (el, k) => { const tag = tagOf(el); return !!((tag === 'input' && Input && getDesc(Input.prototype, k)) || (tag === 'textarea' && Area && getDesc(Area.prototype, k))); };
+  // innerHTML / outerHTML 会写出的输入框:template 的内容也会写出来,但 querySelectorAll 找不进去,另外进去找。
+  // 原件和副本按同一个次序列出来。不递归(template 能套很多层);只有 HTML 的 template 有内容(SVG 里同名的元素没有);
+  // 查找用原生方法(表单里有叫 querySelectorAll 的控件也照样找)
+  const contentOf = getterOf(G.HTMLTemplateElement, 'content');
+  const QSA = { 1: Elem && Elem.prototype.querySelectorAll, 9: G.Document && G.Document.prototype.querySelectorAll, 11: G.DocumentFragment && G.DocumentFragment.prototype.querySelectorAll };
+  const fields = (node, out) => {
+    const todo = [node];
+    const inner = (t) => { const c = tagOf(t) === 'template' && native(contentOf, t); if (c) todo.push(c); };
+    for (let i = 0; i < todo.length; i++) {
+      const n = todo[i], find = QSA[typeOf(n)];
+      inner(n);
+      if (find) for (const x of apply(find, n, ['input, textarea, template'])) { if (tagOf(x) === 'template') inner(x); else out.push(x); }
+    }
+    return out;
+  };
+  // HTML 里带着秘密输入框的 value 时,改在副本上打码再取。哪个框打码看原件(副本没有「曾经是秘密输入框」的记录),副本里同一位置的框打码。
+  // 副本放在一份不属于任何窗口的空文档里(建一次,以后接着用):自定义元素不构造,页面代码不跑,资源不加载。ShadowRoot 不能复制,把它的子节点放进一个 div。
+  // 这样写出来的格式和页面自己的有两处不同,不影响打码:noscript 里的内容会转义;XHTML 页面写成 HTML 的格式
+  let inert = null;
+  // 打好码的副本;v 里没有秘密输入框时为 null,副本和原件对不上时为 MASK
+  const masked = (v) => {
+    const root = typeOf(v) !== 1;
+    const orig = fields(v, root ? [] : [v]);
+    let hit = false;
+    for (const x of orig) if (secret(x)) { hit = true; break; }
+    if (!hit) return null;
+    const d = inert || (inert = doc.implementation.createHTMLDocument(''));
+    let c;
+    if (root) { c = d.createElement('div'); for (const n of v.childNodes) c.appendChild(d.importNode(n, true)); } else c = d.importNode(v, true);
+    const copy = fields(c, root ? [] : [c]);
+    if (copy.length !== orig.length) return MASK;
+    for (let i = 0; i < copy.length; i++) {
+      if (!secret(orig[i])) continue;
+      const x = copy[i];
+      if (x.hasAttribute('value')) x.setAttribute('value', MASK);
+      if (tagOf(x) === 'textarea' && x.textContent) x.textContent = MASK;
+    }
+    return c;
+  };
+  const html = (v, k) => { const c = masked(v); return c === null ? rget(v, k, v) : c === MASK ? MASK : rget(c, k, c); };
+  // 秘密 textarea 里的字就是它的初始值(页面把打进去的字写回初始值时也在这里)。外层元素、shadow root 的 textContent 带得出来;
+  // 没渲染出来的外层元素的 innerText 也是(这时 innerText 就是 textContent);textarea 在 option 里时,渲染出来的 innerText 也带
+  // (option 按它的 text 写出来);a、option 的 text,option 的 label、value,output 的 value、defaultValue 也按子孙的文字算。
+  // 这几样改在副本上打码再取。渲染出来的别的元素的 innerText 不含 textarea 里的字,照原样给
+  const textOf = getterOf(G.Node, 'textContent'), parentOf = getterOf(G.Node, 'parentNode'), closest = Elem && Elem.prototype.closest;
+  // 用 Map:属性名可以是 constructor、__proto__ 一类
+  const DESC = new Map([['text', new Set(['a', 'option'])], ['label', new Set(['option'])], ['value', new Set(['option', 'output'])], ['defaultValue', new Set(['output'])]]);
+  // v 里带字的秘密 textarea:没有为 0,有为 1,有在 option 里的为 2
+  const areasIn = (v) => {
+    const find = QSA[typeOf(v)];
+    let hit = 0;
+    if (find) for (const a of apply(find, v, ['textarea'])) if (secret(a) && native(textOf, a)) { hit = 1; if (closest && apply(closest, a, ['option'])) return 2; }
+    return hit;
+  };
+  const text = (v, k) => {
+    const x = rget(v, k, v);
+    if (!x || typeof x !== 'string') return x;
+    const hit = areasIn(v), shown = k === 'innerText' || k === 'outerText';
+    if (!hit || (shown && hit === 1 && x !== native(textOf, v))) return x;
+    const c = masked(v);
+    return c === null ? x : c === MASK ? MASK : DESC.has(k) ? rget(c, k, c) : native(textOf, c);
+  };
+  // 拿到过的秘密文字节点记下来,之后一直按秘密算:秘密 textarea 的子文本节点(XML 页面里也可能是 CDATA 段,它也是文本节点,也算在值里)、
+  // 秘密输入框的 value 属性节点。页面换掉 textarea 的字(把打进去的字写回初始值)、删掉 value 属性时,旧节点脱离文档,字还在上面。
+  // 节点在哪个框里也记下:交给模型时框还不是秘密的,后来变成秘密、字写进同一个节点、节点已不在那个框里(脱离了文档或被挪到
+  // 别的元素里)时,按那个框算
+  const held = new WeakSet(), ownerOf = new WeakMap();
+  const HELD_TEXT = new Set(['data', 'nodeValue', 'textContent', 'wholeText', 'length', 'value']);
+  const substringData = G.CharacterData && G.CharacterData.prototype.substringData;
+  const holds = (v) => {
+    if (held.has(v)) return true;
+    const t = typeOf(v);
+    let p;
+    if (t === 3 || t === 4) { p = native(parentOf, v); if (tagOf(p) !== 'textarea') p = undefined; }
+    else if (t === 2) { if (String(v.name).toLowerCase() !== 'value') return false; p = v.ownerElement; }
+    else return false;
+    if (p) ownerOf.set(v, p); else p = ownerOf.get(v);
+    if (!p || !secret(p)) return false;
+    held.add(v);
+    return true;
   };
   const readProp = (v, k) => {
     if (typeof k === 'string') {
       if (DENIED.has(k)) deny('reading ' + k);
-      if (Elem && v instanceof Elem && (k === 'outerHTML' || k === 'innerHTML')) return html(v, k);
+      if ((k === 'outerHTML' || k === 'innerHTML') && (typeOf(v) === 1 || (k === 'innerHTML' && native(shadowHostOf, v) !== undefined))) return html(v, k);
       if (SECRET_TEXT.has(k) && secret(v)) { const x = rget(v, k, v); return x ? MASK : x; }
-      if (AttrNode && v instanceof AttrNode && SECRET_TEXT.has(k) && String(v.name).toLowerCase() === 'value' && v.ownerElement && secret(v.ownerElement)) {
-        const x = rget(v, k, v); return x ? MASK : x;
+      if (!FIELD_SAFE.has(k) && fieldApi(v, k) && secret(v)) { const x = rget(v, k, v); return typeof x === 'function' ? x : MASK; }
+      if (HELD_TEXT.has(k) && holds(v)) { const x = rget(v, k, v); return x ? MASK : x; }
+      if (k === 'textContent' || k === 'innerText' || k === 'outerText') return text(v, k);
+      const tags = DESC.get(k);
+      if (tags !== undefined) {
+        const tag = tagOf(v);
+        // select 的 value 是页面上选中的那个 option 的 value(副本里选中的不一定是它)
+        if (tag === 'select' && k === 'value' && areasIn(v)) { const i = rget(v, 'selectedIndex', v); return i < 0 ? '' : readProp(rget(v, 'options', v)[i], k); }
+        if (tags.has(tag)) return text(v, k);
       }
     }
     return rget(v, k, v);
@@ -216,7 +327,7 @@ object ReadScriptProtocol {
       }
     }
     let p = toProxy.get(v);
-    if (!p) { p = makeProxy(v); toProxy.set(v, p); toReal.set(p, v); }
+    if (!p) { holds(v); p = makeProxy(v); toProxy.set(v, p); toReal.set(p, v); }
     return p;
   };
   const toNative = (a) => {
@@ -232,10 +343,16 @@ object ReadScriptProtocol {
   const call = (f, self, xs) => {
     if (!SAFE.has(f)) { if (NETWORK.has(nameOf(f))) offline(); deny('calling ' + (nameOf(f) || 'this function')); }
     const t = toNative(self);
+    if (f === substringData && holds(t)) return MASK;
     const args = [];
     for (const x of xs) args.push(toNative(x));
-    if (SELECTORS.has(f) && typeof args[0] === 'string' && BY_VALUE.test(args[0])) throw fail('invalid_selector', 'selecting by the value attribute is not allowed; read the value property instead');
+    // 选择器、属性名先变成字符串、只变一次:对象的 toString 每次可以给不一样的,检查的必须就是交给浏览器的那一个
+    if (SELECTORS.has(f) && args.length) {
+      args[0] = String(args[0]);
+      if (selectsByValue(args[0])) throw fail('invalid_selector', 'selecting by the value attribute is not allowed; read the value property instead');
+    }
     const at = ATTRS.get(f);
+    if (at !== undefined && at < args.length) args[at] = String(args[at]);
     if (at !== undefined && secret(t) && String(args[at]).toLowerCase() === 'value') { const x = apply(f, t, args); return x ? MASK : x; }
     return wrap(apply(f, t, args));
   };

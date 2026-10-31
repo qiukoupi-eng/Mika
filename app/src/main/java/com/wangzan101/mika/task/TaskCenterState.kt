@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import com.wangzan101.mika.chat.SharedFile
 import com.wangzan101.mika.core.agent.TaskState
 import com.wangzan101.mika.core.record.RunEvent
+import com.wangzan101.mika.core.remote.RemoteSteer
 import com.wangzan101.mika.takeover.Takeover
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -11,14 +12,52 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 任务进行中用户在同一对话里插的话:[Pending] 刚发出、还没送到任务,[Received] 任务的收件箱已收下(下一步就处理),
- * [Joined] 已交给当前任务的模型,[Next] 任务已收尾、作为下一件事,[Cancelled] 用户点了停止,连同任务一起作废。
+ * [Joined] 已交给当前任务的模型,[Next] 任务已收尾、作为下一件事,[Cancelled] 停止或当前任务收尾时没用上的远程插话,[Withdrawn] 用户已撤回。
  */
-enum class SteerState { Pending, Received, Joined, Next, Cancelled }
+enum class SteerState { Pending, Received, Joined, Next, Cancelled, Withdrawn }
 
 /** 还没交给模型的插话(任务就此收尾时作为下一件事,停止时作废)。 */
 val SteerState.unconsumed: Boolean get() = this == SteerState.Pending || this == SteerState.Received
 
-data class SteerNote(val id: String, val text: String, val state: SteerState)
+/**
+ * [interrupted] 是这句插话撤掉的那段回复里用户已经看到的字;[finished] 是这句插话交给模型之前、已经说完显示出来的回复。
+ * 两者都显示在插话上方;没有时为 null。
+ */
+data class SteerNote(
+    val id: String, val text: String, val state: SteerState, val interrupted: String? = null, val finished: String? = null,
+    val remote: Boolean = false,
+)
+
+/** 电脑只看到自己追加的消息去向,不带手机上插的话或正文;远程插话撤不回(`RunInbox.withdrawSteer`),[SteerState.Withdrawn] 只为穷举,按没用上报。 */
+internal fun remoteSteers(notes: List<SteerNote>, finished: Boolean = false): List<RemoteSteer> = notes.filter { it.remote }.map {
+    RemoteSteer(it.id, when (it.state) {
+        SteerState.Pending, SteerState.Received -> if (finished) "not_applied" else "received"
+        SteerState.Joined -> "joined"
+        SteerState.Next, SteerState.Cancelled, SteerState.Withdrawn -> "not_applied"
+    })
+}
+
+/**
+ * 运行事件里插话交给模型的先后:`reply_interrupted`([interrupted])或 `reply_finished_before_steer`([finished])先到,
+ * 紧接着这一批插话逐句 `steer_received`,那段字只挂到其中第一句上([joined])。
+ */
+class SteerJoin {
+    @Volatile private var cut: String? = null
+    @Volatile private var done: String? = null
+
+    fun interrupted(text: String) { cut = text }
+
+    fun finished(text: String) { done = text }
+
+    /** [id] 这句已交给模型:标成 [SteerState.Joined],有刚记下的那段字就挂上(用过即清)。 */
+    fun joined(notes: List<SteerNote>, id: String): List<SteerNote> {
+        val c = cut.also { cut = null }
+        val d = done.also { done = null }
+        return notes.map {
+            if (it.id == id) it.copy(state = SteerState.Joined, interrupted = c ?: it.interrupted, finished = d ?: it.finished) else it
+        }
+    }
+}
 
 /** 进程内 TaskCenter 的展示状态，由 App 容器持有，Service 只是写入它的宿主。 */
 class TaskCenterState {

@@ -211,7 +211,7 @@ private fun PillRow(view: CapsuleView.Shown, end: Boolean, need: Boolean) {
     }
 }
 
-/** 文字前面的状态标记:要你处理是呼吸点,办好了是勾,没办成是叹号,已停止是停止。 */
+/** 文字前面的状态标记:要你处理是呼吸点,办好了是勾,没办成是叹号,已停止是停止,后台网页运行中是绿点。 */
 @Composable
 private fun Leading(kind: CapsuleKind) {
     val c = MikaTheme.colors
@@ -220,7 +220,17 @@ private fun Leading(kind: CapsuleKind) {
         kind == CapsuleKind.Done -> Icon(MikaIcons.Check, null, Modifier.size(16.dp), tint = c.ok)
         kind == CapsuleKind.Failed -> Icon(MikaIcons.Exclaim, null, Modifier.size(16.dp), tint = c.ink3)
         kind == CapsuleKind.Cancelled -> Icon(MikaIcons.Stop, null, Modifier.size(16.dp), tint = c.ink3)
+        kind == CapsuleKind.KeptPage -> LiveDot(c)
         else -> Unit
+    }
+}
+
+/** 后台网页运行中:绿色圆点,外面一圈淡绿。 */
+@Composable
+private fun LiveDot(c: MikaColors) {
+    Box(Modifier.size(14.dp).testTag("capsule-live-dot"), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(14.dp).background(c.okSoft, MikaShapes.Pill))
+        Box(Modifier.size(8.dp).background(c.ok, MikaShapes.Pill))
     }
 }
 

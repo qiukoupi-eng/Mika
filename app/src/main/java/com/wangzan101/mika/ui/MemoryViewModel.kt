@@ -16,7 +16,9 @@ import com.wangzan101.mika.core.skills.PersonalSkill
 import com.wangzan101.mika.core.skills.PersonalSkills
 import com.wangzan101.mika.core.skills.SkillStatus
 import com.wangzan101.mika.core.knowledge.AppKnowledgeDraftStore
+import com.wangzan101.mika.core.knowledge.AppKnowledgeDrafter
 import com.wangzan101.mika.core.knowledge.AppKnowledgeStage
+import com.wangzan101.mika.core.knowledge.AppKnowledgeTrial
 import com.wangzan101.mika.settings.MemorySettings
 import com.wangzan101.mika.settings.MemorySwitches
 import kotlinx.coroutines.CoroutineScope
@@ -167,7 +169,7 @@ class MemoryViewModel(
 
     /** 恢复时清掉旧结果,免得下一次一不顺又马上被停用。 */
     fun restoreSkill(name: String) = changeSkill(name) {
-        it.copy(status = if (it.learnedFrom != null && "verified" !in it.outcomes) SkillStatus.trial else SkillStatus.active, outcomes = emptyList())
+        it.copy(status = it.restoredStatus(), outcomes = emptyList())
     }
 
     fun deleteSkill(name: String) { skills?.remove(name); skillsChanged() }
@@ -204,8 +206,15 @@ class MemoryViewModel(
     }
 }
 
+/**
+ * 一份 App 知识补充。待确认的:[revision] 为 true 是对在用那份的修订,否则是第一次补充;
+ * [changedLines] 是相对在用那份(第一次补充时相对空白)加了、去掉的行。
+ * [replaced]:收下的修订正在试用,暂时顶替了这一份(不注入;修订被归档就换回来)。
+ */
+data class AppKnowledgeRow(val id: String, val name: String, val markdown: String, val stage: AppKnowledgeStage,
+    val revision: Boolean = false, val changedLines: List<String> = emptyList(), val replaced: Boolean = false)
+
 /** 技能分段的内容:待收下的草稿和已收下的个人技能(在用的在前)。 */
-data class AppKnowledgeRow(val id: String, val name: String, val markdown: String, val stage: AppKnowledgeStage)
 
 data class SkillsUi(val drafts: List<SkillRow> = emptyList(), val installed: List<SkillRow> = emptyList(),
     val appKnowledge: List<AppKnowledgeRow> = emptyList()) {
@@ -216,8 +225,14 @@ data class SkillsUi(val drafts: List<SkillRow> = emptyList(), val installed: Lis
             val drafts = skills.drafts().map { (id, d) ->
                 row(id, d).copy(changedLines = d.replacesDraftOf?.let { byName[it] }?.let { changedLines(it.markdown, d.markdown) }.orEmpty())
             }
-            val appRows = appDrafts?.all().orEmpty().filter { it.stage != AppKnowledgeStage.Archived }
-                .map { AppKnowledgeRow(it.id, it.appName, it.markdown, it.stage) }
+            val all = appDrafts?.all().orEmpty()
+            val byId = all.associateBy { it.id }
+            val appRows = all.filter { it.stage != AppKnowledgeStage.Archived }.map { d ->
+                val row = AppKnowledgeRow(d.id, d.display.ifBlank { d.appName }, d.markdown, d.stage)
+                if (d.stage != AppKnowledgeStage.Draft) row.copy(replaced = AppKnowledgeTrial.inUse(all, d.appName)?.id != d.id)
+                else row.copy(revision = d.revises != null,
+                    changedLines = changedLines(d.revises?.let { byId[it] }?.markdown?.let(AppKnowledgeDrafter::facts).orEmpty(), d.markdown))
+            }
             return SkillsUi(drafts, installed.sortedBy { it.status == SkillStatus.suspended }.map { row(it.name, it, skills) }, appRows)
         }
 
@@ -228,10 +243,11 @@ data class SkillsUi(val drafts: List<SkillRow> = emptyList(), val installed: Lis
                 s.markdown, suspended = s.status == SkillStatus.suspended, trial = s.status == SkillStatus.trial,
                 canRestore = skills?.revisions(s.name)?.isNotEmpty() == true,
                 recent = s.outcomes.takeLast(3).map(::outcomeLabel),
+                userCreated = s.createdByUser,
             )
         }
 
-        /** 更新草稿相对原技能:「+ 」新增的行、「- 」去掉的行(不比空行)。 */
+        /** 更新草稿相对原来那份(技能或 App 知识补充):「+ 」新增的行、「- 」去掉的行(不比空行)。 */
         fun changedLines(old: String, new: String): List<String> {
             val before = old.lines().map { it.trimEnd() }.filter { it.isNotBlank() }
             val after = new.lines().map { it.trimEnd() }.filter { it.isNotBlank() }
@@ -252,4 +268,6 @@ data class SkillRow(
     val id: String, val name: String, val display: String, val description: String, val markdown: String,
     val suspended: Boolean = false, val trial: Boolean = false, val canRestore: Boolean = false,
     val recent: List<String> = emptyList(), val changedLines: List<String> = emptyList(),
+    /** 用户在任务里要求写下的(不是从办成的任务里学来的)。 */
+    val userCreated: Boolean = false,
 )

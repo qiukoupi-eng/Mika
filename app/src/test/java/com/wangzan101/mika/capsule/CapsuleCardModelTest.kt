@@ -2,6 +2,7 @@ package com.wangzan101.mika.capsule
 
 import org.junit.Rule
 import com.wangzan101.mika.i18n.ChineseTexts
+import com.wangzan101.mika.cap.web.KeptPage
 import com.wangzan101.mika.core.agent.FailKind
 import com.wangzan101.mika.core.agent.GateReason
 import com.wangzan101.mika.core.agent.TaskState
@@ -34,6 +35,18 @@ class CapsuleCardModelTest {
     private val running = TaskState.Running(2, "note", "tap")
 
     // ---------- 只说一件 ----------
+
+    @Test fun keptPageCardWhenNothingElse() {
+        val kept = KeptPage(3, "c-k", "r-k", "播放课程", "course.example.com", null, null, 0, 7_200_000)
+        val v = CapsuleCards.of(emptyList(), null, idle = CardView.Chat("c-x"), kept = kept)
+        assertEquals(CardView.Kept(kept), v)
+        // 卡片上没有输入框、没有停止;「打开对话」去它来自的对话
+        assertNull(CapsuleCards.input(v!!))
+        assertNull(CapsuleCards.stopKey(v))
+        assertEquals("c-k", CapsuleCards.conversationOf(v))
+        // 有任务(进行中或刚结束)时还是说任务
+        assertEquals("a", keyOf(CapsuleCards.of(listOf(card("a", running)), null, kept = kept)))
+    }
 
     @Test fun oneRunOpensItsDetailDirectly() {
         val v = CapsuleCards.of(listOf(card("a", running)), null) as CardView.Detail

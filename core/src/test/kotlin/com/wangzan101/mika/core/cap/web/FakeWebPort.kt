@@ -113,6 +113,18 @@ class FakeWebPort : WebPort {
         calls += "upload $ref ${paths.joinToString(",")}"; return result
     }
     override suspend fun historyBack(): ActionResult { calls += "historyBack"; return result }
+    /** 能留页时(有留页的那一份);[keptHost] 是此刻已经留着的另一页的站点。 */
+    var keepAvailable = false
+    var keptHost: String? = null
+    var usersPage = false
+    override suspend fun keepOpen(keep: Boolean, reason: String): KeepOpenResult? {
+        if (!keepAvailable) return super.keepOpen(keep, reason)
+        calls += "keepOpen $keep $reason"
+        if (crash) throw WebTabCrashed(tabId)
+        if (usersPage) throw WebTabIsUsers(tabId)
+        return KeepOpenResult(keep, tabId, url, title, "shop.example.com", KEEP_OPEN_HOURS, replaces = keptHost)
+    }
+
     override suspend fun setSiteMode(mobile: Boolean): SiteModeResult? {
         val host = siteModeHost ?: return super.setSiteMode(mobile)
         calls += "siteMode ${if (mobile) "mobile" else "desktop"}"

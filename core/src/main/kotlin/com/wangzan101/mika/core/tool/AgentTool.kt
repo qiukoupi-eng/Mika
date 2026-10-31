@@ -28,10 +28,10 @@ enum class Verb {
     Tap, TypeText, ClearText, Scroll, Swipe, Back, PressKey,
     ListApps, LaunchApp, OpenLink, ShareText,
     SetAlarm, SetTimer, ShowAlarms, AddCalendarEvent, SetWheel,
-    Navigate, ReadPage, EvaluateJs, SiteCommand, Tabs, Downloads, Upload, SiteMode, Script, Interact, Capture, WaitFor,
+    Navigate, ReadPage, EvaluateJs, SiteCommand, Tabs, Downloads, Upload, SiteMode, Script, Interact, Capture, WaitFor, KeepOpen,
     RunCommand, RunBundledScript, ReadFile, WriteFile, SearchFiles, ShareFile,
     Wait, AskUser, RequestConfirmation, HandToUser, HandleObstacle, EndNotDone,
-    KnowledgeSearch, KnowledgeRead, SkillSearch, SkillRead, MemorySearch, MemorySave, ProfileEdit,
+    KnowledgeSearch, KnowledgeRead, SkillSearch, SkillRead, SkillSave, MemorySearch, MemorySave, ProfileEdit,
     ScheduleTask,
     SpawnAgent,
 }

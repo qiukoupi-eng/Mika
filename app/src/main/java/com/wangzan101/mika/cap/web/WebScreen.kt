@@ -52,6 +52,9 @@ import com.wangzan101.mika.cap.web.cdp.PageScriptRunner
 import com.wangzan101.mika.core.cap.web.cdp.ReadScriptRunner
 import com.wangzan101.mika.core.cap.web.PageTree
 import com.wangzan101.mika.core.cap.web.SiteModeResult
+import com.wangzan101.mika.core.cap.web.KEEP_OPEN_HOURS
+import com.wangzan101.mika.core.cap.web.KeepOpenResult
+import com.wangzan101.mika.core.cap.web.WebTabIsUsers
 import com.wangzan101.mika.core.cap.web.TabInfo
 import com.wangzan101.mika.core.cap.web.WebBarrier
 import com.wangzan101.mika.core.cap.web.WebFacts
@@ -98,6 +101,8 @@ import kotlin.math.roundToInt
  * 换了主机名记在 appSwitched;打字后回读,折叠空白后整段比较,密码框不读值(UNKNOWN)。
  * 编号:snapshotId 形如 w<标签>-<n>,页面脚本按快照号保留编号表;元素已不在时按角色、名字、位置在新树里找唯一对应者。
  * 标签由 [currentTab] 提供(标签池接手后是当前任务的当前标签)。
+ * 当前标签是借来的(用户在浏览器页上看着的那一个,见 [WebTabPool.attachExternal])时:它不在网页显示上,截图直接画这个视图;
+ * 读屏前把用户的双指放大缩回整页(编号的坐标按整页算);停留时不轻滚;打开网址另开新标签,不把用户的这一页换走。
  * 读脚本(web_evaluate_js、站点命令)在当前标签的读取世界里只读地跑,每个标签一个 [ReadScriptRunner]。
  */
 class WebScreen(
@@ -108,10 +113,18 @@ class WebScreen(
     private val taskId: String? = null,
     /** 下载与上传走的工作区;为空时下载报不可用、上传报不可用。 */
     private val files: WebFiles? = null,
+    /** 此刻留在后台的那一页(见 [PageKeeper]);为空时不能留页,web_keep_open 报不可用。 */
+    private val keptNow: (() -> KeptPage?)? = null,
 ) : WebPort {
     /** 一个任务的网页端口:当前标签取自标签池里这个任务的当前标签。 */
-    constructor(pool: WebTabPool, taskId: String, host: WebHost, clock: () -> Long, files: WebFiles? = null) :
-        this({ pool.current(taskId) }, host, clock, pool, taskId, files)
+    constructor(pool: WebTabPool, taskId: String, host: WebHost, clock: () -> Long, files: WebFiles? = null, keptNow: (() -> KeptPage?)? = null) :
+        this({ pool.current(taskId) }, host, clock, pool, taskId, files, keptNow)
+
+    /** 模型要在任务结束后留下的那一页(web_keep_open):[tabId] 是哪个标签;任务结束时由 [WebStack.close] 取。 */
+    data class KeepMark(val tabId: String, val reason: String)
+
+    @Volatile var keepMark: KeepMark? = null
+        private set
 
     private val scripts = WeakHashMap<WebTab, PageScript>()
     private val readers = WeakHashMap<WebTab, ReadScriptRunner>()
@@ -194,6 +207,7 @@ class WebScreen(
 
     override suspend fun snapshot(): ScreenSnapshot {
         val tab = currentTab()?.takeIf { !it.crashed } ?: return emptySnapshot(currentTab())
+        if (borrowed(tab)) unzoom(tab)
         val id = "w${tab.id}-${nextId()}"
         val snap = read(tab, id, id, fuse = true)
         synchronized(history) {
@@ -286,11 +300,63 @@ class WebScreen(
         }
     }
 
-    override suspend fun screenshotPng(): ByteArray? = withContext(Dispatchers.IO) { host.latestFramePng() }
+    override suspend fun screenshotPng(): ByteArray? {
+        val tab = currentTab()?.takeIf { !it.crashed && borrowed(it) } ?: return withContext(Dispatchers.IO) { host.latestFramePng() }
+        val bmp = viewFrame(tab) ?: return null
+        return withContext(Dispatchers.IO) {
+            java.io.ByteArrayOutputStream().use { out ->
+                bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                bmp.recycle()
+                out.toByteArray()
+            }
+        }
+    }
 
-    override suspend fun frameGrid(): FrameGrid? = withContext(Dispatchers.IO) {
-        val bmp = host.latestFrame() ?: return@withContext null
-        try { FrameGrid.sample(bmp.width, bmp.height, bmp::getPixel) } finally { bmp.recycle() }
+    override suspend fun frameGrid(): FrameGrid? {
+        val tab = currentTab()?.takeIf { !it.crashed && borrowed(it) }
+        val bmp = (if (tab != null) viewFrame(tab) else withContext(Dispatchers.IO) { host.latestFrame() }) ?: return null
+        return withContext(Dispatchers.IO) { try { FrameGrid.sample(bmp.width, bmp.height, bmp::getPixel) } finally { bmp.recycle() } }
+    }
+
+    /** 当前标签是借来的(在用户的界面里,不在网页显示上)。 */
+    private fun borrowed(tab: WebTab): Boolean = pool?.isExternal(tab.id) == true
+
+    /**
+     * 借来的标签此刻的样子:把视图本身画进一张图(和视图像素一一对应,点按坐标照用),不含盖在它上面的界面(对话面板)。
+     * 视图还没排版时为 null。
+     */
+    private suspend fun viewFrame(tab: WebTab): android.graphics.Bitmap? = withContext(Dispatchers.Main) {
+        val v = tab.view
+        if (tab.destroyed || v.width <= 0 || v.height <= 0) return@withContext null
+        runCatching {
+            android.graphics.Bitmap.createBitmap(v.width, v.height, android.graphics.Bitmap.Config.ARGB_8888).also { v.draw(android.graphics.Canvas(it)) }
+        }.onFailure { Log.w(TAG, "could not draw borrowed tab ${tab.id}", it) }.getOrNull()
+    }
+
+    /**
+     * 用户在借来的标签上双指放大过:缩回整页再读屏。页面脚本按排版视口报坐标,放大后看得见的只是其中一块,
+     * 不缩回编号的坐标就对不上屏幕。没放大时什么也不做;缩不回(页面禁止缩放等)就照样读。
+     */
+    private suspend fun unzoom(tab: WebTab) {
+        if (!pinched(tab)) return
+        repeat(UNZOOM_STEPS) {
+            val more = withContext(Dispatchers.Main) { !tab.destroyed && tab.view.zoomOut() }
+            delay(UNZOOM_SETTLE_MS)
+            if (!more || !pinched(tab)) return
+        }
+    }
+
+    // 看得见的那块(视觉视口)比排版视口窄,或挪开了:用户放大过
+    private suspend fun pinched(tab: WebTab): Boolean {
+        val raw = kotlinx.coroutines.withTimeoutOrNull(UNZOOM_SETTLE_MS * 4) {
+            kotlinx.coroutines.suspendCancellableCoroutine<String?> { c ->
+                tab.view.post {
+                    if (tab.destroyed) c.resumeWith(Result.success(null))
+                    else tab.view.evaluateJavascript(PINCH_PROBE) { c.resumeWith(Result.success(it)) }
+                }
+            }
+        }
+        return raw?.trim('"') == "1"
     }
 
     override suspend fun checkScreen(): ScreenCheck {
@@ -455,7 +521,8 @@ class WebScreen(
      * 桌面版用滚轮(指针不动),否则用一下慢慢的原生滑动;都不移动鼠标、不点。
      */
     override suspend fun idleScroll(fraction: Double): Boolean {
-        val tab = (ready() as? Ready.Tab)?.tab ?: return false
+        // 用户看着的那一页不替他滚
+        val tab = (ready() as? Ready.Tab)?.tab?.takeIf { !borrowed(it) } ?: return false
         val shown = withContext(Dispatchers.Main) {
             val v = tab.view
             val ime = v.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) == true
@@ -814,11 +881,12 @@ class WebScreen(
         val task = taskId!!
         var opened = false
         // 用户正在处理当前页面时不在它上面打开别的网址
-        pool.current(task)?.takeIf { !newTab && pool.isLocked(it.id) }?.let { throw WebTabHandedOver(it.id) }
+        pool.current(task)?.takeIf { !newTab && !borrowed(it) && pool.isLocked(it.id) }?.let { throw WebTabHandedOver(it.id) }
         // 当前页面弹框挂着:先回话,不在停着的页面上开别的网址
-        pool.current(task)?.takeIf { !newTab && !it.crashed }?.let(::dialogGuard)
+        pool.current(task)?.takeIf { !newTab && !it.crashed && !borrowed(it) }?.let(::dialogGuard)
+        // 用户看着的那一页(借来的)不换走:别的网址另开新标签
         val tab = withContext(Dispatchers.Main) {
-            pool.current(task)?.takeIf { !newTab && !it.crashed } ?: pool.open(task, null).also { opened = true }
+            pool.current(task)?.takeIf { !newTab && !it.crashed && !borrowed(it) } ?: pool.open(task, null).also { opened = true }
         }
         val net = network(tab)
         val downloadsBefore = files?.downloads?.count() ?: 0
@@ -876,6 +944,27 @@ class WebScreen(
         return withContext(Dispatchers.Main) {
             pool.close(taskId!!, tabId)
         }
+    }
+
+    /**
+     * 记下任务结束后留下当前这一页(只记下,此刻什么也不动);[keep] 为 false 时撤销。借来的(用户自己的)那一页本来就不随任务关,
+     * 不用留。只记一页:再标别的标签就换成它。
+     */
+    override suspend fun keepOpen(keep: Boolean, reason: String): KeepOpenResult? {
+        val now = keptNow ?: throw UnsupportedOperationException("no page keeper")
+        val pool = pool ?: throw UnsupportedOperationException(NO_POOL)
+        if (!keep) {
+            val had = keepMark
+            keepMark = null
+            return KeepOpenResult(false, had?.tabId, null, null, null, KEEP_OPEN_HOURS)
+        }
+        val tab = currentTab() ?: return crashedTab()?.let { throw WebTabCrashed(it) }
+        if (tab.crashed) throw WebTabCrashed(tab.id)
+        if (pool.isExternal(tab.id)) throw WebTabIsUsers(tab.id)
+        val (u, title) = withContext(Dispatchers.Main) { tab.view.url to tab.view.title }
+        keepMark = KeepMark(tab.id, reason)
+        Log.i(TAG, "tab ${tab.id} marked to keep running after the task")
+        return KeepOpenResult(true, tab.id, u, title?.takeIf { it.isNotBlank() }, u?.let(WebUrlPolicy::host), KEEP_OPEN_HOURS, replaces = now()?.host)
     }
 
     override suspend fun siteMode(): String? =
@@ -1371,6 +1460,12 @@ class WebScreen(
         const val OBSCURED = "obscured"
         const val OFFSCREEN = "offscreen"
         const val NO_POOL = "this web port has no tab pool"
+        /** 缩回双指放大:至多缩几下,每下之后等页面换好。 */
+        const val UNZOOM_STEPS = 12
+        const val UNZOOM_SETTLE_MS = 120L
+        /** 视觉视口比排版视口窄或挪开了(用户放大过)时为 "1"。 */
+        const val PINCH_PROBE = "(function(){var v=window.visualViewport;if(!v)return '0';" +
+            "return (v.width<window.innerWidth*0.98||v.offsetLeft>1||v.offsetTop>1)?'1':'0';})()"
         const val NAVIGATE_TIMEOUT_MS = 20_000L
         /** 系统拒绝明文 http 时浏览器给的错误码。 */
         private const val CLEARTEXT = "ERR_CLEARTEXT_NOT_PERMITTED"

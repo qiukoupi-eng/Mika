@@ -12,11 +12,11 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import java.io.IOException
 
 /**
  * 请求时带的 Bearer 令牌。[fresh] 为真表示上一个被拒了(HTTP 401),要先换一个新的;换不到抛 [ModelError]。
@@ -38,7 +38,7 @@ interface BearerToken {
  * OpenAI Responses 接口(`POST {base}/responses`),一律流式、不在服务端存对话(`store:false`):每次把要用的上下文都放在
  * `input` 数组里发,系统提示词放 `instructions`,对话里的系统消息改成 developer 消息(system 消息条目有的服务端不收)。
  * 工具是 function 工具(`strict:false`,Mika 的参数 schema 不按严格模式写);结果按 `function_call_output` 回给模型。
- * 只发这几项和 `include`,温度、输出上限等可选参数都不发(用 ChatGPT 套餐额度时这些字段不收)。
+ * 默认只发这几项和 `include`;用户选了思考档位才发 `reasoning.effort`。温度、输出上限不发(套餐接口不收)。
  *
  * 推理模型的思考:请求加密后的思考内容(`include: reasoning.encrypted_content`),原样存在这一回合第一个工具调用的
  * [Part.ToolCall.opaque] 里,回放时放回工具调用前面,模型接着上一步的思路做;只给文字回答的回合不需要接着想,不存。
@@ -46,6 +46,7 @@ interface BearerToken {
  *
  * 只有收到 `response.completed`(或 `response.incomplete`)才算成功;流在这之前断开当作网络故障(会重试)。
  * [chatGptPlan] 为真时请求用的是用户的 ChatGPT 套餐额度:HTTP 429 是额度到了上限、403 是账号不能这样用,都不重试。
+ * [accountLogin] 是用别家账号登录(如 xAI)时那一家的名字:HTTP 403 是订阅档位不能用这个接口([ModelError.AccountPlanNotAllowed])。
  */
 class ResponsesModel(
     baseUrl: String,
@@ -56,6 +57,9 @@ class ResponsesModel(
     private val chatGptPlan: Boolean = false,
     /** 每个请求都带的头(见 [ClientHeaders]);令牌的头由适配器自己加。这个接口不给回复上限(套餐那条路不收)。 */
     private val headers: Map<String, String> = emptyMap(),
+    /** null 使用服务端默认;服务端拒绝所选档位时照常报错,不悄悄换档重试。 */
+    private val reasoningEffort: String? = null,
+    private val accountLogin: String? = null,
 ) : StreamingChatModel {
     override val name: String get() = model
     private val endpoint = baseUrl.trim().trimEnd('/') + "/responses"
@@ -97,6 +101,7 @@ class ResponsesModel(
             if (tools.isNotEmpty()) putJsonArray("tools") { tools.forEach { add(toolJson(it)) } }
             put("store", false)
             put("stream", true)
+            reasoningEffort?.let { effort -> putJsonObject("reasoning") { put("effort", effort) } }
             if (includeReasoning) putJsonArray("include") { add(ENCRYPTED_REASONING) }
         }
 
@@ -190,7 +195,10 @@ class ResponsesModel(
     }
 
     private fun httpError(status: Int, retryAfter: String?, body: String, err: ErrorBody?): ModelError =
-        err?.let { errorOf(it.code, it.message, it.param) } ?: ModelAccessErrors.of(status, body, model) ?: when {
+        err?.let { errorOf(it.code, it.message, it.param) }
+            // 账号登录已经核对过身份:没有认得出的错误代码的 403 是档位不够,不当成 Key 不对或某个模型没开通
+            ?: (if (status == 403 && accountLogin != null) ModelError.AccountPlanNotAllowed(accountLogin, err?.message.orEmpty().take(200)) else null)
+            ?: ModelAccessErrors.of(status, body, model) ?: when {
             status == 401 -> ModelError.Auth()
             status == 403 -> if (chatGptPlan) ModelError.ChatGptNotEligible(err?.message.orEmpty().take(200)) else ModelError.Auth()
             status == 429 -> if (chatGptPlan) ModelError.ChatGptLimitReached() else ModelError.RateLimited(HttpSupport.retryAfterMs(retryAfter))
@@ -260,7 +268,8 @@ private class ResponsesStream(
     }
 
     fun finish(): ModelReply {
-        val response = final ?: throw ModelError.Network(IOException("流式响应提前结束"))
+        // 没等到 response.completed / response.incomplete 是连接中途被断开
+        val response = final ?: throw ModelError.StreamCut()
         val output = items.ifEmpty { (response["output"] as? JsonArray)?.filterIsInstance<JsonObject>().orEmpty() }
         val reasoning = mutableListOf<JsonObject>()
         val thinking = StringBuilder()

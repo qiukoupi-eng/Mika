@@ -49,6 +49,21 @@ class ManifestProvidersTest {
         assertEquals("\${applicationId}.helper", p.getAttributeNS(androidNs, "authorities"))
     }
 
+    /** 电脑连接的服务对外开放只为让 adb shell 起它:普通 App 没有这个权限,起不了、也开关不了 USB 方式。 */
+    @Test
+    fun computerAccessServiceIsOnlyStartableWithShellLevelPermission() {
+        val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder().parse(File("src/main/AndroidManifest.xml"))
+        val services = doc.getElementsByTagName("service")
+        val s = (0 until services.length).map { services.item(it) as Element }
+            .single { it.getAttributeNS(androidNs, "name") == ".mcp.McpService" }
+        assertEquals("true", s.getAttributeNS(androidNs, "exported"))
+        assertEquals("android.permission.INTERACT_ACROSS_USERS_FULL", s.getAttributeNS(androidNs, "permission"))
+        assertEquals("specialUse", s.getAttributeNS(androidNs, "foregroundServiceType"))
+        // 没有 intent-filter:只能按组件名显式起
+        assertEquals(0, s.getElementsByTagName("intent-filter").length)
+    }
+
     /** 清单里登记的组件都按全名找得到类(搬了代码的入口留着同名的薄壳)。 */
     @Test
     fun everyComponentClassExists() {
@@ -97,6 +112,26 @@ class ManifestProvidersTest {
             .singleOrNull { it.getAttributeNS(androidNs, "name") == "android.hardware.camera" }
         assertTrue("uses-feature android.hardware.camera is missing", camera != null)
         assertEquals("false", camera!!.getAttributeNS(androidNs, "required"))
+    }
+
+    /**
+     * 兼容性自检的测试页对外开放只为让内置助手(shell)开它:调用方必须持有 INTERACT_ACROSS_USERS_FULL,普通 App 打不开;
+     * 没有 intent-filter,只能按组件名开;单独一个任务、不进最近任务。助手认的类名和清单一致。
+     */
+    @Test
+    fun selfCheckTargetIsOnlyStartableWithShellLevelPermission() {
+        val doc = DocumentBuilderFactory.newInstance().apply { isNamespaceAware = true }
+            .newDocumentBuilder().parse(File("src/main/AndroidManifest.xml"))
+        val activities = doc.getElementsByTagName("activity")
+        val a = (0 until activities.length).map { activities.item(it) as Element }
+            .single { it.getAttributeNS(androidNs, "name") == ".selfcheck.SelfCheckTargetActivity" }
+        assertEquals("true", a.getAttributeNS(androidNs, "exported"))
+        assertEquals("android.permission.INTERACT_ACROSS_USERS_FULL", a.getAttributeNS(androidNs, "permission"))
+        assertEquals(0, a.getElementsByTagName("intent-filter").length)
+        assertEquals(com.wangzan101.mika.cap.phone.shell.SystemIntents.OWN_PAGE_CLASS, "com.wangzan101.mika" + a.getAttributeNS(androidNs, "name"))
+        assertEquals("true", a.getAttributeNS(androidNs, "excludeFromRecents"))
+        assertTrue(a.hasAttributeNS(androidNs, "taskAffinity"))
+        assertEquals("", a.getAttributeNS(androidNs, "taskAffinity"))
     }
 
     /** 内置助手进程按这个全名启动。 */

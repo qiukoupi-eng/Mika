@@ -77,6 +77,32 @@ class ToolDispatcherWebTest {
         assertEquals(listOf("siteMode mobile"), web.calls)
     }
 
+    @Test fun keepOpenMarksThePageAndSaysSo() = runTest {
+        val web = FakeWebPort()
+        val t = d(web = web)
+        // 没有留页的那一份:报不可用,不假装留下了
+        assertEquals("keep_open_unavailable", t.execute(call("web_keep_open", """{"reason":"接着播放"}""")).content.s("error"))
+        web.keepAvailable = true
+        val r = t.execute(call("web_keep_open", """{"reason":"接着播放"}""")).content
+        assertEquals("true", r.s("ok")); assertEquals("true", r.s("keep")); assertEquals("shop.example.com", r.s("site")); assertEquals("2", r.s("hours"))
+        assertFalse("replaces" in r)
+        // 已经留着别的网站的一页:说明那一页会被关掉
+        web.keptHost = "course.example.org"
+        val replaced = t.execute(call("web_keep_open", """{"reason":"接着播放"}""")).content
+        assertEquals("course.example.org", replaced.s("replaces"))
+        assertTrue(replaced.s("hint")!!.contains("course.example.org"))
+        // 撤销
+        val back = t.execute(call("web_keep_open", """{"reason":"不用了","keep":false}""")).content
+        assertEquals("false", back.s("keep")); assertFalse("hours" in back)
+        assertEquals(listOf("keepOpen true 接着播放", "keepOpen true 接着播放", "keepOpen false 不用了"), web.calls)
+        // 用户自己的页面不用留;崩了的报 tab_crashed;缺理由是参数错
+        web.usersPage = true
+        assertEquals("users_page", t.execute(call("web_keep_open", """{"reason":"x"}""")).content.s("error"))
+        web.usersPage = false; web.crash = true
+        assertEquals("tab_crashed", t.execute(call("web_keep_open", """{"reason":"x"}""")).content.s("error"))
+        assertEquals("invalid_arguments", t.execute(call("web_keep_open", "{}")).content.s("error"))
+    }
+
     @Test fun eachScreenHasItsOwnTools() = runTest {
         val phone = FakeScreen(); val web = FakeWebPort(); val t = d(phone, web)
         assertEquals(PHONE, t.surface)

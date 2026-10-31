@@ -46,6 +46,14 @@ class LazyWebPort(private val create: suspend () -> WebPort) : WebPort {
 
     override suspend fun navigate(url: String, newTab: Boolean): NavResult = built().navigate(url, newTab)
 
+    /** 现在就建好(任务开局就要用网页时,如借来了用户看着的页面);建不起来返回 false,下次用到时再试。 */
+    suspend fun prepare(): Boolean = try {
+        built()
+        true
+    } catch (e: WebTabCrashed) {
+        false
+    }
+
     // ---------- 没建之前:没有打开的网页 ----------
 
     override suspend fun snapshot(): ScreenSnapshot = port?.snapshot() ?: EMPTY
@@ -83,6 +91,7 @@ class LazyWebPort(private val create: suspend () -> WebPort) : WebPort {
     override suspend fun historyBack() = port?.historyBack() ?: NO_TAB
     override suspend fun setSiteMode(mobile: Boolean) = port?.setSiteMode(mobile)
     override suspend fun siteMode(): String? = port?.siteMode()
+    override suspend fun keepOpen(keep: Boolean, reason: String) = port?.keepOpen(keep, reason)
     override suspend fun idleScroll(fraction: Double): Boolean = port?.idleScroll(fraction) ?: false
     override suspend fun runScript(code: String, timeoutMs: Long, bridge: ScriptBridge): ScriptRun =
         port?.runScript(code, timeoutMs, bridge) ?: ScriptRun.Failed(NO_TAB_CODE, "No web page is open.")

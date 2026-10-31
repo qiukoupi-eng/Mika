@@ -160,6 +160,7 @@ class PersonalSkillFiles(dir: File) : PersonalSkills {
             createdAt = (meta?.get("createdAt") as? JsonPrimitive)?.longOrNull ?: 0L,
             outcomes = (meta?.get("outcomes") as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } ?: emptyList(),
             baseHash = str("baseHash"),
+            source = str("source"),
         )
     }
 
@@ -173,6 +174,7 @@ class PersonalSkillFiles(dir: File) : PersonalSkills {
             put("createdAt", s.createdAt)
             put("outcomes", JsonArray(s.outcomes.map(::JsonPrimitive)))
             s.baseHash?.let { put("baseHash", it) }
+            s.source?.let { put("source", it) }
         }
         atomicWrite(File(d, SKILL_FILE), s.markdown)
         atomicWrite(File(d, META), meta.toString())

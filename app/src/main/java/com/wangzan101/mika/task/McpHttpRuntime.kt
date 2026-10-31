@@ -14,7 +14,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * App 进程里的 MCP HTTP 传输:挂在 [McpTaskHub] 上,整任务经现有 [TaskService.startMcp] 走;
+ * App 进程里的 MCP HTTP 传输:挂在 [RemoteTaskHub] 上,整任务经现有 [TaskService.startMcp] 走;
  * 工具会话暂未接到真机能力(enableToolSessions=false),避免假屏幕进生产路径。
  * 默认只听 127.0.0.1;开关、端口、令牌在 [FeatureFlags]。
  */
@@ -44,7 +44,7 @@ class McpHttpRuntime(private val app: MikaApp) {
         try {
             val server = McpServer(
                 assemble = { error("tool sessions not wired on device") },
-                tasks = app.mcpTasks,
+                tasks = app.remoteTasks,
             )
             val transport = HttpMcpTransport(
                 server,

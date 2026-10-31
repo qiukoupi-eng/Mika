@@ -78,7 +78,7 @@ internal fun SkillsSection(vm: MemoryViewModel, ui: SkillsUi, pending: Boolean) 
             if (ui.installed.isEmpty()) EmptyNote(stringResource(R.string.skills_empty))
             ui.installed.forEachIndexed { i, s ->
                 val state = when { s.suspended -> stringResource(R.string.skills_suspended); s.trial -> stringResource(R.string.skills_trial); else -> null }
-                val detail = listOfNotNull(state, s.recent.takeIf { it.isNotEmpty() }?.let { stringResource(R.string.skills_recent, it.joinToString(" · ")) }).joinToString(" · ")
+                val detail = listOfNotNull(stringResource(R.string.skills_user_created).takeIf { s.userCreated }, state, s.recent.takeIf { it.isNotEmpty() }?.let { stringResource(R.string.skills_recent, it.joinToString(" · ")) }).joinToString(" · ")
                 Column(Modifier.testTag("skill-row")) {
                     ListRow(null, s.display, s.description.ifBlank { null }, first = i == 0, detail = detail, onClick = { acting = s }) {
                         MikaSwitch(!s.suspended, { on -> if (on) vm.restoreSkill(s.name) else vm.suspendSkill(s.name) })
@@ -120,36 +120,40 @@ internal fun SkillsSection(vm: MemoryViewModel, ui: SkillsUi, pending: Boolean) 
     }
 }
 
-/** 一条 App 知识:点开看全文;草稿可收下试用,没核实的可归档。 */
+/** 一条 App 知识:点开看全文;草稿可收下试用,没核实的可归档;被试用中的修订暂时顶替的那份只看不动。 */
 @Composable
 private fun AppKnowledgeItem(vm: MemoryViewModel, row: AppKnowledgeRow, first: Boolean, expanded: Boolean, onToggle: () -> Unit) {
-    val stage = when (row.stage) {
-        AppKnowledgeStage.Draft -> tr(R.string.skills_draft_unused)
+    val stage = if (row.replaced) tr(R.string.skills_app_replaced) else when (row.stage) {
+        AppKnowledgeStage.Draft -> tr(if (row.revision) R.string.skills_app_revision else R.string.skills_app_addition)
         AppKnowledgeStage.Trial -> stringResource(R.string.skills_trial)
         AppKnowledgeStage.Verified -> tr(R.string.skills_verified)
         AppKnowledgeStage.Archived -> tr(R.string.skills_archived)
     }
     Column {
         ListRow(null, row.name, stage, first = first, onClick = onToggle)
-        if (expanded) Text(row.markdown, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp), style = MikaType.Hint, color = MikaTheme.colors.ink2)
+        ChangesAndText(row.changedLines, row.markdown, expanded)
         RowActions {
             MikaButton(if (expanded) stringResource(R.string.skills_hide_full) else stringResource(R.string.skills_view_full), onToggle, kind = ButtonKind.Tonal, size = ButtonSize.Small)
             if (row.stage == AppKnowledgeStage.Draft) MikaButton(stringResource(R.string.skills_accept_try), { vm.approveAppDraft(row.id) }, size = ButtonSize.Small)
-            if (row.stage != AppKnowledgeStage.Verified) MikaButton(stringResource(R.string.skills_archive), { vm.rejectAppDraft(row.id) }, kind = ButtonKind.Tonal, size = ButtonSize.Small)
+            if (row.stage != AppKnowledgeStage.Verified && !row.replaced) MikaButton(stringResource(R.string.skills_archive), { vm.rejectAppDraft(row.id) }, kind = ButtonKind.Tonal, size = ButtonSize.Small)
         }
     }
 }
 
 /** 技能行下面:更新草稿改了哪几行,展开时再加全文。 */
 @Composable
-private fun SkillBody(r: SkillRow, expanded: Boolean) {
+private fun SkillBody(r: SkillRow, expanded: Boolean) = ChangesAndText(r.changedLines, r.markdown, expanded)
+
+/** 一行下面:这份草稿改了哪几行([changed]),展开时再加全文。 */
+@Composable
+private fun ChangesAndText(changed: List<String>, markdown: String, expanded: Boolean) {
     val c = MikaTheme.colors
-    if (r.changedLines.isEmpty() && !expanded) return
+    if (changed.isEmpty() && !expanded) return
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) {
-        if (r.changedLines.isNotEmpty()) {
+        if (changed.isNotEmpty()) {
             Text(stringResource(R.string.skills_changed_lines), style = MikaType.Hint, color = c.ink3)
-            r.changedLines.forEach { Text(it, style = MikaType.Hint, color = if (it.startsWith("+")) c.ok else c.bad) }
+            changed.forEach { Text(it, style = MikaType.Hint, color = if (it.startsWith("+")) c.ok else c.bad) }
         }
-        if (expanded) Text(r.markdown, Modifier.padding(top = 6.dp), style = MikaType.Hint, color = c.ink2)
+        if (expanded) Text(markdown, Modifier.padding(top = 6.dp), style = MikaType.Hint, color = c.ink2)
     }
 }

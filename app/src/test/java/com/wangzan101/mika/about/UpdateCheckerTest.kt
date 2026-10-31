@@ -86,16 +86,6 @@ class UpdateCheckerTest {
         assertNull(c.state.value.update)
     }
 
-    /** 国内备用下载只从发布说明里那一行来。 */
-    @Test
-    fun mirrorComesFromReleaseNotes() = runTest {
-        github = MockResponse().setBody("""{"tag_name":"v0.3.0","body":"- 新东西\n国内备用下载: https://pan.example.cn/s/z","assets":[]}""")
-        val c = checker()
-        c.check(manual = true)
-        assertEquals("https://pan.example.cn/s/z", c.state.value.update?.mirrorUrl)
-        assertEquals("- 新东西", c.state.value.update?.notes)
-    }
-
     @Test
     fun manualFailureIsReported() = runTest {
         val c = checker()

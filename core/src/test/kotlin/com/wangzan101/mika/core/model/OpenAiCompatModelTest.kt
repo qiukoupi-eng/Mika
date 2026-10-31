@@ -59,6 +59,52 @@ class OpenAiCompatModelTest {
         assertFalse(req.body.readUtf8().contains("\"tools\""))
     }
 
+    /**
+     * 非流式请求写明 `stream:false`、要一份 JSON;流式请求要 SSE。省掉 `stream` 时有的兼容端点(本地、局域网上的
+     * 自建服务一类)照样回 SSE,客户端按 JSON 解析就只看到 `data: …`。
+     */
+    @Test fun nonStreamRequestAsksForJsonInsteadOfEvents() = runTest {
+        server.enqueue(ok("""{"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}"""))
+        model().complete("s", user, emptyList())
+        val req = server.takeRequest()
+        assertTrue(req.body.readUtf8().contains("\"stream\":false"))
+        assertEquals("application/json", req.getHeader("Accept"))
+    }
+
+    /** 服务端不听 `stream:false`、照样回 SSE 时:按流读完再拼,不当成坏 JSON。 */
+    @Test fun readsEventStreamReplyToANonStreamRequest() = runTest {
+        val events = listOf(
+            """{"choices":[{"delta":{"content":"先看"}}]}""",
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"phone_tap","arguments":"{\"ref\":\"a1\"}"}}]},"finish_reason":"tool_calls"}]}""",
+            "[DONE]",
+        )
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", "text/event-stream")
+                .setBody(events.joinToString("") { "data: $it\n\n" }),
+        )
+        val r = model().complete("s", user, tools)
+        assertEquals(listOf(Part.Text("先看"), Part.ToolCall("c1", "phone_tap", """{"ref":"a1"}""")), r.parts)
+        assertEquals(StopReason.ToolUse, r.stopReason)
+    }
+
+    /** 整份回复已经收全,只是没发 `[DONE]`:照常说完,不当成流提前断了。 */
+    @Test fun eventStreamWithoutDoneStillFinishes() = runTest {
+        server.enqueue(
+            MockResponse().setHeader("Content-Type", "text/event-stream")
+                .setBody("data: {\"choices\":[{\"delta\":{\"content\":\"好\"},\"finish_reason\":\"stop\"}]}\n\n"),
+        )
+        val r = model().complete("s", user, emptyList())
+        assertEquals(listOf(Part.Text("好")), r.parts)
+        assertEquals(StopReason.EndTurn, r.stopReason)
+    }
+
+    /** 没有参数的工具,有的适配器给 `""`:当成 `{}`,免得调用方按 JSON 解析失败。 */
+    @Test fun blankToolCallArgumentsBecomeEmptyObject() = runTest {
+        server.enqueue(ok("""{"choices":[{"finish_reason":"tool_calls","message":{"content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"get_time","arguments":""}}]}}]}"""))
+        val r = model().complete("s", user, tools)
+        assertEquals(Part.ToolCall("c1", "get_time", "{}"), r.parts.filterIsInstance<Part.ToolCall>().single())
+    }
+
     @Test fun readsReasoningContent() = runTest {
         server.enqueue(ok("""{"choices":[{"finish_reason":"stop","message":{"content":"ok","reasoning_content":"想一想"}}]}"""))
         val r = model().complete("s", user, emptyList())
@@ -99,6 +145,10 @@ class OpenAiCompatModelTest {
         assertTrue(errorFor(MockResponse().setResponseCode(403).setBody("""{"error":{"code":"insufficient_quota"}}""")) is ModelError.QuotaExceeded)
         val rl = errorFor(MockResponse().setResponseCode(429).setHeader("retry-after", "2")) as ModelError.RateLimited
         assertEquals(2000L, rl.retryAfterMs)
+        assertTrue(errorFor(MockResponse().setResponseCode(429).setBody("""{"error":{"message":"Rate limit reached, limit: 60"}}""")) is ModelError.RateLimited)
+        // 这个模型额度为零(Gemini 的 OpenAI 兼容入口回数组):换模型才行
+        val zero = errorFor(MockResponse().setResponseCode(429).setBody("""[{"error":{"code":429,"message":"Quota exceeded for metric: free_tier_requests, limit: 0","status":"RESOURCE_EXHAUSTED"}}]"""))
+        assertTrue(zero is ModelError.ModelNotAvailable)
         assertTrue(errorFor(MockResponse().setResponseCode(400).setBody("context_length_exceeded")) is ModelError.ContextTooLong)
         assertTrue(errorFor(MockResponse().setResponseCode(400).setBody("exceeds the maximum context")) is ModelError.ContextTooLong)
         assertEquals("m", (errorFor(MockResponse().setResponseCode(404)) as ModelError.ModelNotFound).model)
@@ -283,5 +333,29 @@ class OpenAiCompatModelTest {
         server.enqueue(ok("""{"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}"""))
         model().complete("SYS", user, emptyList())
         assertFalse(body().toString().contains("cache_control"))
+    }
+
+    @Test fun sendsReasoningEffortOnlyWhenChosen() = runTest {
+        val reply = """{"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}"""
+        server.enqueue(ok(reply))
+        OpenAiCompatModel(server.url("/v1").toString().trimEnd('/'), "sk-x", "m", caps(), OkHttpClient(), reasoningEffort = "high")
+            .complete("s", user, emptyList())
+        assertEquals("high", body()["reasoning_effort"]!!.jsonPrimitive.content)
+
+        server.enqueue(ok(reply))
+        model().complete("s", user, emptyList())
+        assertFalse(body().containsKey("reasoning_effort"))
+    }
+
+    // 插话打断后:半截回复是一条只有文字的 assistant 消息,不带调用和思考字段;后面两条 user 消息各自原样发出
+    @Test fun interruptedReplyIsAPlainAssistantMessageBeforeTheSteer() = runTest {
+        server.enqueue(ok("""{"choices":[{"finish_reason":"stop","message":{"content":"好"}}]}"""))
+        model().complete("s", InterruptedHistory.messages, emptyList())
+        val msgs = body()["messages"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("system", "user", "assistant", "user", "user"), msgs.map { it["role"]!!.jsonPrimitive.content })
+        assertEquals(setOf("role", "content"), msgs[2].keys)
+        assertEquals(InterruptedHistory.PARTIAL, msgs[2]["content"]!!.jsonPrimitive.content)
+        assertEquals(InterruptedHistory.STEER, msgs[3]["content"]!!.jsonPrimitive.content)
+        assertEquals(InterruptedHistory.RUNTIME, msgs[4]["content"]!!.jsonPrimitive.content)
     }
 }

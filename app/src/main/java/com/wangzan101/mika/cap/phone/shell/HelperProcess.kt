@@ -16,6 +16,10 @@ import android.os.Looper
 import android.os.Process
 import android.util.Log
 import com.wangzan101.mika.core.shell.HelperHandoff
+import com.wangzan101.mika.core.shell.HelperRestorePolicy
+import com.wangzan101.mika.core.shell.PermissionCommands
+import com.wangzan101.mika.core.shell.RestoreCommands
+import com.wangzan101.mika.core.shell.RestoreWish
 import java.io.File
 import java.lang.reflect.Proxy
 import kotlin.system.exitProcess
@@ -27,7 +31,8 @@ import kotlin.system.exitProcess
  * (见 [HelperHandoff.usbScript])。
  *
  * 特权逻辑全在 [ShellService];这里只负责把它的 Binder 交给 Mika,并且在 Mika 进程结束后不退出:
- * 撤掉 Mika 留下的改动,等 Mika 再起来时重新交接。
+ * 撤掉 Mika 留下的改动,等 Mika 再起来时重新交接。Mika 死后一会儿还没回来、而它交来的心愿([RestoreWish])要拉起来时,
+ * 把它的无障碍服务写回系统列表,再经交接用的 provider 把它的进程拉起来(见 [HelperRestorePolicy])。
  */
 object HelperProcess {
     private const val TAG = "MikaHelper"
@@ -74,6 +79,21 @@ object HelperProcess {
         /** Mika 进程交给我们的令牌;为 null 表示 Mika 现在不在。 */
         private var appToken: IBinder? = null
         private var retrying = false
+        /** Mika 最后交来的心愿;助手刚起来时什么都不做。 */
+        private var wish = RestoreWish.NONE
+        private val restorePolicy = HelperRestorePolicy()
+        /** 每次 Mika 死去加一:等的这一会儿里 Mika 回来又死了,前一次的等待作废。 */
+        private var deaths = 0
+
+        init {
+            service.onRestoreWish = { flags ->
+                worker.post {
+                    val next = RestoreWish.fromFlags(flags)
+                    if (next != wish) Log.i(TAG, "restore wish: $next")
+                    wish = next
+                }
+            }
+        }
 
         fun start(launchNonce: String) = worker.post {
             when (deliver(launchNonce)) {
@@ -124,6 +144,11 @@ object HelperProcess {
                     putInt(HelperHandoff.KEY_UID, Process.myUid())
                     putInt(HelperHandoff.KEY_PID, Process.myPid())
                     putString(HelperHandoff.KEY_APK, System.getProperty("java.class.path"))
+                    restorePolicy.report(System.currentTimeMillis()).takeUnless { it.empty }?.let { r ->
+                        putLong(HelperHandoff.KEY_RESTORED_AT, r.lastRestoredAtMs)
+                        putInt(HelperHandoff.KEY_RESTORES, r.recent)
+                        putLong(HelperHandoff.KEY_GAVE_UP_AT, r.gaveUpAtMs)
+                    }
                 }
                 val call = provider.javaClass.methods.first {
                     it.name == "call" && it.parameterTypes.size == 5 && it.parameterTypes[0] == AttributionSource::class.java
@@ -166,6 +191,43 @@ object HelperProcess {
                 exitProcess(0)
             }
             Log.i(TAG, "$packageName died; waiting for it to come back")
+            val death = ++deaths
+            worker.postDelayed({ if (death == deaths) maybeRestore() }, HelperRestorePolicy.GRACE_MS)
+        }
+
+        /**
+         * Mika 死了一会儿还没回来:按它最后交来的心愿决定拉不拉。拉的话先写回无障碍服务(被强行停止时系统会把它拿掉),
+         * 再重新交接:拿 Mika 的 provider 时系统会把它的进程起来(provider 不受后台启动限制,也不显示界面),
+         * Application 照常创建,胶囊和别的服务跟着起来。shell 能拿任意 App 的 provider(`content` 命令用的同一条路)。
+         */
+        private fun maybeRestore() {
+            val now = System.currentTimeMillis()
+            when (val d = restorePolicy.decide(wish, appBack = appToken != null || retrying, now)) {
+                HelperRestorePolicy.Decision.Restore -> Unit
+                HelperRestorePolicy.Decision.AppBack -> return
+                else -> {
+                    Log.i(TAG, "not restoring $packageName: $d")
+                    return
+                }
+            }
+            Log.i(TAG, "restoring $packageName (${restorePolicy.report(now).recent} in the last window)")
+            if (wish.accessibility) restoreAccessibility()
+            retrying = true
+            redeliver(0)
+        }
+
+        /** 把 Mika 的无障碍服务追加回系统列表、打开总开关;别的服务不动。失败只记日志,照样去拉 Mika(它起来后自己还会修)。 */
+        private fun restoreAccessibility() {
+            val me = PermissionCommands.accessibilityService(packageName)
+            val current = service.runCommand(PermissionCommands.READ_ACCESSIBILITY).getString("output")
+            for (cmd in RestoreCommands.accessibility(current, me)) {
+                val r = service.runCommand(cmd)
+                if (r.getInt("exitCode", -1) != 0) {
+                    Log.w(TAG, "restore accessibility: '$cmd' failed: ${r.getString("output")?.trim()}")
+                    return
+                }
+            }
+            Log.i(TAG, "accessibility service of $packageName written back")
         }
 
         @SuppressLint("DiscouragedPrivateApi")

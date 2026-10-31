@@ -70,7 +70,11 @@ object PermissionCommands {
     const val READ_ACCESSIBILITY = "settings get secure enabled_accessibility_services"
     const val EXIT_MARK = "__mika_exit="
 
-    fun accessibilityService(pkg: String) = "$pkg/.a11y.MikaAccessibilityService"
+    fun accessibilityService(pkg: String): String {
+        // 包名(applicationId)可能带后缀(并存安装的版本),服务类却仍在 App 的命名空间里:包名是类名前缀时用简写,否则写完整类名
+        val service = "com.wangzan101.mika.a11y.MikaAccessibilityService"
+        return "$pkg/${if (service.startsWith("$pkg.")) service.removePrefix(pkg) else service}"
+    }
     fun grantWriteSecureSettings(pkg: String) = "pm grant $pkg $WRITE_SECURE_SETTINGS"
     fun revokeWriteSecureSettings(pkg: String) = "pm revoke $pkg $WRITE_SECURE_SETTINGS"
     fun whitelistAdd(pkg: String) = "cmd deviceidle whitelist +$pkg"

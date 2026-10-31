@@ -308,4 +308,134 @@ class PhoneSetupFlowTest {
         assertEquals(BuiltinShellStatus.NotPaired, fake.status.value)
         assertEquals(listOf("discover", "pair 123456 40000", "retry", "unpair"), fake.calls)
     }
+
+    // ---------- 「改用电脑启动」只在需要时给 ----------
+
+    private val atWireless = switchesOn.copy(wirelessDebugging = false)
+
+    @Test
+    fun usbFallbackIsHiddenInTheNormalFlow() {
+        // 正常一路走下来:每一步、正在连接、成功,都不给
+        listOf(
+            fresh, fresh.copy(developerOptions = true), atWireless, switchesOn,
+            switchesOn.copy(discovery = PairingDiscovery.Found(37000)),
+            switchesOn.copy(status = BuiltinShellStatus.Connecting),
+            switchesOn.copy(status = BuiltinShellStatus.Running),
+            switchesOn.copy(status = BuiltinShellStatus.Failed(BuiltinShellFailure.WrongCode)),
+            switchesOn.copy(status = BuiltinShellStatus.Failed(BuiltinShellFailure.NoWifi)),
+        ).forEach { assertFalse(it.toString(), PhoneSetupFlow.view(it).usbFallback) }
+        // 停了一会儿但没到时限也不给
+        assertFalse(PhoneSetupFlow.view(atWireless.copy(stalledMs = PhoneSetupFlow.STALL_MS - 1)).usbFallback)
+    }
+
+    @Test
+    fun usbFallbackWhenTheSystemHasNoWirelessDebugging() {
+        assertTrue(PhoneSetupFlow.view(atWireless.copy(wirelessMissing = true)).usbFallback)
+        // 前两步(开发者选项、USB 调试)电脑启动也要用,没做完时先不给
+        assertFalse(PhoneSetupFlow.view(fresh.copy(wirelessMissing = true)).usbFallback)
+        // 成功了就不给
+        assertFalse(PhoneSetupFlow.view(switchesOn.copy(wirelessMissing = true, status = BuiltinShellStatus.Running)).usbFallback)
+    }
+
+    @Test
+    fun usbFallbackWhenTheUserCannotFindIt() {
+        assertTrue(PhoneSetupFlow.view(atWireless.copy(usbAsked = true)).usbFallback)
+        // 出现过就留着:之后开始连接也还在
+        assertTrue(PhoneSetupFlow.view(switchesOn.copy(usbAsked = true, status = BuiltinShellStatus.Connecting)).usbFallback)
+        // 点回第一步重做时不给
+        assertFalse(PhoneSetupFlow.view(atWireless.copy(usbAsked = true, revisit = SetupStep.DeveloperOptions)).usbFallback)
+    }
+
+    @Test
+    fun usbFallbackAfterStallingWhereTheSystemShouldAnswer() {
+        val stalled = PhoneSetupFlow.STALL_MS
+        assertEquals(SetupStep.WirelessDebugging, PhoneSetupFlow.stallPoint(PhoneSetupFlow.view(atWireless)))
+        assertTrue(PhoneSetupFlow.view(atWireless.copy(stalledMs = stalled)).usbFallback)
+        // 配对一步一直找不到配对窗口(系统没有配对服务)
+        assertEquals(SetupStep.PairingCode, PhoneSetupFlow.stallPoint(PhoneSetupFlow.view(switchesOn)))
+        assertTrue(PhoneSetupFlow.view(switchesOn.copy(stalledMs = stalled)).usbFallback)
+        // 找到配对窗口后是在等用户填码,不算卡住
+        val found = switchesOn.copy(discovery = PairingDiscovery.Found(37000))
+        assertNull(PhoneSetupFlow.stallPoint(PhoneSetupFlow.view(found)))
+        assertFalse(PhoneSetupFlow.view(found.copy(stalledMs = stalled)).usbFallback)
+        // 一直在自动连接
+        val connecting = switchesOn.copy(status = BuiltinShellStatus.Connecting)
+        assertEquals(SetupStep.Connect, PhoneSetupFlow.stallPoint(PhoneSetupFlow.view(connecting)))
+        assertTrue(PhoneSetupFlow.view(connecting.copy(stalledMs = stalled)).usbFallback)
+        // 前面几步要用户自己去找,花多久都不算
+        assertNull(PhoneSetupFlow.stallPoint(PhoneSetupFlow.view(fresh)))
+        assertFalse(PhoneSetupFlow.view(fresh.copy(stalledMs = stalled * 10)).usbFallback)
+    }
+
+    @Test
+    fun usbFallbackAfterFailuresThatMeanWirelessDoesNotWork() {
+        listOf(BuiltinShellFailure.PairingWindowClosed, BuiltinShellFailure.ConnectFailed, BuiltinShellFailure.UsbHelperStopped).forEach { f ->
+            val v = PhoneSetupFlow.view(switchesOn.copy(status = BuiltinShellStatus.Failed(f)))
+            assertEquals(SetupPhase.Failed, v.phase)
+            assertTrue(f.name, v.usbFallback)
+        }
+        // 用户说开了无线调试,助手却读到关着、不去连
+        val claimed = atWireless.copy(confirmed = setOf(SetupStep.WirelessDebugging), wirelessDebugging = null, status = BuiltinShellStatus.WirelessDebuggingOff)
+        val v = PhoneSetupFlow.view(claimed)
+        assertEquals(SetupStep.WirelessDebugging, v.suspect?.step)
+        assertTrue(v.usbFallback)
+    }
+
+    /** 只用 USB 命令起过的助手(这台手机可能根本没有能用的无线调试),无线调试读到关着。 */
+    private val usbOnly = switchesOn.copy(wirelessDebugging = false, restart = HelperRestart.UsbCommand)
+
+    /** 助手在运行:成功,无线调试和配对两步记作跳过,哪儿都不提无线调试。 */
+    @Test
+    fun usbStartedHelperRunningIsSuccessWithWirelessStepsSkipped() {
+        val v = PhoneSetupFlow.view(usbOnly.copy(status = BuiltinShellStatus.Running))
+        assertEquals(SetupPhase.Success, v.phase)
+        assertEquals(StepMark.Skipped, v.marks[SetupStep.WirelessDebugging])
+        assertEquals(StepMark.Skipped, v.marks[SetupStep.PairingCode])
+        assertEquals(StepMark.Done, v.marks[SetupStep.Connect])
+        assertEquals(HelperRestart.UsbCommand, v.restart)
+        assertFalse(v.usbFallback)
+    }
+
+    /** 正在交接(助手换手、App 刚起来等它来):显示正在连接,不因为无线调试关着退回那一步。 */
+    @Test
+    fun handoverDoesNotFlipBackToWirelessStep() {
+        val v = PhoneSetupFlow.view(usbOnly.copy(status = BuiltinShellStatus.Connecting))
+        assertEquals(SetupPhase.Working, v.phase)
+        assertNull(v.current)
+        // 配对过的手机正在替用户打开无线调试、正在连时也一样
+        assertEquals(SetupPhase.Working, PhoneSetupFlow.view(atWireless.copy(status = BuiltinShellStatus.Connecting)).phase)
+        // 前面的开关真被关掉时照旧回那一步
+        assertEquals(SetupStep.UsbDebugging, PhoneSetupFlow.view(usbOnly.copy(usbDebugging = false, status = BuiltinShellStatus.Connecting)).current)
+    }
+
+    /** 助手停了:停在连接一步说它停了、给 USB 命令,不引去无线调试;想配对的人仍可以点回配对那一步。 */
+    @Test
+    fun usbHelperStoppedShowsTheCommandNotWirelessDebugging() {
+        val stopped = BuiltinShellStatus.Failed(BuiltinShellFailure.UsbHelperStopped)
+        val v = PhoneSetupFlow.view(usbOnly.copy(status = stopped))
+        assertEquals(SetupPhase.Failed, v.phase)
+        assertEquals(SetupStep.Connect, v.current)
+        assertEquals(stopped, v.failure)
+        assertEquals(BuiltinShellFix.RunUsbCommand, v.failure?.fix)
+        assertTrue(v.usbFallback)
+        assertNull(v.suspect)
+        assertEquals(StepMark.Skipped, v.marks[SetupStep.WirelessDebugging])
+        assertEquals(StepMark.Skipped, v.marks[SetupStep.PairingCode])
+        // 系统里根本没有无线调试一项时也一样
+        assertEquals(SetupStep.Connect, PhoneSetupFlow.view(usbOnly.copy(wirelessDebugging = null, wirelessMissing = true, status = stopped)).current)
+        // 点回配对一步:照常给配对
+        val back = PhoneSetupFlow.view(usbOnly.copy(wirelessDebugging = true, status = stopped, revisit = SetupStep.PairingCode))
+        assertEquals(SetupStep.PairingCode, back.current)
+        assertTrue(back.revisiting)
+    }
+
+    /** 配对过、能用无线调试的手机不受影响:无线调试关着、助手不在时照旧回到那一步(打开后自动连上)。 */
+    @Test
+    fun pairedPhoneStillGoesBackToWirelessStep() {
+        val v = PhoneSetupFlow.view(atWireless.copy(status = BuiltinShellStatus.WirelessDebuggingOff, restart = HelperRestart.Wireless))
+        assertEquals(SetupStep.WirelessDebugging, v.current)
+        assertEquals(SetupPhase.Guide, v.phase)
+        val ok = PhoneSetupFlow.view(switchesOn.copy(status = BuiltinShellStatus.Running, restart = HelperRestart.Wireless))
+        assertTrue(ok.markList().all { it == StepMark.Done })
+    }
 }

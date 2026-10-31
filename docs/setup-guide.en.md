@@ -6,7 +6,7 @@ This guide walks you through "Set up phone control" in Mika. No technical knowle
 
 ## Before you start
 
-- **What you need**: an Android phone running Android 13 or later (Mika installs on older versions but can't use apps there), connected to any Wi-Fi network (internet access not required, just being connected is enough).
+- **What you need**: an Android phone running Android 12 or later (Mika installs on Android 11 but can't use apps there; Android 14 or later recommended), connected to any Wi-Fi network (internet access not required, just being connected is enough).
 - **Why this is needed**: Mika uses apps for you on an invisible "background screen", so you can keep using your own screen. To do that, Mika borrows Android's built-in "Wireless debugging" to start a small built-in helper.
 - **Everything happens on the phone**: no computer, no cable.
 - **You do it once**: after pairing once, Mika connects by itself. Even if the system later turns wireless debugging off, Mika turns it back on, with your permission.
@@ -51,6 +51,8 @@ Some phones can't report these switches, or report them wrong: you've turned a s
 - It's on but Mika stays on this step: tap "I’ve turned it on, next" to continue.
 
 ## Step 2: Turn on USB debugging
+
+> Note: in Developer options, don't change any switch this guide doesn't mention. Setup only needs "USB debugging" here and "Wireless debugging" in step 4. Some switches can erase the phone: "Boot with 16 KB page size", for example, asks to erase all data on some phones. If you see a prompt to erase data, reformat or factory reset the phone, tap "Cancel", not "Erase all data".
 
 **In Mika**: tap "Open Developer options".
 
@@ -97,6 +99,8 @@ The only cost of skipping: in the next steps you type the 6-digit pairing code y
 
 > Note: "Allow restricted settings" only appears in the ⋮ menu **after you've tried once** to turn on accessibility and the system blocked it.
 
+If the system says "An app is obscuring a permission request" when you turn it on: close other apps' floating windows or bubbles (chat bubbles, floating buttons), then try again.
+
 ## Step 4: Turn on Wireless debugging
 
 **First make sure the phone is on Wi-Fi** (internet access not required).
@@ -117,6 +121,7 @@ The only cost of skipping: in the next steps you type the 6-digit pairing code y
 
 - The switch turns itself off again: usually the phone isn't on Wi-Fi, or "Allow" wasn't tapped in the dialog. Join Wi-Fi and try again.
 - The switch is on but Mika stays on this step: some phones don't report this switch. Tap "I’ve turned it on, next" to continue.
+- There's no "Wireless debugging" in Developer options at all: tap "Can’t find Wireless debugging?" in this step and start it from a computer instead (see [Another way](#another-way-start-it-from-a-computer-usb-cable) below).
 
 ## Step 5: Pair with a code
 
@@ -188,7 +193,7 @@ If pairing or connecting fails, Mika uses what it could read to say which earlie
 
 ## Another way: start it from a computer (USB cable)
 
-If wireless pairing doesn't work, or you'd like an AI agent on your computer to set things up, you can start the same built-in helper from a computer with adb over a USB cable:
+If wireless pairing doesn't work (some vendor ROMs have no working "Wireless debugging" at all), or you'd like an AI agent on your computer to set things up, you can start the same built-in helper from a computer with adb over a USB cable:
 
 1. Open Mika on the phone once (Mika prepares the start file).
 2. Do steps 1 and 2 (Developer options, USB debugging) and connect the phone to the computer with a cable; when the phone asks whether to allow USB debugging, tap "Allow".
@@ -198,11 +203,13 @@ If wireless pairing doesn't work, or you'd like an AI agent on your computer to 
 adb shell sh /sdcard/Android/data/com.wangzan101.mika/files/usb-start.sh
 ```
 
-When you see `Mika helper starting...`, go back to Mika and check that "Phone control" shows ready. You can unplug the cable afterwards. The same command, with a "Copy" button, is under "Use a computer instead (USB)" at the bottom of the wizard.
+When you see `Mika helper starting...`, go back to Mika and check that "Phone control" shows ready. What matters is that the command runs as adb's shell user, not that it comes from a computer: if the phone already has another channel that runs adb shell commands, running the same script through it works too. You can unplug the cable afterwards. The wizard doesn't show this option all the time. The same command, with a "Copy" button, appears in the current step as "Can’t use Wireless debugging on this phone? Start from a computer instead" when it's needed: the phone has no Wireless debugging, you tapped "Can’t find Wireless debugging?" in step 4, pairing or connecting failed, or the wizard has been waiting on step 4, step 5 (before the pairing window is found) or "Connect automatically" for about 45 seconds.
 
 Good to know:
 
-- **Run it again after a phone restart.** A helper started this way is gone after a restart; without wireless pairing Mika can't start it by itself and shows "Phone helper stopped". To have it come back by itself after a restart, pair wireless debugging once (steps 4 and 5).
+- **Run it again after a phone restart.** A helper started this way is gone after a restart and doesn't come back by itself. Without wireless pairing Mika can't start it either, so it shows "Phone helper stopped", and "Set up phone control" shows this command with a "Copy" button instead of sending you to look for Wireless debugging. After a restart, open Mika once (it prepares a fresh start file), then run the same command.
+- If the phone has a working "Wireless debugging", pairing once (steps 4 and 5) lets Mika reconnect by itself after restarts, with no computer. Phones without it need the command after every restart.
+- After starting this way, steps 4 and 5 show as "Skipped" in the wizard, and Mika doesn't ask you to turn on Wireless debugging while the helper is connected.
 - If it says `Mika helper did not start` or `is not running`, open Mika once, then run the same command again.
 - After a Mika update, also open Mika once before running it.
 - The start file holds a one-time code only while the helper isn't connected, and the code stops working once used; while the helper is connected, the file only says it's already running.
@@ -234,7 +241,14 @@ Good to know:
 | "Wireless debugging isn't allowed on this Wi-Fi yet" | Turn on "Wireless debugging" once yourself; in the dialog, tick "Always allow on this network" and tap "Allow". |
 | "Not connected to Wi-Fi" | Join any Wi-Fi network (internet access not required); Mika resumes by itself. |
 | "Pairing expired" | Pair again. Turn on "Disable adb authorization timeout" in Developer options so it won't expire again. |
-| "Phone helper stopped" | The helper was started from a computer and stopped when the phone restarted. Run `adb shell sh /sdcard/Android/data/com.wangzan101.mika/files/usb-start.sh` on the computer again, or pair wireless debugging once so it comes back by itself after restarts. |
+| "Phone helper stopped" | The helper was started with the USB start command and doesn't come back by itself after a phone restart. Open Mika once, then run `adb shell sh /sdcard/Android/data/com.wangzan101.mika/files/usb-start.sh` again (you can copy it in "Set up phone control"). If the phone has a working "Wireless debugging", you can also pair once so it comes back by itself after restarts. |
 | Mika's accessibility switch is greyed out / "Restricted setting" | Recommended: skip that step; Mika turns it on after pairing. To do it by hand: try turning it on once so the system blocks it, then go to Settings › Apps › Mika, tap ⋮ at the top right › Allow restricted settings, and go back to Accessibility settings to turn Mika on. |
 | Accessibility still off after pairing | Check that "Turn on accessibility for me" in Settings › Recovery & repair is on, and wait a few seconds; if it's still off, turn it on by hand as in the row above. |
+| "An app is obscuring a permission request" when turning on accessibility | Close other apps' floating windows or bubbles (chat bubbles, floating buttons), then go back to Accessibility settings and turn Mika on. |
 | Stuck and nothing above fits | Tap "Copy diagnostics" at the bottom of the wizard (also inside the failed step, and under About Mika › Send feedback). Look it over, then tap "Copy" or "Share" and send it to the author (WeChat or a GitHub issue). It has the version, phone model, the state of each step and the last error — no API keys, chat content or screen content. |
+
+## Set up but not working well: run the compatibility self-check
+
+Pairing and connecting worked, but tasks can't open apps, taps don't land, or things freeze after a while? Open Settings › Recovery & repair › **Compatibility self-check** and tap "Start". In about 1 minute Mika opens its own test page and system Settings (look only, no taps) on its own virtual display, tries reading the screen, tapping, typing, scrolling and going back, then checks the built-in browser and the sandbox. It doesn't touch your other apps, doesn't change settings and doesn't use the network. Please stay on that page while it runs.
+
+Each check shows pass, partial, failed or skipped, and the ones that didn't pass say why and what to do next. When it finishes, tap "Report on GitHub": the report is copied and the "Device compatibility report" issue page opens; paste the report into "Self-check report" and submit. The report only has the phone model, system version and the result of each check, with no accounts, app lists or your content. You can read it before posting.

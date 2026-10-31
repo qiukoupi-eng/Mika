@@ -1,5 +1,6 @@
 package com.wangzan101.mika.ui
 
+import com.wangzan101.mika.core.cap.web.AttachedPage
 import com.wangzan101.mika.R
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
@@ -38,13 +39,16 @@ object ChatCopy {
         exchanges.firstOrNull { it.goal.isNotBlank() }?.goal?.let(::plainTitle).orEmpty()
 
     /**
-     * 一句用户的话当标题怎么写:去掉附件那几行(只发了附件时是「照片」「合同.pdf」之类)和屏幕那一行(只发了屏幕时是「你此刻的屏幕」),
+     * 一句用户的话当标题怎么写:去掉网页说明([AttachedPage])、引用([QuoteMessage])、附件那几行(只发了附件时是「照片」「合同.pdf」之类)和屏幕那一行(只发了屏幕时是「你此刻的屏幕」),
      * 只取第一行。
      */
     fun plainTitle(text: String): String =
-        ScreenCopy.plain(AttachmentMessage.plain(text)).lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
+        ScreenCopy.plain(AttachmentMessage.plain(QuoteMessage.words(AttachedPage.words(text)))).lineSequence().firstOrNull { it.isNotBlank() }?.trim().orEmpty()
 
-    enum class Tone { Accent, Warn }
+    enum class Tone { Accent, Warn, Ok }
+
+    /** 顶栏副标题:这个对话留着一页在后台运行(没有任务在跑时)。 */
+    val KEPT_PAGE: String get() = tr(R.string.kept_chat_sub)
 
     /** 顶栏副标题:正在做什么(强调色)或等你(橙色);没有任务在跑时为 null。[place] 是正在操作的 App 或网站。 */
     fun subtitle(ex: Exchange?, place: String?): Pair<String, Tone>? = when (ex?.status) {

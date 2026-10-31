@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.model
 
+import com.wangzan101.mika.core.agent.RetryPolicy
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -136,9 +137,9 @@ class ResponsesModelTest {
         assertEquals(listOf(Part.Text("半")), reply.parts)
     }
 
-    @Test fun streamEndingBeforeCompletedIsANetworkFailure() = runTest {
+    @Test fun streamEndingBeforeCompletedIsARetryableCut() = runTest {
         server.enqueue(stream("""{"type":"response.output_text.delta","delta":"半"}"""))
-        expect<ModelError.Network> { model().complete("s", user, emptyList()) }
+        assertTrue(RetryPolicy.transient(expect<ModelError.StreamCut> { model().complete("s", user, emptyList()) }))
     }
 
     @Test fun usageErrorsInsideTheStreamAreMapped() = runTest {
@@ -147,6 +148,18 @@ class ResponsesModelTest {
         server.enqueue(stream("""{"type":"response.failed","response":{"error":{"code":"subscription_sharing_usage_unavailable","message":"later"}}}"""))
         val e = expect<ModelError.Server> { model(plan = true).complete("s", user, emptyList()) }
         assertEquals(503, e.status)
+    }
+
+    /** 用账号登录(如 xAI)时 403 是订阅档位不够:说清楚、不当成 Key 不对;不用账号登录的 403 照旧。 */
+    @Test fun accountLogin403MeansThePlanCannotUseThisApi() = runTest {
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":{"code":"permission_denied","message":"tier"}}"""))
+        val account = ResponsesModel(server.url("/v1").toString().trimEnd('/'), BearerToken.fixed("k"), "grok-4", caps, OkHttpClient(), accountLogin = "xAI")
+        val e = expect<ModelError.AccountPlanNotAllowed> { account.complete("s", user, emptyList()) }
+        assertEquals("xAI", e.account)
+        assertEquals("tier", e.detail)
+        assertFalse(RetryPolicy.transient(e))
+        server.enqueue(MockResponse().setResponseCode(403).setBody("{}"))
+        expect<ModelError.Auth> { model().complete("s", user, emptyList()) }
     }
 
     @Test fun planHttpErrorsAreNotRetryable() = runTest {
@@ -208,5 +221,18 @@ class ResponsesModelTest {
         }
         fail("expected ${T::class.simpleName}")
         throw AssertionError()
+    }
+
+    // 插话打断后:半截回复是一条 assistant message(output_text),前面没有 reasoning 项;插话和运行时状态是后面的 user message
+    @Test fun interruptedReplyIsAnAssistantMessageWithoutReasoningBeforeTheSteer() = runTest {
+        server.enqueue(stream(completed()))
+        model().complete("s", InterruptedHistory.messages, emptyList())
+        val input = sentBody()["input"]!!.jsonArray.map { it.jsonObject }
+        assertTrue(input.none { it["type"]!!.jsonPrimitive.content == "reasoning" })
+        assertEquals(listOf("user", "assistant", "user", "user"), input.map { it["role"]!!.jsonPrimitive.content })
+        val asst = input[1]["content"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(listOf("output_text"), asst.map { it["type"]!!.jsonPrimitive.content })
+        assertEquals(InterruptedHistory.PARTIAL, asst[0]["text"]!!.jsonPrimitive.content)
+        assertEquals(InterruptedHistory.STEER, input[2]["content"]!!.jsonArray[0].jsonObject["text"]!!.jsonPrimitive.content)
     }
 }

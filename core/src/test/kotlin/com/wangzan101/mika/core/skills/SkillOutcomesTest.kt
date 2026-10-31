@@ -43,25 +43,18 @@ class SkillOutcomesTest {
         assertNull(SkillOutcomes.resultOf(TaskState.Cancelled, RunOutcome.Unknown))
         assertEquals(SkillResult.verified, SkillOutcomes.resultOf(TaskState.Succeeded("ok", verified = true), RunOutcome.Done))
         assertEquals(SkillResult.unverified, SkillOutcomes.resultOf(TaskState.Succeeded("ok", verified = false, note = "x"), RunOutcome.Done))
+        // 判下来办成、没跑核查:和核实过一样算好(试用据此转正式)
+        assertEquals(SkillResult.verified, SkillOutcomes.resultOf(TaskState.Succeeded("ok", verified = false, reviewed = false), RunOutcome.Done))
+        assertEquals(SkillResult.unreviewed, SkillOutcomes.resultOf(TaskState.Succeeded("ok", verified = false, reviewed = false), RunOutcome.Unknown))
         assertEquals(SkillResult.verifier_rejected, SkillOutcomes.resultOf(TaskState.Failed("核查未通过:没发出去", FailKind.GaveUp), RunOutcome.Unknown))
         // 回答如实说没办成、只办了一部分:算失败;没判成:不算灵也不算不灵
         assertEquals(SkillResult.failed, SkillOutcomes.resultOf(TaskState.Succeeded("找不到这个菜单", verified = true), RunOutcome.NotPossible))
         assertEquals(SkillResult.failed, SkillOutcomes.resultOf(TaskState.Succeeded("只看了两条", verified = true), RunOutcome.Partial))
         assertEquals(SkillResult.unreviewed, SkillOutcomes.resultOf(TaskState.Succeeded("ok", verified = true), RunOutcome.Unknown))
         assertEquals(SkillResult.failed, SkillOutcomes.resultOf(TaskState.Failed("找不到", FailKind.GaveUp), RunOutcome.Unknown))
-    }
-}
-
-class SkillOutcomesInjectedTest {
-    private val s = personalSkill("wechat-msg")
-
-    @Test fun injectedOnlyNeedsTwoFailuresInARow() {
-        var cur = SkillOutcomes.record(s, SkillResult.verifier_rejected, followed = true, injectedOnly = true)
-        assertEquals(SkillStatus.active, cur.status)
-        cur = SkillOutcomes.record(cur, SkillResult.verified, followed = true, injectedOnly = true)
-        cur = SkillOutcomes.record(cur, SkillResult.failed, followed = true, injectedOnly = true)
-        assertEquals(SkillStatus.active, cur.status) // 不灵的两次不连着
-        cur = SkillOutcomes.record(cur, SkillResult.unverified, followed = true, injectedOnly = true)
-        assertEquals(SkillStatus.suspended, cur.status)
+        assertEquals(SkillResult.failed, SkillOutcomes.resultOf(TaskState.Failed("步数用完", FailKind.StepLimit), RunOutcome.Unknown))
+        // 模型出错、运行环境出问题、操作保护停下:说明不了技能或知识灵不灵
+        for (k in listOf(FailKind.Model, FailKind.Environment, FailKind.Guard))
+            assertEquals(k.name, SkillResult.unreviewed, SkillOutcomes.resultOf(TaskState.Failed("x", k), RunOutcome.Unknown))
     }
 }

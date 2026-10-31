@@ -15,8 +15,8 @@ import java.util.Locale
  */
 object PageLanguage {
     /**
-     * 语言标签(应带地区,如补全过的 en-Latn-US、zh-Hans-CN)对应的语言列表:带地区的写成「语言-地区,语言」,
-     * 文字体系不写(网站认 zh-CN 不认 zh-Hans-CN);没有地区的只写语言。别的语言不往后加。
+     * 语言标签(补全过的,如 en-Latn-US)对应的语言列表:带地区的写成「语言-地区,语言」,
+     * 文字体系不写(不少网站只认「语言-地区」);没有地区的只写语言。别的语言不往后加。
      * 只给列表、不写 q 值:内核按这份列表同时设 navigator.languages,并自己给请求头逐项加 q 值,写了会重复。
      */
     fun acceptLanguage(tag: String): String {

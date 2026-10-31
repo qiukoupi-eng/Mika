@@ -10,6 +10,11 @@ class ActivityQueryTest {
             listOf("cmd", "package", "query-activities", "--brief", "--user", "current", "-a", "android.intent.action.SEND", "-t", "text/plain", "-p", "a.b"),
             ActivityQuery.args("android.intent.action.SEND", type = "text/plain", packageName = "a.b"),
         )
+        // 另一份用户里的启动页:查那份用户
+        assertEquals(
+            listOf("cmd", "package", "query-activities", "--brief", "--user", "128", "-a", "android.intent.action.MAIN", "-c", "android.intent.category.LAUNCHER", "-p", "a.b"),
+            ActivityQuery.args("android.intent.action.MAIN", category = "android.intent.category.LAUNCHER", packageName = "a.b", user = "128"),
+        )
     }
 
     @Test

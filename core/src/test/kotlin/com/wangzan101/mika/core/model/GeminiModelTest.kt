@@ -23,9 +23,9 @@ class GeminiModelTest {
     @Before fun setUp() { server = MockWebServer().also { it.start() } }
     @After fun tearDown() { server.shutdown() }
 
-    private fun model(vision: Boolean = false) = GeminiModel(
+    private fun model(vision: Boolean = false, reasoningEffort: String? = null) = GeminiModel(
         server.url("/").toString().trimEnd('/'), "gk", "gemini-x",
-        Capabilities(true, vision, 1000000, false), OkHttpClient(),
+        Capabilities(true, vision, 1000000, false), OkHttpClient(), reasoningEffort = reasoningEffort,
     )
     private val user = listOf(Message(Role.User, listOf(Part.Text("hi")), Author.Mika))
     private fun ok(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
@@ -52,6 +52,20 @@ class GeminiModelTest {
     @Test fun usesIdWhenPresent() = runTest {
         server.enqueue(ok(cand("""[{"functionCall":{"id":"c9","name":"phone_tap","args":{}}}]""")))
         assertEquals(Part.ToolCall("c9", "phone_tap", "{}"), model().complete("s", user, emptyList()).parts[0])
+    }
+
+    @Test fun sendsThinkingLevelOnlyWhenChosen() = runTest {
+        server.enqueue(ok(cand("""[{"text":"ok"}]""")))
+        model(reasoningEffort = "medium").complete("s", user, emptyList())
+        val cfg = sentBody().obj("generationConfig").obj("thinkingConfig")
+        assertEquals("MEDIUM", cfg.str("thinkingLevel"))
+        assertEquals("true", cfg["includeThoughts"]!!.jsonPrimitive.content)
+
+        server.enqueue(ok(cand("""[{"text":"ok"}]""")))
+        model(reasoningEffort = "none").complete("s", user, emptyList())
+        val off = sentBody().obj("generationConfig").obj("thinkingConfig")
+        assertEquals("0", off["thinkingBudget"]!!.jsonPrimitive.content)
+        assertFalse(off.containsKey("thinkingLevel"))
     }
 
     @Test fun parsesThoughtParts() = runTest {
@@ -154,6 +168,12 @@ class GeminiModelTest {
         val rl = errorOf(429, err(429, "RESOURCE_EXHAUSTED", "slow down"), "Retry-After" to "3")
         assertEquals(3000L, (rl as ModelError.RateLimited).retryAfterMs)
         assertTrue(errorOf(429, err(429, "RESOURCE_EXHAUSTED", "You exceeded your current quota")) is ModelError.RateLimited)
+        // 这个模型的免费额度为零:等也没用,认成这个账号用不了这个模型,试调用时接着试下一个
+        val zero = errorOf(429, err(429, "RESOURCE_EXHAUSTED", "Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 0, model: gemini-x"))
+        assertTrue(zero is ModelError.ModelNotAvailable)
+        assertTrue(errorOf(404, err(404, "NOT_FOUND", "models/x is not found for API version v1beta, or is not supported for generateContent.")) is ModelError.ModelNotFound)
+        assertTrue(errorOf(400, err(400, "INVALID_ARGUMENT", "models/x is not found for API version v1beta, or is not supported for generateContent.")) is ModelError.ModelNotFound)
+        assertTrue(errorOf(404, err(404, "NOT_FOUND", "Gemini x is no longer available.")) is ModelError.ModelNotAvailable)
         assertTrue(errorOf(404, err(404, "NOT_FOUND", "models/x not found")) is ModelError.ModelNotFound)
         assertTrue(errorOf(403, err(403, "PERMISSION_DENIED", "Your project does not have access to model x")) is ModelError.ModelNotAvailable)
         assertEquals(503, (errorOf(503, err(503, "UNAVAILABLE", "busy")) as ModelError.Server).status)
@@ -213,5 +233,19 @@ class GeminiModelTest {
         val props = p.obj("properties")
         assertTrue(props.containsKey("additionalProperties")); assertTrue(props.containsKey("\$id"))
         assertFalse(props.obj("additionalProperties").containsKey("additionalProperties"))
+    }
+
+    // 插话打断后:半截回复是只有一段文字的 model 回合(没有 thought);插话和运行时状态并进下一个 user 回合,角色交替
+    @Test fun interruptedReplyIsATextOnlyModelTurnBeforeTheSteer() = runTest {
+        server.enqueue(ok(cand("""[{"text":"好"}]""")))
+        model().complete("s", InterruptedHistory.messages, emptyList())
+        val contents = sentBody().arr("contents").map { it.jsonObject }
+        assertEquals(listOf("user", "model", "user"), contents.map { it.str("role") })
+        val modelParts = contents[1].arr("parts").map { it.jsonObject }
+        assertEquals(1, modelParts.size)
+        assertEquals(setOf("text"), modelParts[0].keys)
+        assertEquals(InterruptedHistory.PARTIAL, modelParts[0].str("text"))
+        val texts = contents[2].arr("parts").map { it.jsonObject.str("text") }
+        assertEquals(listOf(InterruptedHistory.STEER, InterruptedHistory.RUNTIME), texts)
     }
 }

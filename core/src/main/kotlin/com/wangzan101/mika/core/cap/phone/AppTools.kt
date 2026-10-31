@@ -15,6 +15,7 @@ import com.wangzan101.mika.core.tool.ToolExecution
 import com.wangzan101.mika.core.tool.Verb
 import com.wangzan101.mika.core.tool.argStr
 import com.wangzan101.mika.core.tool.bool
+import com.wangzan101.mika.core.tool.int
 import com.wangzan101.mika.core.tool.ok
 import com.wangzan101.mika.core.tool.str
 import kotlinx.serialization.json.JsonArray
@@ -24,6 +25,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import com.wangzan101.mika.core.tool.LinkPolicy
+import com.wangzan101.mika.core.uistate.ActionResult
 import com.wangzan101.mika.core.uistate.action
 import com.wangzan101.mika.core.uistate.session
 
@@ -37,22 +39,23 @@ internal object ListApps : PhoneTool {
 
     override suspend fun execute(a: Args, ctx: ToolContext): ToolExecution {
         val apps = ctx.phone.screen.listApps()
-        val profiles = ctx.phone.screen.otherProfiles()
+        // 也装在分身、工作资料一类的另一份用户里的:每一份单列一项,带上打开它要用的 user
+        val copies = ctx.phone.screen.appCopies().groupBy { it.packageName }
         return ok {
             put("packages", JsonArray(apps.map { JsonPrimitive(it.first) }))
-            put("apps", JsonArray(apps.map { (p, l) -> buildJsonObject {
-                put("package", p); put("label", l)
-                // 也装在分身、工作资料一类的另一份用户里:打开时系统可能先问打开哪一个
-                profiles[p]?.takeIf { it.isNotEmpty() }?.let { put("alsoIn", JsonArray(it.map(::JsonPrimitive))) }
-            } }))
+            put("apps", JsonArray(apps.flatMap { (p, l) ->
+                listOf(buildJsonObject { put("package", p); put("label", l) }) +
+                    copies[p].orEmpty().map { c -> buildJsonObject { put("package", p); put("label", c.label(l)); put("user", c.userId) } }
+            }))
         }
     }
 
-    /** 列出的 App 名字不单独作证据,记下来给之后打开 App 的事实用。 */
+    /** 列出的 App 名字不单独作证据,记下来给之后打开 App 的事实用(另一份的名字不记,免得盖掉本来那份的)。 */
     override fun observations(o: JsonObject, r: ToolExecution, log: EvidenceLog): List<Observation> {
         if (r.content["ok"] != JsonPrimitive(true)) return emptyList()
         (r.content["apps"] as? JsonArray)?.forEach { a ->
             val o2 = a as? JsonObject ?: return@forEach
+            if ("user" in o2) return@forEach
             val p = (o2["package"] as? JsonPrimitive)?.contentOrNull ?: return@forEach
             (o2["label"] as? JsonPrimitive)?.contentOrNull?.let { log.appLabels[p] = it }
         }
@@ -70,28 +73,44 @@ internal object LaunchApp : PhoneTool {
     override val showsScreenAfter = true
     override val logged = true
     override val def = ToolDef("phone_launch_app", Prompts.tool("phone_launch_app"),
-        mapOf("package" to str("Exact package name, e.g. com.example.app."), "cold" to bool("Restart the app first (default false).")),
+        mapOf(
+            "package" to str("Exact package name, e.g. com.example.app."),
+            "cold" to bool("Restart the app first (default false)."),
+            "user" to int("Only to open another copy of the app (a clone or work-profile copy): the user value of that copy's phone_list_apps entry. Leave out for the main app.", min = 0, max = MAX_USER),
+        ),
         listOf("package"))
 
     override suspend fun execute(a: Args, ctx: ToolContext): ToolExecution {
         val p = a.str("package")!!
         if (!LinkPolicy.PACKAGE.matches(p)) throw ArgError("package", "must be an Android package name")
+        val user = a.int("user", 0, MAX_USER)
+        val cold = a.bool("cold", false)
+        // 只打开列出过的那几份:不在可用的另一份用户里(私密空间、别人的用户、没装)的一律不碰
+        if (user != null && ctx.phone.screen.appCopies().none { it.packageName == p && it.userId == user }) {
+            return ctx.action(ActionResult.Failed(COPY_NOT_FOUND))
+        }
         // 换了 App,之前被拒的付款申报就不是这次的了
         ctx.refusedPay = null
-        val r = ctx.action(ctx.phone.screen.openApp(p, a.bool("cold", false)))
+        val r = ctx.action(if (user != null) ctx.phone.screen.openAppCopy(p, user, cold) else ctx.phone.screen.openApp(p, cold))
         if (r.content["ok"] != JsonPrimitive(true)) return r
         ctx.appOpened = true
         return unreadable(ctx, p, r)
     }
 
-    override fun logTarget(o: JsonObject, r: ToolExecution, ctx: ToolContext) = o.argStr("package")
+    override fun logTarget(o: JsonObject, r: ToolExecution, ctx: ToolContext) =
+        o.argStr("package")?.let { p -> (o["user"] as? JsonPrimitive)?.contentOrNull?.let { "$p (user $it)" } ?: p }
 
     override fun observations(o: JsonObject, r: ToolExecution, log: EvidenceLog): List<Observation> {
         if (r.content["ok"] != JsonPrimitive(true)) return emptyList()
         return listOfNotNull(o.argStr("package")?.let { p ->
-            Observation(ObsKind.Fact, "$name 打开了 $p" + (log.appLabels[p]?.let { "(App 名字「$it」)" } ?: ""), source = PHONE)
+            val copy = (o["user"] as? JsonPrimitive)?.contentOrNull?.let { "(另一份,用户 $it)" }.orEmpty()
+            Observation(ObsKind.Fact, "$name 打开了 $p$copy" + (log.appLabels[p]?.let { "(App 名字「$it」)" } ?: ""), source = PHONE)
         })
     }
+
+    /** 安卓的用户编号上限(UserHandle.PER_USER_RANGE 以内)。 */
+    private const val MAX_USER = 99_999
+    const val COPY_NOT_FOUND = "copy_not_found"
 }
 
 /**

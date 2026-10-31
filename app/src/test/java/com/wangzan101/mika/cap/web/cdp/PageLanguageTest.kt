@@ -17,7 +17,8 @@ class PageLanguageTest {
 
     @Test fun headerComesFromTheTag() {
         assertEquals("en-US,en", PageLanguage.acceptLanguage("en-Latn-US"))
-        assertEquals("zh-CN,zh", PageLanguage.acceptLanguage("zh-Hans-CN"))
+        // 文字体系不写
+        assertEquals("sr-RS,sr", PageLanguage.acceptLanguage("sr-Latn-RS"))
         assertEquals("pt-BR,pt", PageLanguage.acceptLanguage("pt-BR"))
         // 没有地区只写语言
         assertEquals("fr", PageLanguage.acceptLanguage("fr"))
@@ -52,6 +53,6 @@ class PageLanguageTest {
         // 手机版的品牌照内核给的,Android WebView 留着
         assertEquals(listOf("Chromium", "Android WebView"), meta["brands"]!!.jsonArray.map { it.jsonObject["brand"]!!.jsonPrimitive.content })
         // 取不到默认 UA-CH 时只带 UA 和语言
-        assertEquals(setOf("userAgent", "acceptLanguage"), PageLanguage.mobileOverride(mobileUa, null, "zh-CN,zh").keys)
+        assertEquals(setOf("userAgent", "acceptLanguage"), PageLanguage.mobileOverride(mobileUa, null, "fr-FR,fr").keys)
     }
 }

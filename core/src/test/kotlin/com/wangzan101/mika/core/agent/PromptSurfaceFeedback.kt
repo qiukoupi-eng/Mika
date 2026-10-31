@@ -40,7 +40,7 @@ internal object PromptSurfaceFeedback {
         "tab_crashed", "obscured", "offscreen", "key_not_allowed", "no_tab_open", "handed_over", "site_mode_unavailable",
         "downloads_unavailable", "devtools_unavailable", "input_uncertain", "not_a_select", "no_such_option", "option_disabled",
         "select_disabled", "select_not_applied", "web_surface_inactive", "upload_not_opened", "upload_unavailable", "focus_moved",
-        "link_unresolved", "invalid_link", "phone_unavailable", "ref_expired", "some_new_code", "Not A Code!",
+        "link_unresolved", "invalid_link", "phone_unavailable", "ref_expired", "keep_open_unavailable", "users_page", "some_new_code", "Not A Code!",
     )
 
     private class Checked(private val c: ScreenCheck?, private val base: FakeScreen = FakeScreen()) : ScreenPort by base {
@@ -127,6 +127,10 @@ internal object PromptSurfaceFeedback {
         }, clock = { 1L }, ids = { "m" })
         val withMem = toolDispatcher(FakeScreen(), memory = mem, utterances = UserUtterances().apply { add("帮我看看订单") })
         add("memory quote not from user", withMem, "memory_save", """{"kind":"fact","content":"x","quote":"别的话"}""")
+        val withSkills = toolDispatcher(FakeScreen(), skills = com.wangzan101.mika.core.knowledge.GuideCatalog.loadBundled(), utterances = UserUtterances().apply { add("帮我建一个技能") },
+            personalSkills = com.wangzan101.mika.core.skills.InMemoryPersonalSkills())
+        add("skill save missing section", withSkills, "skill_save",
+            """{"markdown":"---\nname: order-coffee\ndisplay: 点咖啡\ndescription: 点咖啡时用\n---\n## 入口\n打开 App","quote":"帮我建一个技能"}""")
 
         val notReady = toolDispatcher(FakeScreen(), sandbox = FakeSandbox(SandboxStatus.NotInstalled), workspace = { "w" })
         add("sandbox not ready", notReady, "run_command", """{"command":"ls"}""")
@@ -148,6 +152,7 @@ internal object PromptSurfaceFeedback {
         val truncated = TurnPolicy.afterEmpty(already = false, truncated = true)!!
         val unconfirmed = TurnPolicy.unconfirmed(listOf("¥89", "「已发送」"))
         val language = TurnPolicy.language(ReplyLanguage.Mismatch(ReplyLanguage.CHINESE, ReplyLanguage.Family("Latin script")))
+        val leaked = TurnPolicy.leakedToolCall("ask_user")
         val progress = TurnPolicy.beforeStep(TurnSnapshot(11, 20))!!
         val final = TurnPolicy.finalTurn()
         val stuck = GuardVerdict("no_progress", Severity.Warn, JsonObject(emptyMap()))
@@ -158,6 +163,7 @@ internal object PromptSurfaceFeedback {
             "truncated_reply" to truncated.text,
             "unconfirmed_nudge" to unconfirmed.text,
             "language_nudge" to language.text,
+            "leaked_call_nudge" to leaked.text,
             "answer_or_failure" to ANSWER_OR_FAILURE,
             "give_up_advice" to giveUp,
             "repeated_input_advice" to typedAgain,
@@ -171,6 +177,7 @@ internal object PromptSurfaceFeedback {
             "nudge_source" to empty.source,
             "unconfirmed_source" to unconfirmed.source,
             "language_source" to language.source,
+            "leaked_call_source" to leaked.source,
             "progress_source" to progress.source,
             "final_source" to final.source,
             "replay_source" to fileCall("RouteReplayKt", "getREPLAY_SOURCE"),

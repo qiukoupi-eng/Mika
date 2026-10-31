@@ -9,6 +9,7 @@ import com.wangzan101.mika.core.shell.RecoveryCapability
 import com.wangzan101.mika.core.shell.RecoveryConsent
 import com.wangzan101.mika.core.shell.SetupStep
 import com.wangzan101.mika.settings.AccessibilityState
+import com.wangzan101.mika.settings.ChatGptSignInFailureRecord
 import com.wangzan101.mika.settings.SystemStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -47,7 +48,7 @@ class DiagnosticsTest {
         connect: ConnectCandidates? = ConnectCandidates(property = 0, mdns = 2, cache = 1, connected = false),
     ) = DiagnosticsSnapshot(
         generatedAtMs = now,
-        app = DiagnosticsSnapshot.App("0.1.7", "cfa4380", installer, "System (zh-CN)"),
+        app = DiagnosticsSnapshot.App("0.1.7", "cfa4380", installer, "System (zh-Hans)"),
         device = DiagnosticsSnapshot.Device("Google", "Pixel 8", "14", 34, listOf("arm64-v8a", "armeabi-v7a"), "Ready"),
         setup = status.copy(builtinShell = shell).setupInputs(discovery, repair = false, confirmed = confirmed),
         phone = DiagnosticsSnapshot.Phone(
@@ -192,6 +193,33 @@ class DiagnosticsTest {
         assertTrue(t, t.contains("write secure settings: not granted"))
         assertTrue(t, t.contains("battery optimization: unrestricted"))
         assertTrue(t, t.contains("last reboot restore: NotRecovered"))
+    }
+
+    /** 内置助手拉起 Mika 的记录、启动时无障碍服务的问题:有就写何时、几次,没有写 never / ok。 */
+    @Test
+    fun helperRestoresAndAccessibilityLoss() {
+        val base = snapshot()
+        val none = Diagnostics.render(base)
+        assertTrue(none, none.contains("restored by helper: never"))
+        assertTrue(none, none.contains("accessibility on start: ok"))
+        val t = Diagnostics.render(base.copy(recovery = base.recovery.copy(
+            helperRestores = com.wangzan101.mika.core.shell.HelperRestoreReport(now - 3 * 60_000, 2, now - 60_000),
+            lastA11yLoss = com.wangzan101.mika.core.shell.A11yLossRecord(com.wangzan101.mika.core.shell.A11yLoss.Removed, now - 2 * 3_600_000),
+        )))
+        assertTrue(t, t.contains("restored by helper: 3m ago, 2 recently, backed off 1m ago"))
+        assertTrue(t, t.contains("accessibility on start: removed 2h ago"))
+    }
+
+    /** 最近一次 ChatGPT 登录失败:写类别、错误代码和说明;说明里像令牌的串遮住。 */
+    @Test
+    fun chatGptSignInFailureShowsCodeWithoutTokens() {
+        val jwt = "eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJ1c2VyLTEyMzQ1Njc4OTAifQ.c2lnbmF0dXJlLWJ5dGVzLWhlcmUtMTIzNDU2Nzg5MA"
+        val base = snapshot()
+        val failure = ChatGptSignInFailureRecord(now - 5 * 60_000, "CodeExpired", "invalid_grant", "CodeExpired: invalid_grant — bad code token=$jwt")
+        val t = Diagnostics.render(base.copy(models = base.models.copy(chatGptLastFailure = failure)))
+        assertTrue(t, t.contains("ChatGPT last sign-in failure: 5m ago: CodeExpired (code invalid_grant) — CodeExpired: invalid_grant — bad code"))
+        assertFalse(t, t.contains("eyJ"))
+        assertFalse("没有失败就不写这一行", Diagnostics.render(base).contains("last sign-in failure"))
     }
 
     /** 脱敏不误伤:时间、版本号、型号里的数字照写。 */

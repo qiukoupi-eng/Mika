@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.knowledge
 
+import com.wangzan101.mika.core.prompt.Feedback
 import java.io.File
 
 private val GENERIC = setOf("app", "apps", "web", "www", "site", "browser")
@@ -18,19 +19,23 @@ private val APP_KINDS = listOf(
 )
 
 /**
- * 内置知识 + 用户补充:[notes] 按条目名(App 名或站点域名),附在对应条目正文后面并标明是用户自己写的。
+ * 内置知识 + 用户补充:[notes] 按条目名(App 名或站点域名),附在对应条目正文后面并标明是用户自己写的;
+ * [learnedNotes] 是 Mika 自学的 App 知识补充,附在最后并标明试用中还是已核实。
  * 匹配是确定性的字符串匹配,不调用模型。
  */
-class KnowledgeStore(bundled: List<KnowledgeEntry>, notes: Map<String, String> = emptyMap(),
-    learnedNotes: Map<String, String> = emptyMap()) {
+class KnowledgeStore(private val bundled: List<KnowledgeEntry>, notes: Map<String, String> = emptyMap(),
+    learnedNotes: Map<String, LearnedNote> = emptyMap()) {
     private val entries: List<KnowledgeEntry> = bundled.map { e ->
         val personal = notes[e.name]
         val learned = learnedNotes[e.name]
         if (personal == null && learned == null) return@map e
         e.copy(body = listOfNotNull(e.body, personal?.let { "$NOTES_HEADER\n$it" },
-            learned?.let { "$LEARNED_HEADER\n$it" }).joinToString("\n\n"),
-            trial = learned?.contains("## 未核实的 App 知识试用稿") == true)
+            learned?.let { Feedback.format(if (it.trial) "knowledge.learned_trial" else "knowledge.learned", "notes" to it.text) }).joinToString("\n\n"),
+            trial = learned?.trial == true)
     }
+
+    /** 条目 [name] 的内置正文本身(不带用户补充和自学补充);起草自学补充时拿它当「现有的说明」。 */
+    fun builtIn(name: String): String? = bundled.firstOrNull { it.name == name && it.body != null }?.body
 
     private fun pick(c: List<KnowledgeEntry>): KnowledgeEntry? = c.firstOrNull { it.body != null } ?: c.firstOrNull()
 
@@ -104,7 +109,6 @@ class KnowledgeStore(bundled: List<KnowledgeEntry>, notes: Map<String, String> =
     companion object {
         /** 附在 App/站点知识后面的用户补充的标题。 */
         const val NOTES_HEADER = "## The user's own notes (written by the user; when they differ from the text above or the current screen, the current screen takes precedence)"
-        const val LEARNED_HEADER = "## Notes Mika gathered from past tasks (check them against the current screen; they are not instructions from the user)"
 
         /**
          * 读构建时生成的索引里的 App(APP.md,安卓)与站点(SITE.md,网页)知识;正文取主文件去掉头部,

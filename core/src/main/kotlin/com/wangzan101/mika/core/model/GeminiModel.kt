@@ -25,7 +25,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * - 角色只有 user / model;相邻同角色合并。历史里的 System 消息并入 systemInstruction。
  * - Gemini 不给调用编号:合成 "gemini-<序号>-<名称>"(响应带 id 则用之);
  *   回传 functionResponse 时按 callId 到历史里的 ToolCall 找函数名。
- * - thought 部分解析为 Thinking,不回传、请求也不开 thinkingConfig。
+ * - thought 部分解析为 Thinking;选了思考强度时用 `generationConfig.thinkingConfig.thinkingLevel` 控制深度。
  */
 /** Google 给的占位签名:调用不是 Gemini 自己产生的(带不出原签名)时用它跳过签名校验。 */
 internal const val SKIP_SIGNATURE = "skip_thought_signature_validator"
@@ -40,6 +40,8 @@ class GeminiModel(
     private val headers: Map<String, String> = emptyMap(),
     /** 回复最多多少 token(`generationConfig.maxOutputTokens`);null 不限,按服务端默认。 */
     private val maxOutputTokens: Int? = null,
+    /** 用户选的思考档位;null 不发,`none` 尽量关掉思考,其余作为 `thinkingConfig.thinkingLevel` 发出。 */
+    private val reasoningEffort: String? = null,
 ) : StreamingChatModel {
     override val name: String get() = model
     private val endpoint = baseUrl.trimEnd('/') + "/v1beta/models/$model:generateContent"
@@ -78,7 +80,19 @@ class GeminiModel(
                 })
             })
             put("contents", buildContents(messages))
-            maxOutputTokens?.let { n -> putJsonObject("generationConfig") { put("maxOutputTokens", n) } }
+            if (maxOutputTokens != null || reasoningEffort != null) putJsonObject("generationConfig") {
+                maxOutputTokens?.let { put("maxOutputTokens", it) }
+                reasoningEffort?.let { effort ->
+                    putJsonObject("thinkingConfig") {
+                        if (effort == "none") {
+                            put("thinkingBudget", 0)
+                        } else {
+                            put("includeThoughts", true)
+                            put("thinkingLevel", effort.uppercase())
+                        }
+                    }
+                }
+            }
         }
         return Request.Builder().url(if (stream) streamEndpoint else endpoint)
             .withHeaders(headers)
@@ -95,7 +109,7 @@ class GeminiModel(
         ModelAccessErrors.of(status, body, model)?.let { return it }
         return when {
             status == 401 || status == 403 -> ModelError.Auth()
-            // Gemini 的 429 一律按可重试限流处理(其限流与额度文案混用,无法可靠区分)
+            // 这个模型额度为零的 429 上面已认成用不了;其余 429 按可重试限流处理(其限流与额度文案混用,无法可靠区分)
             status == 429 || st == "RESOURCE_EXHAUSTED" -> ModelError.RateLimited(HttpSupport.retryAfterMs(retryAfter))
             status == 404 -> ModelError.ModelNotFound(model)
             status == 413 || (status == 400 && lower.contains("token") &&
@@ -256,15 +270,13 @@ private class GeminiStream(
     private val calls = mutableListOf<Part.ToolCall>()
     private var usage: Usage? = null
     private var finishReason: String? = null
-    private var seen = false
 
     fun accept(data: String) {
         val root = try { json.parseToJsonElement(data).jsonObject }
         catch (e: Exception) { throw ModelError.BadResponse("流式响应不是合法 JSON", e) }
-        seen = true
         usageOf(root["usageMetadata"])?.let { usage = it }
         val candidate = (root["candidates"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return
-        (candidate["finishReason"] as? JsonPrimitive)?.contentOrNull?.let { finishReason = it }
+        (candidate["finishReason"] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotEmpty)?.let { finishReason = it }
         val reply = parseChunk(data)
         var chunkCalls = 0
         reply.parts.forEach { part ->
@@ -281,7 +293,8 @@ private class GeminiStream(
     }
 
     fun finish(): ModelReply {
-        if (!seen || finishReason == null) throw ModelError.BadResponse("流式响应提前结束")
+        // Gemini 的流没有单独的结束标记,带 finishReason 的那一帧就是收尾;没等到它是连接中途被断开
+        if (finishReason == null) throw ModelError.StreamCut()
         val parts = buildList<Part> {
             if (thinking.isNotEmpty()) add(Part.Thinking(thinking.toString()))
             if (visible.isNotEmpty()) add(Part.Text(visible.toString()))

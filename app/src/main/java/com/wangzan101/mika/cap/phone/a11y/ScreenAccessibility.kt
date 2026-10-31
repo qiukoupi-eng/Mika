@@ -23,22 +23,11 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
-/** Mika 的无障碍服务:按屏读取窗口、在指定屏上做手势、按屏分发事件。 */
+/** Mika 的无障碍服务:操作和事件转给当前已连接实例,任务持有旧实例时也能在重连后恢复。 */
 open class ScreenAccessibility : AccessibilityService() {
 
     private class DisplayEvent(val displayId: Int, val event: AccessibilityEvent)
 
-    // 事件只作观察用,订阅方处理不过来时丢最旧的,不阻塞系统回调
-    private val events = MutableSharedFlow<DisplayEvent>(
-        extraBufferCapacity = EVENT_BUFFER,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
-    /** 窗口变了(加上、拿掉、挪动,包括输入法弹出收起):只是个信号,订阅方自己去读窗口。 */
-    private val windowChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-    private val notifications = MutableSharedFlow<ScreenEvent>(
-        extraBufferCapacity = EVENT_BUFFER,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -75,6 +64,7 @@ open class ScreenAccessibility : AccessibilityService() {
     fun overlays(): OverlayHost = overlayHost ?: OverlayHost(this).also { overlayHost = it }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        if (instance.value !== this) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED) windowChanges.tryEmit(Unit)
         if (event.eventType == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED && notifications.subscriptionCount.value > 0) {
             val notification = event.parcelableData as? Notification
@@ -95,7 +85,7 @@ open class ScreenAccessibility : AccessibilityService() {
 
     /** 指定屏上的窗口;该屏没有窗口(或不存在)时为空列表。 */
     fun windowsOn(displayId: Int): List<AccessibilityWindowInfo> =
-        windowsOnAllDisplays.get(displayId).orEmpty()
+        instance.value?.windowsOnAllDisplays?.get(displayId).orEmpty()
 
     /** 在指定屏上沿 [path] 做一次单指手势;完成返回 true,被取消或无法下发返回 false。 */
     suspend fun gesture(displayId: Int, path: Path, durationMs: Long): Boolean {
@@ -112,6 +102,7 @@ open class ScreenAccessibility : AccessibilityService() {
     }
 
     private suspend fun dispatch(displayId: Int, strokes: List<GestureDescription.StrokeDescription>): Boolean {
+        val service = instance.value ?: return false
         val gesture = GestureDescription.Builder()
             .setDisplayId(displayId)
             .apply { strokes.forEach(::addStroke) }
@@ -126,7 +117,7 @@ open class ScreenAccessibility : AccessibilityService() {
                     if (cont.isActive) cont.resume(false)
                 }
             }
-            if (!dispatchGesture(gesture, callback, null) && cont.isActive) cont.resume(false)
+            if (!service.dispatchGesture(gesture, callback, null) && cont.isActive) cont.resume(false)
         }
     }
 
@@ -149,7 +140,12 @@ open class ScreenAccessibility : AccessibilityService() {
     }
 
     private suspend fun screenshotOnce(): MainShot = suspendCancellableCoroutine { cont ->
-        takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+        val service = instance.value
+        if (service == null) {
+            cont.resume(MainShot.Failed(ERROR_TAKE_SCREENSHOT_NO_ACCESSIBILITY_ACCESS))
+            return@suspendCancellableCoroutine
+        }
+        service.takeScreenshot(Display.DEFAULT_DISPLAY, service.mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(result: ScreenshotResult) {
                 val shot = runCatching {
                     result.hardwareBuffer.use { buffer ->
@@ -161,23 +157,22 @@ open class ScreenAccessibility : AccessibilityService() {
             }
 
             override fun onFailure(errorCode: Int) {
-                // 屏上有防截屏窗口:安卓 12 起有专门的错误码;更早的系统截出来是黑的,由调用方看画面判断
-                val secure = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && errorCode == ERROR_TAKE_SCREENSHOT_SECURE_WINDOW
+                // 屏上有防截屏窗口:安卓 14 起有专门的错误码;更早的系统截出来是黑的,由调用方看画面判断
+                val secure = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && errorCode == ERROR_TAKE_SCREENSHOT_SECURE_WINDOW
                 if (cont.isActive) cont.resume(if (secure) MainShot.Secure else MainShot.Failed(errorCode))
             }
         })
     }
 
     /**
-     * 发生在指定屏上的无障碍事件。这条流属于当前这个服务实例:服务断开重连后它不再有事件,
-     * 订阅方要从 [instance] 拿到新实例后重新订阅。
+     * 发生在指定屏上的无障碍事件。通道跨实例保留,只有当前连接的服务发布事件。
      */
     fun eventsFor(displayId: Int): Flow<AccessibilityEvent> =
         events.filter { it.displayId == displayId }.map { it.event }
 
     fun notificationEvents(): Flow<ScreenEvent> = notifications
 
-    /** 窗口变了的信号(见 [windowChanges]);属于当前这个服务实例。 */
+    /** 窗口变了的信号(见 [windowChanges]);通道跨服务实例保留。 */
     fun windowChanges(): Flow<Unit> = windowChanges
 
     /**
@@ -199,6 +194,19 @@ open class ScreenAccessibility : AccessibilityService() {
         private const val EVENT_BUFFER = 64
         /** 两次截图之间系统要求的间隔(安卓原版是一秒)。 */
         private const val SCREENSHOT_INTERVAL_MS = 1_000L
+
+        // 保持热流:调用方用 UNDISPATCHED 先订阅再操作,不要因服务切换引入异步订阅窗口。
+        // 事件只作观察用,订阅方处理不过来时丢最旧的,不阻塞系统回调
+        private val events = MutableSharedFlow<DisplayEvent>(
+            extraBufferCapacity = EVENT_BUFFER,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
+        /** 窗口变了(加上、拿掉、挪动,包括输入法弹出收起):只是个信号,订阅方自己去读窗口。 */
+        private val windowChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        private val notifications = MutableSharedFlow<ScreenEvent>(
+            extraBufferCapacity = EVENT_BUFFER,
+            onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        )
 
         private val _instance = MutableStateFlow<ScreenAccessibility?>(null)
         /** 已连接的服务实例;服务未开启或已断开时为 null。 */

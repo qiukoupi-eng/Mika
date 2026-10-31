@@ -31,6 +31,13 @@ object DeveloperSettings {
     fun wirelessDebugging(cr: ContentResolver): Boolean = Settings.Global.getInt(cr, ADB_WIFI_ENABLED, 0) == 1
 
     /**
+     * 系统里没有无线调试这一项。原版(安卓 11 起)开机时总会把这项设置按当前状态写成 0 或 1,所以开着关着都读得到;
+     * 一直没有这一项,说明系统没带无线调试。读的时候出错(系统不让读)不下结论,按有算。
+     */
+    fun wirelessDebuggingMissing(cr: ContentResolver): Boolean =
+        runCatching { Settings.Global.getString(cr, ADB_WIFI_ENABLED) == null }.getOrDefault(false)
+
+    /**
      * 把无线调试开关写成打开(要有修改系统设置的授权)。写入被拒(抛异常或返回 false)返回 false;
      * 写进去之后系统还可能马上拨回去(见 [com.wangzan101.mika.core.shell.WirelessDebuggingAutoOn]),由调用方再读。
      */

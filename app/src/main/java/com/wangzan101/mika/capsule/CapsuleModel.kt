@@ -1,6 +1,7 @@
 package com.wangzan101.mika.capsule
 
 import com.wangzan101.mika.R
+import com.wangzan101.mika.cap.web.KeptPage
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
 import com.wangzan101.mika.confirm.ConfirmationCopy
@@ -45,7 +46,7 @@ data class CapsuleRun(
 
 /**
  * 决定胶囊显示什么的全部输入:各任务([runs],含刚结束、状态已是终态的)、开关、Mika 自己的界面在不在前台、
- * 屏幕亮着且没锁、无障碍服务在运行且浮层画得出来、卡片是不是展开着([cardOpen])。
+ * 屏幕亮着且没锁、无障碍服务在运行且浮层画得出来、卡片是不是展开着([cardOpen])、任务结束后留在后台运行的那一页([kept])。
  */
 data class CapsuleInputs(
     val runs: List<CapsuleRun>,
@@ -54,6 +55,7 @@ data class CapsuleInputs(
     val screenInteractive: Boolean,
     val serviceAvailable: Boolean,
     val cardOpen: Boolean = false,
+    val kept: KeptPage? = null,
 )
 
 /** 胶囊的状态,按优先级从高到低排([ordinal] 小的先显示);[Idle] 是「一直显示」时没任务的图标。 */
@@ -61,13 +63,16 @@ enum class CapsuleKind {
     HandedOver, NeedTakeover, NeedConfirm, NeedAnswer,
     /** 要你在手机上动一下手(如在系统的选择框里选一个),动完自动接着做。 */
     NeedStep,
-    Held, Running, Done, Failed, Cancelled, Idle;
+    Held, Running, Done, Failed, Cancelled,
+    /** 没有任务在跑,任务结束后留下的那一页在后台运行(「后台网页运行中」,绿点)。 */
+    KeptPage,
+    Idle;
 
     /** 要你处理(胶囊变橙)。App 已经交到你手上([HandedOver])是顶部那一条,不算在内。 */
     val needsYou: Boolean get() = this == NeedTakeover || this == NeedConfirm || this == NeedAnswer || this == NeedStep
 
-    /** 还没结束(在跑、等你、等条件);[Idle] 不算。 */
-    val active: Boolean get() = this != Done && this != Failed && this != Cancelled && this != Idle
+    /** 还没结束(在跑、等你、等条件);[KeptPage]、[Idle] 不算。 */
+    val active: Boolean get() = this != Done && this != Failed && this != Cancelled && this != KeptPage && this != Idle
 }
 
 sealed interface CapsuleView {
@@ -102,6 +107,9 @@ sealed interface CapsuleView {
  *   打开卡片时看到的那几件(同一件事、同一个等待)记为看过,收起后回到一颗(橙色),来了新的才再展开;
  * - 办好了 / 没办成 / 已停止先展开 [PILL_MS],再缩回一颗带着结果角标,共停 [LINGER_MS] 后消失(「一直显示」时回到图标);
  *   在卡片里看过的直接是一颗;卡片展开着时这段时间停表:用户正看着的结果不会被收走,收起卡片后接着走剩下的时间;
+ *   停完消失的不再回来(调用方之后还列着它也不算);对话删掉了([forget])时它已结束的任务马上消失;
+ * - 没有任务、结果也停完了,而任务结束后留下的那一页还在后台运行时,展开成「后台网页运行中」一直停着(开关是「从不显示」时照样不显示,
+ *   只靠通知);
  * - 同一件事、同一个状态里换句时每句至少停 [MIN_SENTENCE_MS],这期间来的只留最后一句;换了状态或换了一件事马上换。
  * 卡片按什么先后挑那一件见 [cardRuns]。
  * [reasonLabel] 把接管原因(login 等)换成给人看的名字,认不出为 null。时间由调用方给,测试里用假时钟。
@@ -115,6 +123,8 @@ class CapsuleModel(private val reasonLabel: (String) -> String? = { null }) {
     /** 各任务第一次出现的时刻:同样要紧时按先后排,卡片上显示用时。 */
     private val firstSeen = HashMap<String, Long>()
     private val ended = HashMap<String, Ended>()
+    /** 停完或对话删掉而拿掉的已结束任务:调用方还列着时不再记进 [ended];调用方不再列的就忘掉。 */
+    private val dropped = HashSet<String>()
     /** 在等接管或已经接手的任务,按开始等的先后:主屏一次只交一个,排在前面的先处理。 */
     private val takeoverSince = LinkedHashMap<String, Long>()
     /** 用户在卡片里看过的要你处理和结果:不再展开成胶囊。 */
@@ -145,8 +155,9 @@ class CapsuleModel(private val reasonLabel: (String) -> String? = { null }) {
             ended.replaceAll { _, e -> Ended(e.run, e.at + paused) }
             frozenSince = null
         }
-        inputs.runs.filter { it.state.ended() }.forEach { ended.getOrPut(it.key) { Ended(it, frozenSince ?: now) } }
-        if (frozenSince == null) ended.values.removeAll { now - it.at >= LINGER_MS }
+        dropped.retainAll(keys)
+        inputs.runs.filter { it.state.ended() && it.key !in dropped }.forEach { ended.getOrPut(it.key) { Ended(it, frozenSince ?: now) } }
+        if (frozenSince == null) drop(ended.filterValues { now - it.at >= LINGER_MS }.keys)
         firstSeen.keys.retainAll(keys + ended.keys)
         val waiting = inputs.runs.filter { it.state is TaskState.WaitingTakeover && it.stage != Takeover.Stage.None }.map { it.key }
         takeoverSince.keys.retainAll(waiting.toSet())
@@ -162,12 +173,20 @@ class CapsuleModel(private val reasonLabel: (String) -> String? = { null }) {
             shownText = null
             return CapsuleView.Hidden
         }
-        val candidate = activeView(inputs.runs) ?: endedView(now) ?: idleView(inputs.mode) ?: run {
+        val candidate = activeView(inputs.runs) ?: endedView(now) ?: keptView(inputs.kept) ?: idleView(inputs.mode) ?: run {
             shownIdentity = null
             shownText = null
             return CapsuleView.Hidden
         }
         return throttle(candidate, now)
+    }
+
+    /** 对话 [conversationId] 删掉了:它已结束的任务马上从胶囊和卡片上拿掉,进行中的照旧。 */
+    fun forget(conversationId: String) = drop(ended.filterValues { it.run.conversationId == conversationId }.keys)
+
+    private fun drop(keys: Set<String>) {
+        ended.keys.removeAll(keys)
+        dropped += keys
     }
 
     private fun needMarks(runs: List<CapsuleRun>): Set<Mark> =
@@ -235,6 +254,19 @@ class CapsuleModel(private val reasonLabel: (String) -> String? = { null }) {
         }
     }
 
+    /**
+     * 单独一件事在卡片里的样子(不经 [update]、不排先后):别处只跟着一件事时用(浏览器页上那一页的对话面板)。
+     * 已结束的按结束的说法;等接管的排位用它自带的队列位置。
+     */
+    fun cardRunOf(r: CapsuleRun): CardRun {
+        if (r.state.ended()) {
+            val (kind, text) = endedLine(r.state)
+            return CardRun(r, kind, text)
+        }
+        val line = describe(r)
+        return CardRun(r, line.kind, line.text, ahead = r.queueAhead.coerceAtLeast(0), behind = r.queueBehind)
+    }
+
     /** 要紧的在前;同样要紧的,接管队里排在前面的在前,再按开始的先后。 */
     private val order = compareBy<Pair<CapsuleRun, Line>>(
         { it.second.kind.ordinal }, { spot(it.first)?.first ?: Int.MAX_VALUE }, { firstSeen[it.first.key] ?: 0L },
@@ -247,6 +279,10 @@ class CapsuleModel(private val reasonLabel: (String) -> String? = { null }) {
         val i = queue.indexOf(r.key)
         return if (i < 0) null else i to queue.size - 1 - i
     }
+
+    /** 留在后台运行的那一页:展开成胶囊,说的是它来自的那个对话。 */
+    private fun keptView(kept: KeptPage?): CapsuleView.Shown? =
+        kept?.let { CapsuleView.Shown(CapsuleKind.KeptPage, KEPT, conversationId = it.conversationId, pill = true) }
 
     private fun idleView(mode: CapsuleMode): CapsuleView.Shown? =
         if (mode == CapsuleMode.Always) CapsuleView.Shown(CapsuleKind.Idle, "") else null
@@ -309,6 +345,7 @@ class CapsuleModel(private val reasonLabel: (String) -> String? = { null }) {
         val THINKING: String get() = tr(R.string.capsule_thinking)
         val PREPARING: String get() = tr(R.string.runtime_preparing)
         val CONTINUING: String get() = tr(R.string.capsule_continuing)
+        val KEPT: String get() = tr(R.string.kept_capsule)
 
         /** 此刻在做什么:回放、批量执行写进度;否则先用模型随调用写的话,再用调用里的用意,都没有用固定说法。 */
         fun runningText(s: TaskState.Running): String {
