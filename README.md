@@ -152,6 +152,7 @@
 
 ## 社区与贡献
 
+- **文档**：全部文档和阅读顺序见[文档目录](docs/README.md)
 - **交流群**：App 里「关于 › 加入交流群」扫码进微信群；不用微信可以加入 [X 群聊](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)
 - **关注作者**：X [@wangzan101](https://x.com/wangzan101)
 - **反馈问题**：[提 Issue](https://github.com/wangzan101/Mika/issues/new/choose)，App 里「关于 › 反馈问题」可以附上诊断信息
@@ -164,6 +165,14 @@
     <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&theme=dark&v=20261101-0434" />
     <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&v=20261101-0434" width="600" />
   </picture>
+</a>
+
+## 贡献者
+
+感谢每一位参与 Mika 的人：
+
+<a href="https://github.com/wangzan101/Mika/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=wangzan101/Mika&max=100&columns=12" alt="Contributors" />
 </a>
 
 ## 许可证

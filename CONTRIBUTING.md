@@ -45,11 +45,13 @@
 
 ### 文档
 
+开发文档的目录和阅读顺序见 [`docs/dev/README.md`](docs/dev/README.md)；面向用户的文档目录见 [`docs/README.md`](docs/README.md)。
+
 - [`docs/dev/architecture.md`](docs/dev/architecture.md)：整体结构。
 - [`docs/dev/roadmap.md`](docs/dev/roadmap.md)：已完成、接下来、已知问题与暂缓。
-- [`docs/dev/knowledge-format.md`](docs/dev/knowledge-format.md)：App、网站知识与技能的格式。
+- [`docs/dev/knowledge-format.md`](docs/dev/knowledge-format.md)（[English](docs/dev/knowledge-format.en.md)）：App、网站知识与技能的格式。
 - [`docs/dev/skill-scripts.md`](docs/dev/skill-scripts.md)：知识与技能自带的沙箱脚本。
-- 面向用户的说明：[功能详细说明](docs/features.md)、[模型与登录](docs/models.md)、[询问与自主](docs/modes.md)、[手机操作设置指南](docs/setup-guide.md)、[电脑端 CLI / Skill](docs/computer-install.md)、[电脑连接（MCP）](docs/mcp.md)、[免责声明与数据隐私](docs/disclaimer.md)。
+- 面向用户的说明：[功能详细说明](docs/features.md)、[模型与登录](docs/models.md)、[询问与自主](docs/modes.md)、[手机操作设置指南](docs/setup-guide.md)、[常见问题](docs/faq.md)、[从电脑使用 Mika](docs/computer.md)、[电脑端 CLI / Skill](docs/computer-install.md)、[电脑连接（MCP）](docs/mcp.md)、[免责声明与数据隐私](docs/disclaimer.md)。
 
 ### 发布与更新（维护者）
 

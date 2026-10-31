@@ -158,6 +158,7 @@ More answers are in the [FAQ](docs/faq.en.md).
 
 ## Community & contributing
 
+- **Docs**: all docs and a suggested reading order are in the [docs index](docs/README.en.md)
 - **Community**: join the [X group chat](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X); the WeChat group QR code is in the app under About › Join the community
 - **Follow the author**: X [@wangzan101](https://x.com/wangzan101)
 - **Report a problem**: [open an issue](https://github.com/wangzan101/Mika/issues/new/choose); About › Send feedback in the app can attach diagnostics
@@ -170,6 +171,14 @@ More answers are in the [FAQ](docs/faq.en.md).
     <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&theme=dark&v=20261101-0434" />
     <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&v=20261101-0434" width="600" />
   </picture>
+</a>
+
+## Contributors
+
+Thanks to everyone who has helped build Mika:
+
+<a href="https://github.com/wangzan101/Mika/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=wangzan101/Mika&max=100&columns=12" alt="Contributors" />
 </a>
 
 ## License
