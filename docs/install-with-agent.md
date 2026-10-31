@@ -287,7 +287,7 @@ adb shell settings get secure enabled_accessibility_services
 
 - 拔插数据线之后（或者 adb 重启过），要再运行一次 `adb forward tcp:8765 tcp:8765`。令牌不变。
 - 重启手机后 USB 方式会关掉，要再运行一次第 1 条命令；这时令牌会换新的，MCP 配置里的令牌也要换上。
-- 关掉：`adb shell sh /sdcard/Android/data/com.wangzan101.mika/files/connect-computer.sh off`，或者在 Mika 的 设置 › 电脑连接（MCP） 里关，或者点通知上的「关闭」。关掉后旧令牌立即作废。
+- 关掉：`adb shell sh /sdcard/Android/data/com.wangzan101.mika/files/connect-computer.sh off`，或者在 Mika 的 设置 › 连接电脑 › 高级设置 里关，或者点通知上的「关闭」。关掉后旧令牌立即作废。
 
 ## 常见问题
 

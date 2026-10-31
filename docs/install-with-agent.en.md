@@ -287,7 +287,7 @@ Tell the user:
 
 - After unplugging and replugging the cable (or after adb restarts), `adb forward tcp:8765 tcp:8765` has to be run again. The token stays the same.
 - After a phone restart USB mode is off. Run the command in 1 again; the token changes then, so the MCP configuration needs the new one.
-- To turn it off: `adb shell sh /sdcard/Android/data/com.wangzan101.mika/files/connect-computer.sh off`, the switch in Mika's Settings › Computer access (MCP), or "Turn off" on the notification. The old token stops working at once.
+- To turn it off: `adb shell sh /sdcard/Android/data/com.wangzan101.mika/files/connect-computer.sh off`, the switch in Mika's Settings › Connect a computer › Advanced settings, or "Turn off" on the notification. The old token stops working at once.
 
 ## Troubleshooting
 
