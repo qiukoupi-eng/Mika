@@ -351,7 +351,7 @@ private class OpenAiStream(
         chunks++
         usageOf(root["usage"])?.let { usage = it }
         val choice = (root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject ?: return
-        (choice["finish_reason"] as? JsonPrimitive)?.contentOrNull?.let { reason = it }
+        (choice["finish_reason"] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotEmpty)?.let { reason = it }
         val delta = choice["delta"] as? JsonObject ?: return
         ReasoningVia.fields.forEach { via ->
             (delta[via.field!!] as? JsonPrimitive)?.contentOrNull?.let { appendThinking(it, via) }
@@ -391,7 +391,9 @@ private class OpenAiStream(
     }
 
     fun finish(): ModelReply {
-        if (!done || chunks == 0) throw ModelError.BadResponse("流式响应提前结束")
+        // 收到 finish_reason 就算回复完整:有的兼容端点不发 [DONE]。两样都没有是连接中途被断开
+        if (!done && reason == null) throw ModelError.StreamCut()
+        if (chunks == 0) throw ModelError.BadResponse("流式响应没有内容")
         val parts = buildList<Part> {
             thinkingVia?.takeIf { thinking.isNotEmpty() }?.let { add(thinkingOf(thinking.toString(), it)) }
             if (visible.isNotEmpty()) add(Part.Text(visible.toString()))
