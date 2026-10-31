@@ -48,7 +48,7 @@ class DiagnosticsTest {
         connect: ConnectCandidates? = ConnectCandidates(property = 0, mdns = 2, cache = 1, connected = false),
     ) = DiagnosticsSnapshot(
         generatedAtMs = now,
-        app = DiagnosticsSnapshot.App("0.1.7", "cfa4380", installer, "System (zh-CN)"),
+        app = DiagnosticsSnapshot.App("0.1.7", "cfa4380", installer, "System (zh-Hans)"),
         device = DiagnosticsSnapshot.Device("Google", "Pixel 8", "14", 34, listOf("arm64-v8a", "armeabi-v7a"), "Ready"),
         setup = status.copy(builtinShell = shell).setupInputs(discovery, repair = false, confirmed = confirmed),
         phone = DiagnosticsSnapshot.Phone(

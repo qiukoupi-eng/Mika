@@ -69,7 +69,6 @@ object AboutCopy {
     val LICENSE_TITLE: String get() = tr(R.string.about_license_title)
 
     val UPDATE_DOWNLOAD: String get() = tr(R.string.about_update_download)
-    val UPDATE_MIRROR: String get() = tr(R.string.about_update_mirror)
     val UPDATE_LATER: String get() = tr(R.string.about_update_later)
     val NO_BROWSER: String get() = tr(R.string.about_no_browser)
 

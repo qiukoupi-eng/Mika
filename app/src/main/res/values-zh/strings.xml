@@ -26,7 +26,7 @@
     <string name="confirmation_locked_hint">解锁后查看对象和内容</string>
     <string name="action_reply">回复</string>
     <string name="reply_hint">输入你的回答</string>
-    <string name="ui_locale">zh-CN</string>
+    <string name="ui_locale">zh-Hans</string>
     <string name="list_sep">、</string>
     <string name="sentence_sep">""</string>
     <string name="date_month_day">%1$d 月 %3$d 日</string>
