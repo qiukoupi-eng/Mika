@@ -50,12 +50,15 @@ interface PersonalSkills {
         val NAME = Regex("[a-z0-9]+(?:-[a-z0-9]+)*")
 
         /** 把头部的 `name:` 行改成 [name](收下更新草稿、改过全文时,头部名字要和存放的名字一致);没有头部原样返回。 */
-        fun withName(markdown: String, name: String): String {
+        fun withName(markdown: String, name: String): String = withField(markdown, "name", name)
+
+        /** 头部的 [key] 行换成 [value](没有就加上);没有头部的原样返回。 */
+        fun withField(markdown: String, key: String, value: String): String {
             val lines = markdown.replace("\r\n", "\n").split("\n").toMutableList()
             if (lines.firstOrNull()?.trimEnd() != "---") return markdown
             val end = (1 until lines.size).firstOrNull { lines[it].trimEnd() == "---" } ?: return markdown
-            val i = (1 until end).firstOrNull { lines[it].startsWith("name:") }
-            if (i != null) lines[i] = "name: $name" else lines.add(1, "name: $name")
+            val i = (1 until end).firstOrNull { lines[it].startsWith("$key:") }
+            if (i != null) lines[i] = "$key: $value" else lines.add(end, "$key: $value")
             return lines.joinToString("\n")
         }
     }

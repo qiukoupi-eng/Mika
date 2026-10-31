@@ -156,6 +156,12 @@ class SkillDrafterTest {
         assertTrue(d.skill.markdown.contains("learned_from: r1"))
     }
 
+    @Test fun learnedFromIsTheRealRunIdEvenWithDigits() {
+        val runId = "20261031-155435-xjx9g3"
+        val d = runBlocking { SkillDrafter(FakeModel(text(md()))).draft(DraftInput(runId, goal, answer, emptyList(), runEvents(), tools, TOOLS), InMemoryPersonalSkills(), bundled) } as DraftResult.Draft
+        assertTrue(d.skill.markdown, d.skill.markdown.contains("learned_from: $runId\n"))
+    }
+
     @Test fun interfaceNamesFromTheAnswerStayInTheDraft() {
         // 回答里提到的页面名字正是做法本身:草稿里写到它不算照抄,照收
         val model = FakeModel(text(md(body = "\n3. 进「关于手机」页看版本号")))

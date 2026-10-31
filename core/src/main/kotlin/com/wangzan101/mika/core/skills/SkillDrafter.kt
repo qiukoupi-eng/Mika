@@ -211,7 +211,8 @@ class SkillDrafter(private val model: ChatModel) {
         if (updateOf == null && (existing.get(name) != null || existing.pending().any { it.name == name } || catalog.items.any { it.name == name }))
             return DraftResult.Dropped("name_taken")
         val finalName = updateOf ?: name
-        val finalMd = PersonalSkills.withName(md, finalName)
+        // 出自哪次运行由代码写:请求里的数字都换成了占位,模型抄不出真的运行编号
+        val finalMd = PersonalSkills.withField(PersonalSkills.withName(md, finalName), "learned_from", input.runId)
 
         val skill = PersonalSkill(
             name = finalName, markdown = finalMd, status = SkillStatus.pending, learnedFrom = input.runId, replacesDraftOf = updateOf,
