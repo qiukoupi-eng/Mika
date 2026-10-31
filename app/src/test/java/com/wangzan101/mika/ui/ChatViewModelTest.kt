@@ -1302,6 +1302,67 @@ class ChatViewModelTest {
         assertTrue(vm.ui.value.exchanges.single().steers.isEmpty())
     }
 
+    // 引用随下一句话发出去:新任务和插话都带上,发完就清掉;只有引用没写话时不发
+    @Test fun quoteGoesWithTheNextMessage() = runTest {
+        val vm = vm()
+        vm.quote(QuoteMessage.From.Mika, "  明天有小雨 ")
+        assertEquals(QuoteMessage.Quote(QuoteMessage.From.Mika, "明天有小雨"), vm.ui.value.quote)
+        assertFalse(vm.send("  ", ok))
+        assertTrue(calls.isEmpty())
+
+        assertTrue(vm.send("那要带伞吗", ok))
+        val goal = "> [Quoting your earlier reply]\n> 明天有小雨\n\n那要带伞吗"
+        assertEquals(listOf("start:$goal"), calls)
+        assertEquals(goal, vm.ui.value.exchanges.single().goal)
+        assertNull(vm.ui.value.quote)
+
+        emit(TaskState.Running(1, "", "phone_launch_app"))
+        vm.quote(QuoteMessage.From.You, "查天气")
+        assertTrue(vm.send("改成后天", ok))
+        val steer = "> [Quoting my earlier message]\n> 查天气\n\n改成后天"
+        assertEquals("steer:$steer", calls.last())
+        assertEquals(steer, vm.ui.value.exchanges.single().steers.single().text)
+        assertNull(vm.ui.value.quote)
+
+        // 去掉引用:照常只发话
+        vm.quote(QuoteMessage.From.Mika, "x")
+        vm.clearQuote()
+        vm.send("再快一点", ok)
+        assertEquals("steer:再快一点", calls.last())
+    }
+
+    // 引用只属于屏上这个对话:换对话、开新对话时清掉
+    @Test fun quoteIsDroppedWhenTheConversationChanges() = runTest {
+        val store = ConversationStore(tmp.newFolder())
+        val id = store.newConversation()
+        store.append(id, Turn("查天气", "晴", "succeeded"))
+        val vm = vm(store)
+        vm.quote(QuoteMessage.From.Mika, "晴")
+        vm.openConversation(id)
+        assertNull(vm.ui.value.quote)
+        vm.quote(QuoteMessage.From.Mika, "晴")
+        vm.newConversation()
+        assertNull(vm.ui.value.quote)
+    }
+
+    // 存下的带引用的话重开时原样回来(界面据此画出引的那条);旧的话没有引用
+    @Test fun quotedTurnsSurviveReopening() = runTest {
+        val store = ConversationStore(tmp.newFolder())
+        val id = store.newConversation()
+        val quoted = QuoteMessage.compose(QuoteMessage.Quote(QuoteMessage.From.Mika, "晴"), "那后天呢")
+        store.append(id, Turn("查天气", "晴", "succeeded"))
+        store.append(id, Turn(quoted, "多云", "succeeded", steers = listOf(QuoteMessage.compose(QuoteMessage.Quote(QuoteMessage.From.You, "查天气"), "顺便看风"))))
+        val vm = vm(store)
+        vm.openConversation(id)
+        val (old, new) = vm.ui.value.exchanges
+        assertNull(QuoteMessage.parse(old.goal).quote)
+        assertEquals("查天气", QuoteMessage.parse(old.goal).words)
+        assertEquals(QuoteMessage.Quote(QuoteMessage.From.Mika, "晴"), QuoteMessage.parse(new.goal).quote)
+        assertEquals("那后天呢", QuoteMessage.parse(new.goal).words)
+        assertEquals("顺便看风", QuoteMessage.parse(new.steers.single().text).words)
+        assertEquals("查天气", ChatCopy.title(vm.ui.value.exchanges))
+    }
+
     // 交给任务的插话随那一轮存下:重开对话、重启后照样显示在那一轮下面
     @Test fun joinedSteersSurviveReopening() = runTest {
         val store = ConversationStore(tmp.newFolder())

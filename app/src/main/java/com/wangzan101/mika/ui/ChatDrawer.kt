@@ -423,8 +423,8 @@ internal fun DeleteConversationDialog(title: String, impact: DeleteImpact, onCon
     )
 }
 
-private const val MENU_IN_MS = 200
-private const val MENU_OUT_MS = 140
+internal const val MENU_IN_MS = 200
+internal const val MENU_OUT_MS = 140
 private val DrawerWidth = 304.dp
 private val DrawerShape = RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp)
 internal val NavShape = RoundedCornerShape(12.dp)

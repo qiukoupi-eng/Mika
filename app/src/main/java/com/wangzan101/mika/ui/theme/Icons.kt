@@ -167,6 +167,10 @@ object MikaIcons {
     val Copy = stroke(
         "copy", "M10 8 h7 a2 2 0 0 1 2 2 v7 a2 2 0 0 1 -2 2 h-7 a2 2 0 0 1 -2 -2 v-7 a2 2 0 0 1 2 -2 z", "M5 15 V6 a1 1 0 0 1 1 -1 h9",
     )
+    /** 引用:往回指的箭头(接着前面那条说)。 */
+    val Quote = stroke("quote", "M9.5 6.5 L4.5 11.5 l5 5", "M4.5 11.5 h9 a5.5 5.5 0 0 1 5.5 5.5 v1")
+    /** 选择文字:文字光标。 */
+    val SelectText = stroke("select-text", "M9 4.5 h6 M9 19.5 h6 M12 4.5 v15")
     /** 图钉:置顶了的对话。 */
     val Pin = stroke("pin", "M9 3.5 h6 M10 3.5 v5.5 l-3 3.5 h10 l-3 -3.5 V3.5", "M12 12.5 V20.5")
     /** 星:常用网站。 */

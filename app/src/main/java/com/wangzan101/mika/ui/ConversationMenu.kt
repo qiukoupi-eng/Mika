@@ -27,7 +27,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
@@ -73,10 +72,8 @@ internal fun placeMenu(rowTop: Float, rowHeight: Float, menuHeight: Float, gap: 
 }
 
 /**
- * 侧栏里长按一条对话后的菜单:后面整屏变暗(安卓 12 起还模糊,由外面给后面的内容加,见 [MenuBlur]),
- * 那一行原地「抬起」成一张白卡,下面(放不下就上面)一张窄一点的白卡列出置顶 / 取消置顶、改名、红字删除,文字在左、图标在右。
- * 点外面、按返回都收起。[progress] 是出现的进度(0 到 1),外面按关没关动画决定是动着过去还是直接到位;
- * 只在绘制、摆放时读,动画时不重组。[bounds] 是那一行在窗口里的位置和大小。
+ * 侧栏里长按一条对话后的菜单(见 [LongPressMenu]):那一行抬起成一张白卡,菜单里是置顶 / 取消置顶、改名、红字删除。
+ * [bounds] 是那一行在窗口里的位置和大小。
  */
 @Composable
 internal fun ConversationMenu(
@@ -89,22 +86,53 @@ internal fun ConversationMenu(
     onDismiss: () -> Unit,
 ) {
     val c = MikaTheme.colors
+    LongPressMenu(
+        bounds, progress, pane = stringResource(R.string.drawer_actions), tag = "drawer-menu",
+        entries = listOf(
+            MenuEntry(stringResource(if (item.pinned) R.string.unpin else R.string.pin), MikaIcons.Pin, "drawer-menu-pin", onClick = onPin),
+            MenuEntry(stringResource(R.string.drawer_rename), MikaIcons.Edit, "drawer-menu-rename", onClick = onRename),
+            MenuEntry(stringResource(R.string.confirm_delete), MikaIcons.Trash, "drawer-menu-delete", c.bad, onDelete),
+        ),
+        onDismiss = onDismiss,
+    ) { LiftedRow(item) }
+}
+
+/** 长按菜单里的一项:文字、右边的图标、测试标签、颜色(为 null 是正文色)。 */
+internal class MenuEntry(val text: String, val icon: ImageVector, val tag: String, val color: Color? = null, val onClick: () -> Unit)
+
+/**
+ * 长按某样东西后原地弹出的菜单(侧栏里的对话、对话页里的消息共用):后面整屏变暗(安卓 12 起还模糊,由外面给后面的内容加,见 [MenuBlur]),
+ * 那样东西原地「抬起」([lifted],自己画成白卡之类,略微放大),下面(放不下就上面)一张窄一点的白卡列出 [entries],文字在左、图标在右。
+ * 点外面、按返回都收起。[progress] 是出现的进度(0 到 1),外面按关没关动画决定是动着过去还是直接到位;
+ * 只在绘制、摆放时读,动画时不重组。[bounds] 是那样东西在窗口里的位置和大小:抬起的那张和它一样宽,高按自己的内容,
+ * 最高半屏(很长的回答只抬起开头那一截,由 [lifted] 自己裁掉)。[alignEnd] 时菜单和它的右边对齐(用户自己的话靠右)。
+ */
+@Composable
+internal fun LongPressMenu(
+    bounds: Rect,
+    progress: () -> Float,
+    pane: String,
+    tag: String,
+    entries: List<MenuEntry>,
+    onDismiss: () -> Unit,
+    alignEnd: Boolean = false,
+    lifted: @Composable () -> Unit,
+) {
+    val c = MikaTheme.colors
     val insets = WindowInsets.safeDrawing
     val view = LocalView.current
-    val pane = stringResource(R.string.drawer_actions)
     val close = stringResource(R.string.collapse)
     // 能模糊时后面已经糊了,暗一点就够;不能模糊时只靠变暗把后面压下去
     val dim = c.floatShadow.copy(alpha = if (GlassBlurSupported) 0.16f else 0.32f)
     BackHandler(onBack = onDismiss)
     Layout(
         content = {
-            LiftedRow(item, progress)
+            lifted()
             MenuCard {
-                MenuItem(stringResource(if (item.pinned) R.string.unpin else R.string.pin), MikaIcons.Pin, "drawer-menu-pin", c.ink, onPin)
-                MenuDivider(c.hair)
-                MenuItem(stringResource(R.string.drawer_rename), MikaIcons.Edit, "drawer-menu-rename", c.ink, onRename)
-                MenuDivider(c.hair)
-                MenuItem(stringResource(R.string.confirm_delete), MikaIcons.Trash, "drawer-menu-delete", c.bad, onDelete)
+                entries.forEachIndexed { i, e ->
+                    if (i > 0) MenuDivider(c.hair)
+                    MenuItem(e.text, e.icon, e.tag, e.color ?: c.ink, e.onClick)
+                }
             }
         },
         modifier = Modifier.fillMaxSize()
@@ -115,44 +143,43 @@ internal fun ConversationMenu(
                 isTraversalGroup = true
                 dismiss(close) { onDismiss(); true }
             }
-            .testTag("drawer-menu"),
+            .testTag(tag),
     ) { measurables, constraints ->
-        val rowW = bounds.width.roundToInt().coerceAtLeast(0)
-        val rowH = bounds.height.roundToInt().coerceAtLeast(0)
-        val lifted = measurables[0].measure(Constraints.fixed(rowW, rowH))
-        val menuW = min(MenuWidth.roundToPx(), rowW).coerceAtLeast(0)
-        val menu = measurables[1].measure(Constraints(minWidth = menuW, maxWidth = menuW, maxHeight = constraints.maxHeight))
         val w = constraints.maxWidth
         val h = constraints.maxHeight
+        val rowW = bounds.width.roundToInt().coerceIn(0, w)
+        val lifted = measurables[0].measure(Constraints(minWidth = rowW, maxWidth = rowW, maxHeight = (h / 2).coerceAtLeast(0)))
+        val menuW = min(MenuWidth.roundToPx(), w).coerceAtLeast(0)
+        val menu = measurables[1].measure(Constraints(minWidth = menuW, maxWidth = menuW, maxHeight = h))
         layout(w, h) {
             // 那一行的位置是窗口坐标;这一层不一定从窗口左上角开始(没有铺到系统栏底下时)
             val origin = coordinates?.positionInWindow() ?: Offset.Zero
             val top = max(0f, insets.getTop(this@Layout) - origin.y)
             val bottom = min(h.toFloat(), view.rootView.height - insets.getBottom(this@Layout) - origin.y)
-            val at = placeMenu(bounds.top - origin.y, rowH.toFloat(), menu.height.toFloat(), MenuGap.toPx(), top, bottom)
+            val at = placeMenu(bounds.top - origin.y, lifted.height.toFloat(), menu.height.toFloat(), MenuGap.toPx(), top, bottom)
             val x = (bounds.left - origin.x).roundToInt()
-            lifted.placeWithLayer(x, at.rowTop.roundToInt())
-            menu.placeWithLayer(x, at.menuTop.roundToInt()) {
+            val menuX = (if (alignEnd) x + rowW - menuW else x).coerceIn(0, max(0, w - menuW))
+            lifted.placeWithLayer(x, at.rowTop.roundToInt()) {
+                scaleX = 1f + LiftScale * progress()
+                scaleY = scaleX
+            }
+            menu.placeWithLayer(menuX, at.menuTop.roundToInt()) {
                 val p = progress()
                 alpha = p
                 scaleX = 0.92f + 0.08f * p
                 scaleY = scaleX
-                transformOrigin = TransformOrigin(0f, if (at.above) 1f else 0f)
+                transformOrigin = TransformOrigin(if (alignEnd) 1f else 0f, if (at.above) 1f else 0f)
             }
         }
     }
 }
 
-/** 抬起的那一行:和侧栏里那一行一样的内容,换成白底圆角、带阴影,略微放大。 */
+/** 抬起的那一行:和侧栏里那一行一样的内容,换成白底圆角、带阴影。 */
 @Composable
-private fun LiftedRow(item: DrawerConversation, progress: () -> Float) {
+private fun LiftedRow(item: DrawerConversation) {
     val c = MikaTheme.colors
     Box(
         Modifier
-            .graphicsLayer {
-                scaleX = 1f + LiftScale * progress()
-                scaleY = scaleX
-            }
             .floatShadow(c, NavShape)
             .background(c.surface, NavShape)
             .clip(NavShape)

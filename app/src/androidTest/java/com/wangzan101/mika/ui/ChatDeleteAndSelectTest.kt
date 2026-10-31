@@ -16,6 +16,7 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
@@ -41,7 +42,7 @@ import java.util.UUID
 
 /**
  * 侧栏长按一条对话在原地弹出菜单(置顶、改名、删除,点外面收起):删除先确认、删掉、列表当场更新;改名后列表换成新名字;置顶后排到最上面带图钉。
- * 还有对话页里回答、用户的话可以选中复制。不用真机的任务环境。
+ * 还有对话页里长按回答、用户的话弹出复制 / 引用 / 选择文字:选择文字后能选中,引用随下一句话发出去。不用真机的任务环境。
  */
 @RunWith(AndroidJUnit4::class)
 class ChatDeleteAndSelectTest {
@@ -52,9 +53,10 @@ class ChatDeleteAndSelectTest {
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
     private val store = ConversationStore(File(context.cacheDir, "chat-delete-test-" + UUID.randomUUID()))
     private val removed = mutableListOf<String>()
+    private val started = mutableListOf<String>()
 
     private val actions = object : TaskActions {
-        override fun start(goal: String, conversationId: String) {}
+        override fun start(goal: String, conversationId: String) { started += goal }
         override fun cancel() {}
         override fun resume() {}
         override fun takeOver() {}
@@ -198,18 +200,54 @@ class ChatDeleteAndSelectTest {
         assertEquals(null, store.pinnedAt("a"))
     }
 
-    @Test fun answerAndUserTextAreSelectable() {
+    // 长按消息弹出菜单;选「选择文字」后那条换回系统的长按选中,侧栏不跟着打开
+    @Test fun answerAndUserTextAreSelectableFromTheMenu() {
         store.append("s", Turn("今天天气怎么样", "上海今天**晴**,详见 [天气](https://example.com)", "succeeded"))
         val vm = vm()
         compose.runOnUiThread { vm.openConversation("s") }
         show(vm, drawerOpen = false)
 
-        compose.onNode(hasText("今天天气怎么样") and hasAnyAncestor(hasTestTag("selectable-user"))).assertExists()
+        compose.onNode(hasText("上海今天", substring = true) and hasAnyAncestor(hasTestTag("selectable-answer"))).assertDoesNotExist()
+        compose.onNodeWithText("上海今天", substring = true).performTouchInput { longClick() }
+        compose.onNodeWithTag("message-menu-select").assert(hasText("选择文字")).performClick()
+        compose.waitForIdle()
         val answer = compose.onNode(hasText("上海今天", substring = true) and hasAnyAncestor(hasTestTag("selectable-answer")))
         answer.assertExists()
-        // 长按选中:侧栏不跟着打开
         answer.performTouchInput { longClick() }
         compose.waitForIdle()
+        compose.onNodeWithTag("message-menu").assertDoesNotExist()
         compose.onNodeWithTag("drawer").assertIsNotDisplayed()
+
+        compose.onNodeWithText("今天天气怎么样").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-menu-select").performClick()
+        compose.waitForIdle()
+        compose.onNode(hasText("今天天气怎么样") and hasAnyAncestor(hasTestTag("selectable-user"))).assertExists()
+    }
+
+    // 长按回答选「引用」:输入框上方出现引用小条,写一句发出去,引用跟着这句话交给任务,小条消失;气泡上方显示引的那条
+    @Test fun longPressQuoteThenSend() {
+        store.append("q", Turn("今天天气怎么样", "上海今天**晴**", "succeeded"))
+        val vm = vm()
+        compose.runOnUiThread { vm.openConversation("q") }
+        show(vm, drawerOpen = false)
+
+        compose.onNodeWithText("上海今天晴").performTouchInput { longClick() }
+        compose.onNodeWithTag("message-menu-copy").assert(hasText("复制"))
+        compose.onNodeWithTag("message-menu-quote").assert(hasText("引用")).performClick()
+        compose.waitForIdle()
+        compose.waitUntil(5_000) { compose.onAllNodesWithTag("message-menu").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag("quote-chip").assertExists()
+
+        compose.onNodeWithTag("composer-field").performTextReplacement("那明天呢")
+        compose.onNodeWithContentDescription("发送").performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("> [Quoting your earlier reply]\n> 上海今天晴\n\n那明天呢"), started)
+        compose.onNodeWithTag("quote-chip").assertDoesNotExist()
+        compose.onNodeWithTag("sent-quote").assertExists()
+
+        // × 去掉引用
+        compose.runOnUiThread { vm.quote(QuoteMessage.From.You, "今天天气怎么样") }
+        compose.onNodeWithContentDescription("去掉引用").performClick()
+        compose.onNodeWithTag("quote-chip").assertDoesNotExist()
     }
 }
