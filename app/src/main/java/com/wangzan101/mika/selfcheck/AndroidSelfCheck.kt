@@ -2,6 +2,7 @@ package com.wangzan101.mika.selfcheck
 
 import android.app.ActivityManager
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.hardware.display.DisplayManager
 import android.os.Build
@@ -12,6 +13,8 @@ import android.view.Display
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import com.wangzan101.mika.BuildConfig
+import com.wangzan101.mika.R
+import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.cap.phone.PhoneServices
 import com.wangzan101.mika.cap.phone.a11y.AndroidScreen
 import com.wangzan101.mika.cap.phone.a11y.ScreenAccessibility
@@ -188,6 +191,8 @@ class AndroidSelfCheck(context: Context, private val status: () -> SystemStatus)
             return CheckOutcome.fail("Mika's test page did not open on Mika's display (${reason(own)})", Advice.LaunchFailed)
         }
         sampleMain(sh, "test page")
+        // 先关掉自检页再开系统设置:之后从头开一页,不靠把旧的那一页翻回前面
+        withContext(Dispatchers.Main) { SelfCheckTargetActivity.finishOpen() }
         val settings = SystemPickers.settingsPackage(app.packageManager)
         val settingsNote = if (settings == null) "no system Settings app found" else when (val r = s.openApp(settings, cold = false)) {
             is ActionResult.Failed -> if (r.reason == "app_in_use_by_user") SETTINGS_IN_USE else "Settings did not open (${r.reason})"
@@ -205,8 +210,9 @@ class AndroidSelfCheck(context: Context, private val status: () -> SystemStatus)
             }
         }
         // 后面几项在自检页上做:重新打开一次,从头来
-        if (s.openOwnPage(SelfCheckTargetActivity.intent(app)) !is ActionResult.Ok) {
-            return CheckOutcome.fail("Mika's test page did not reopen after Settings", Advice.LaunchFailed)
+        val again = s.openOwnPage(SelfCheckTargetActivity.intent(app))
+        if (again !is ActionResult.Ok || !poll { withContext(Dispatchers.IO) { isTestPageOnTop(sh, d.displayId) } }) {
+            return CheckOutcome.fail("Mika's test page did not reopen after Settings (${reason(again)})", Advice.LaunchFailed)
         }
         return when (settingsNote) {
             null -> CheckOutcome.pass("Mika's test page and Settings opened on Mika's display")
@@ -222,10 +228,15 @@ class AndroidSelfCheck(context: Context, private val status: () -> SystemStatus)
         val s = screen ?: return CheckOutcome.fail("no screen", Advice.LaunchFailed)
         val d = display ?: return CheckOutcome.fail("no display", Advice.DisplayFailed)
         s.waitStable(SETTLE_MS)
-        val snap = s.snapshot()
+        // 页面刚开出来时树可能还没齐:等到最上面是 Mika、要的控件都在,最多等一会儿
+        var snap = s.snapshot()
+        poll(PAGE_WAIT_MS) {
+            snap = s.snapshot()
+            snap.packageName == app.packageName && EXPECTED.all { snap.find(it) != null }
+        }
         val missing = EXPECTED.filter { snap.find(it) == null }
-        if (missing.isNotEmpty()) {
-            return CheckOutcome.fail("tree has ${snap.elements.size} elements; missing ${missing.joinToString()}", Advice.ReadFailed)
+        if (snap.packageName != app.packageName || missing.isNotEmpty()) {
+            return CheckOutcome.fail("missing ${missing.joinToString().ifEmpty { "none" }}; ${seen(snap)}", Advice.ReadFailed)
         }
         val frame = awaitFrame(d) ?: return CheckOutcome.fail("tree ok; no screenshot from the display", Advice.BlankFrames)
         val blank = try {
@@ -482,8 +493,8 @@ class AndroidSelfCheck(context: Context, private val status: () -> SystemStatus)
         }.getOrNull()
     }
 
-    private suspend fun poll(block: suspend () -> Boolean): Boolean {
-        val end = SystemClock.uptimeMillis() + VERIFY_MS
+    private suspend fun poll(timeoutMs: Long = VERIFY_MS, block: suspend () -> Boolean): Boolean {
+        val end = SystemClock.uptimeMillis() + timeoutMs
         while (SystemClock.uptimeMillis() < end) {
             if (block()) return true
             delay(POLL_MS)
@@ -491,11 +502,63 @@ class AndroidSelfCheck(context: Context, private val status: () -> SystemStatus)
         return block()
     }
 
-    private fun ScreenSnapshot.find(id: String): UiElement? = elements.firstOrNull { it.resourceId?.endsWith(":id/$id") == true }
+    /**
+     * 自检页上的一个控件:先按资源 id(读屏给的是短名,也认完整写法的结尾),再按页面上的文字(有字的控件读屏时不带资源 id)。
+     * 文字和自检页一样按 App 语言取。
+     */
+    private fun ScreenSnapshot.find(key: String): UiElement? =
+        elements.firstOrNull { e -> e.resourceId?.let { it == key || it.endsWith("/$key") } == true }
+            ?: elements.firstOrNull { e ->
+                when (key) {
+                    TITLE -> e.name == tr(R.string.selfcheck_target_title)
+                    COUNT -> tapsText.matches(e.name)
+                    BUTTON -> e.clickable && e.name == tr(R.string.selfcheck_target_button)
+                    INPUT -> e.editable
+                    TICK -> tickText.matches(e.name)
+                    LIST -> e.scrollable
+                    else -> false
+                }
+            }
 
     /** 自检页上看得见的行(按从上到下)。 */
     private fun ScreenSnapshot.rows(): List<String> =
-        elements.filter { it.resourceId == null && ROW.matches(it.name) }.sortedBy { it.centerY }.map { it.name }
+        elements.filter { rowText.matches(it.name) }.sortedBy { it.centerY }.map { it.name }
+
+    /**
+     * 读屏没找到自检页时写进报告的「看到了什么」:是自检页就写包名和前几个控件;是系统界面只写包名、个数和控件的种类或 id
+     * (系统设置顶上可能有用户的名字,不写文字);别的 App 连包名都不写。
+     */
+    private fun seen(snap: ScreenSnapshot): String {
+        val pkg = snap.packageName
+        val n = snap.elements.size
+        val first = snap.elements.take(SEEN_ELEMENTS)
+        return when {
+            pkg == app.packageName -> "saw Mika, $n elements: " + first.joinToString { (it.resourceId ?: it.name).take(SEEN_CHARS) }
+            pkg == null -> "saw no readable window, $n elements"
+            systemPackage(pkg) -> "saw $pkg, $n elements: " + first.joinToString { (it.resourceId ?: it.role).take(SEEN_CHARS) }
+            else -> "saw another app, $n elements"
+        }
+    }
+
+    private fun systemPackage(pkg: String): Boolean = pkg == SystemPickers.settingsPackage(app.packageManager) || runCatching {
+        app.packageManager.getApplicationInfo(pkg, 0).flags and ApplicationInfo.FLAG_SYSTEM != 0
+    }.getOrDefault(false)
+
+    /** 带一个数字的文字(「点了 %d 次」「计时 %d」「第 %d 行」):按 App 语言拆成数字前后两段,用来认控件。 */
+    private class Numbered(res: Int) {
+        private val parts = tr(res, SENTINEL).split(SENTINEL.toString())
+
+        fun matches(s: String): Boolean {
+            if (parts.size != 2) return false
+            val (head, tail) = parts
+            if (s.length <= head.length + tail.length || !s.startsWith(head) || !s.endsWith(tail)) return false
+            return s.substring(head.length, s.length - tail.length).all(Char::isDigit)
+        }
+    }
+
+    private val tapsText by lazy { Numbered(R.string.selfcheck_target_taps) }
+    private val tickText by lazy { Numbered(R.string.selfcheck_target_tick) }
+    private val rowText by lazy { Numbered(R.string.selfcheck_target_row) }
 
     private fun UiElement.number(): Int? = Regex("\\d+").findAll(name).lastOrNull()?.value?.toIntOrNull()
 
@@ -530,10 +593,15 @@ class AndroidSelfCheck(context: Context, private val status: () -> SystemStatus)
         const val INPUT = "selfcheck_input"
         const val TICK = "selfcheck_tick"
         const val LIST = "selfcheck_list"
-        val EXPECTED = listOf("selfcheck_title", COUNT, BUTTON, INPUT, TICK, LIST)
+        const val TITLE = "selfcheck_title"
+        val EXPECTED = listOf(TITLE, COUNT, BUTTON, INPUT, TICK, LIST)
         const val ASCII = "Mika 123"
         const val CHINESE = "你好米卡"
-        val ROW = Regex("""\D*\d+\D*""")
+        const val SENTINEL = 987_654_321
+        /** 读屏一项等自检页出现最多这么久。 */
+        const val PAGE_WAIT_MS = 5_000L
+        const val SEEN_ELEMENTS = 5
+        const val SEEN_CHARS = 24
 
         const val WEB_PAGE = "https://appassets.androidplatform.net/assets/selfcheck/page.html"
         const val WEB_MARKER = "SELFCHECK-READ-OK"

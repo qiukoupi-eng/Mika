@@ -18,6 +18,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.view.View
 import com.wangzan101.mika.R
+import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.cap.phone.shell.SystemIntents
 import java.lang.ref.WeakReference
 
@@ -27,7 +28,8 @@ import java.lang.ref.WeakReference
  *
  * 清单里导出,但要求调用方持有 INTERACT_ACROSS_USERS_FULL(shell 和系统有,普通 App 拿不到),没有 intent-filter:
  * 只由内置助手以 shell 身份按组件名打开到 Mika 的屏上(见 [intent])。
- * 万一开到了主屏(屏号是 0),马上关掉,不打扰用户。控件用普通的 View 和资源 id,无障碍读到的就是这些 id。
+ * 万一开到了主屏(屏号是 0),马上关掉,不打扰用户。控件用普通的 View 和资源 id;
+ * 文字按 App 语言取([tr]),自检那边按同样的文字认控件(读屏时有字的控件不带资源 id)。
  */
 class SelfCheckTargetActivity : Activity() {
     private val main = Handler(Looper.getMainLooper())
@@ -40,7 +42,7 @@ class SelfCheckTargetActivity : Activity() {
     private val ticker = object : Runnable {
         override fun run() {
             ticks++
-            tick.text = getString(R.string.selfcheck_target_tick, ticks)
+            tick.text = tr(R.string.selfcheck_target_tick, ticks)
             strip.setBackgroundColor(if (ticks % 2 == 0) STRIP_DARK else STRIP_LIGHT)
             main.postDelayed(this, TICK_MS)
         }
@@ -95,30 +97,30 @@ class SelfCheckTargetActivity : Activity() {
             setTextColor(Color.BLACK)
             setPadding(0, pad / 4, 0, pad / 4)
         }
-        column.addView(text(R.id.selfcheck_title, getString(R.string.selfcheck_target_title), 20f))
-        column.addView(text(R.id.selfcheck_note, getString(R.string.selfcheck_target_note), 14f))
-        count = text(R.id.selfcheck_count, getString(R.string.selfcheck_target_taps, 0), 16f)
+        column.addView(text(R.id.selfcheck_title, tr(R.string.selfcheck_target_title), 20f))
+        column.addView(text(R.id.selfcheck_note, tr(R.string.selfcheck_target_note), 14f))
+        count = text(R.id.selfcheck_count, tr(R.string.selfcheck_target_taps, 0), 16f)
         column.addView(count)
         column.addView(Button(this).apply {
             id = R.id.selfcheck_button
-            text = getString(R.string.selfcheck_target_button)
+            text = tr(R.string.selfcheck_target_button)
             setOnClickListener {
                 taps++
-                count.text = getString(R.string.selfcheck_target_taps, taps)
+                count.text = tr(R.string.selfcheck_target_taps, taps)
             }
         })
         column.addView(EditText(this).apply {
             id = R.id.selfcheck_input
-            hint = getString(R.string.selfcheck_target_input)
+            hint = tr(R.string.selfcheck_target_input)
             inputType = InputType.TYPE_CLASS_TEXT
             isSingleLine = true
         }, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        tick = text(R.id.selfcheck_tick, getString(R.string.selfcheck_target_tick, ticks), 14f)
+        tick = text(R.id.selfcheck_tick, tr(R.string.selfcheck_target_tick, ticks), 14f)
         column.addView(tick)
         strip = View(this).apply { setBackgroundColor(STRIP_DARK) }
         column.addView(strip, LinearLayout.LayoutParams(MATCH_PARENT, pad * 4))
         val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        for (i in 1..ROWS) rows.addView(text(View.NO_ID, getString(R.string.selfcheck_target_row, i), 16f).apply { setPadding(0, pad, 0, pad) })
+        for (i in 1..ROWS) rows.addView(text(View.NO_ID, tr(R.string.selfcheck_target_row, i), 16f).apply { setPadding(0, pad, 0, pad) })
         column.addView(ScrollView(this).apply {
             id = R.id.selfcheck_list
             addView(rows)

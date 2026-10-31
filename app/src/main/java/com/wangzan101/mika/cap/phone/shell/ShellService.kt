@@ -457,7 +457,8 @@ class ShellService(
         val mine = runCatching { context.packageManager.getPackagesForUid(allowedUid)?.toList() }.getOrNull().orEmpty()
         // 只有 Mika 调得到这个服务;包名再核一次(查不到 Mika 的包名时只认类名)
         if (component.className != SystemIntents.OWN_PAGE_CLASS || (mine.isNotEmpty() && component.packageName !in mine)) return START_INVALID_LINK
-        val page = Intent().setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        // 每次都从头开一页:旧的那一页连同它的任务清掉,新的一定在 Mika 屏的最上面
+        val page = Intent().setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle()
         val ok = try {
             val start = taskManager.javaClass.methods.first { it.name == "startActivityAsUser" && it.parameterTypes.size == 12 }
@@ -469,7 +470,7 @@ class ShellService(
             result >= 0
         } catch (t: Throwable) {
             Log.w(TAG, "startActivityAsUser unavailable, falling back to am start", t)
-            exec("am", "start", "--display", "$displayId", "-n", component.flattenToShortString()) == 0
+            exec("am", "start", "--display", "$displayId", "--activity-clear-task", "-n", component.flattenToShortString()) == 0
         }
         return if (ok) START_OK else START_ERROR
     }
