@@ -56,4 +56,13 @@ class SteerJoinTest {
         assertEquals(listOf(com.wangzan101.mika.core.remote.RemoteSteer("remote", "joined")),
             remoteSteers(joined, finished = true))
     }
+
+    // 远程插话本来撤不回;万一是撤回状态也只报没用上,不多出一种对外状态;手机上撤回的不报给电脑
+    @Test fun withdrawnMapsToNotAppliedAndLocalWithdrawalsStayHidden() {
+        val remote = SteerNote("remote", "only today", SteerState.Withdrawn, remote = true)
+        val local = SteerNote("local", "phone-only text", SteerState.Withdrawn)
+        assertEquals(listOf(com.wangzan101.mika.core.remote.RemoteSteer("remote", "not_applied")), remoteSteers(listOf(local, remote)))
+        assertEquals(listOf(com.wangzan101.mika.core.remote.RemoteSteer("remote", "not_applied")),
+            remoteSteers(listOf(local, remote), finished = true))
+    }
 }

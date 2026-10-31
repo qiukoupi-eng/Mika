@@ -298,10 +298,10 @@ class TaskRun(
      * [messageId] 是界面给这句话的编号,界面据此标出它的去向(见 [SteerNote])。
      */
     fun steer(text: String, messageId: String = UUID.randomUUID().toString()) {
-        synchronized(service.taskState.shownLock) { _steers.value = _steers.value + SteerNote(messageId, text, SteerState.Pending) }
-        scope.launch {
+        synchronized(service.taskState.shownLock) {
+            _steers.value = _steers.value + SteerNote(messageId, text, SteerState.Pending)
             // 收件箱收下了就马上告诉用户:模型此刻的请求已撤掉,下一步就带着这句话想(交给模型时再改成已加入)
-            if (inbox.send(RunInput.Steer(messageId, text)) == InputReceipt.Accepted) markSteers(setOf(messageId), SteerState.Received, from = SteerState.Pending)
+            if (inbox.steer(messageId, text) == InputReceipt.Accepted) markSteers(setOf(messageId), SteerState.Received, from = SteerState.Pending)
             else {
                 if (stopPressed) markSteers(setOf(messageId), SteerState.Cancelled)
                 else {
@@ -326,6 +326,13 @@ class TaskRun(
             }
             id
         }
+    }
+
+    /** 撤回手机上插的、模型还没取走的那句;已取走、已收尾或是电脑追加的(收件箱拒绝)返回 false,去向不变。 */
+    fun withdrawSteer(messageId: String): Boolean = synchronized(service.taskState.shownLock) {
+        if (!inbox.withdrawSteer(messageId)) return@synchronized false
+        markSteers(setOf(messageId), SteerState.Withdrawn)
+        true
     }
 
     /** 手机插话可转下一任务;远程插话只能用于当前任务,未消费的一律作废,不改变来源和权限。 */
