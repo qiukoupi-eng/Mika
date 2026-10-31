@@ -96,8 +96,8 @@ class DeviceCodeClient(
             postForm(url, form)
         } catch (e: CancellationException) {
             throw e
-        } catch (e: ModelError) {
-            return DevicePoll.Failed(e)
+        } catch (e: AccountSignInException) {
+            return DevicePoll.Failed((e.cause as? ModelError) ?: ModelError.Network(e))
         }
         return interpret(raw.status, raw.body)
     }
@@ -152,6 +152,7 @@ class DeviceCodeClient(
 
 /**
  * 等到用户在浏览器里点完,或超时、拒绝、取消。轮询间隔按服务端说的来;[slow_down] 再加 5 秒(RFC 8628)。
+ * 用户在浏览器里时 Mika 在后台,网络可能一时不通:连着 [MAX_POLL_FAILURES] 次连不上才算失败,中间照常等下一轮。
  * [sleep] 测试里换成空等;真机用 [delay]。
  */
 suspend fun awaitDeviceGrant(
@@ -162,6 +163,7 @@ suspend fun awaitDeviceGrant(
 ): OauthTokens {
     val deadline = now() + grant.challenge.expiresInSec * 1000
     var intervalMs = grant.challenge.intervalSec.coerceAtLeast(1) * 1000
+    var failures = 0
     while (now() < deadline) {
         when (val r = poll(grant.deviceCode)) {
             DevicePoll.Pending -> sleep(intervalMs.coerceAtMost((deadline - now()).coerceAtLeast(0)))
@@ -178,8 +180,13 @@ suspend fun awaitDeviceGrant(
                 },
                 r.code,
             )
-            is DevicePoll.Failed -> throw AccountSignInException(AccountSignInFailure.Network, cause = r.error)
+            is DevicePoll.Failed -> {
+                if (++failures >= MAX_POLL_FAILURES) throw AccountSignInException(AccountSignInFailure.Network, cause = r.error)
+                sleep(intervalMs.coerceAtMost((deadline - now()).coerceAtLeast(0)))
+                continue
+            }
         }
+        failures = 0
     }
     throw AccountSignInException(AccountSignInFailure.TimedOut, "expired")
 }
@@ -207,6 +214,7 @@ internal val TERMINAL_REFRESH = setOf(
 )
 
 private const val SLOW_DOWN_MS = 5_000L
+private const val MAX_POLL_FAILURES = 3
 
 /** 真机上等这么久再问下一次。默认参数用函数引用,避免编译器处理不了 lambda 里的挂起调用。 */
 internal suspend fun oauthSleep(ms: Long) = delay(ms)

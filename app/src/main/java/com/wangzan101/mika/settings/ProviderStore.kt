@@ -599,6 +599,7 @@ class ProviderStore(
     private fun accountTokensFor(providerId: String): AccountTokens = synchronized(accountTokens) {
         accountTokens.getOrPut(providerId) {
             AccountTokens(
+                account = XAI_ACCOUNT,
                 refresh = { session ->
                     when (session.provider) {
                         XaiAuth.PROVIDER -> xaiAuth.refresh(session)
@@ -641,7 +642,7 @@ class ProviderStore(
                     reasoningEffort = setup.reasoningEffort)
             ProviderConfig.Kind.Xai ->
                 ResponsesModel(baseUrl, accountTokensFor(cfg.providerId), cfg.model, cfg.capabilities, http, headers = setup.headers,
-                    reasoningEffort = setup.reasoningEffort)
+                    reasoningEffort = setup.reasoningEffort, accountLogin = XAI_ACCOUNT)
         }
     }
 
@@ -900,8 +901,10 @@ class ProviderStore(
 
         /** ChatGPT 服务商的名字(品牌名,不随界面语言变)。 */
         const val CHATGPT_NAME = "ChatGPT"
-        /** Grok 订阅服务商的名字。和填 Key 的「xAI」预设不是同一家。 */
-        const val XAI_NAME = "Grok"
+        /** 用 xAI 账号登录的服务商的名字(品牌名,不随界面语言变)。和填 Key 的「xAI」预设不是同一家。 */
+        const val XAI_NAME = "xAI / Grok"
+        /** 出错说明里怎么称呼这家的登录。 */
+        private const val XAI_ACCOUNT = "xAI"
 
         /**
          * 试调用:临时配置的 id、系统提示、那句话、试用的工具、回复上限。

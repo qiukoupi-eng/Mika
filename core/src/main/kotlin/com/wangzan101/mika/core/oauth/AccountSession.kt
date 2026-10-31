@@ -78,6 +78,8 @@ data class AccountSession(
  * 换到的令牌先 [save] 再拿去用。授权已不能用就清掉令牌、抛 [ModelError.SignInExpired];网络或服务端一时出错照常抛,令牌留着。
  */
 class AccountTokens(
+    /** 哪一家的登录(界面上的名字),登录失效时说给用户听。 */
+    private val account: String,
     private val refresh: suspend (AccountSession) -> OauthTokenResult,
     private val load: () -> AccountSession?,
     private val save: (AccountSession) -> Unit,
@@ -88,7 +90,7 @@ class AccountTokens(
     override val refreshable: Boolean get() = true
 
     override suspend fun get(fresh: Boolean): String = lock.withLock {
-        val s = load()?.takeIf { it.signedIn } ?: throw ModelError.SignInExpired()
+        val s = load()?.takeIf { it.signedIn } ?: throw ModelError.SignInExpired(account)
         if (!fresh && s.accessToken.isNotEmpty() && now() < s.expiresAtMs - refreshAheadMs) return@withLock s.accessToken
         when (val r = refresh(s)) {
             is OauthTokenResult.Ok -> {
@@ -106,7 +108,7 @@ class AccountTokens(
             is OauthTokenResult.Rejected -> {
                 if (r.terminal) {
                     save(s.signedOut())
-                    throw ModelError.SignInExpired()
+                    throw ModelError.SignInExpired(account)
                 }
                 throw ModelError.Auth()
             }

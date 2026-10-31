@@ -150,6 +150,18 @@ class ResponsesModelTest {
         assertEquals(503, e.status)
     }
 
+    /** 用账号登录(如 xAI)时 403 是订阅档位不够:说清楚、不当成 Key 不对;不用账号登录的 403 照旧。 */
+    @Test fun accountLogin403MeansThePlanCannotUseThisApi() = runTest {
+        server.enqueue(MockResponse().setResponseCode(403).setBody("""{"error":{"code":"permission_denied","message":"tier"}}"""))
+        val account = ResponsesModel(server.url("/v1").toString().trimEnd('/'), BearerToken.fixed("k"), "grok-4", caps, OkHttpClient(), accountLogin = "xAI")
+        val e = expect<ModelError.AccountPlanNotAllowed> { account.complete("s", user, emptyList()) }
+        assertEquals("xAI", e.account)
+        assertEquals("tier", e.detail)
+        assertFalse(RetryPolicy.transient(e))
+        server.enqueue(MockResponse().setResponseCode(403).setBody("{}"))
+        expect<ModelError.Auth> { model().complete("s", user, emptyList()) }
+    }
+
     @Test fun planHttpErrorsAreNotRetryable() = runTest {
         server.enqueue(MockResponse().setResponseCode(429).setBody("""{"detail":"usage limit"}"""))
         expect<ModelError.ChatGptLimitReached> { model(plan = true).complete("s", user, emptyList()) }

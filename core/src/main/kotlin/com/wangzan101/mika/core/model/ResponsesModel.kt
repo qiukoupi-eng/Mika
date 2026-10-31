@@ -46,6 +46,7 @@ interface BearerToken {
  *
  * 只有收到 `response.completed`(或 `response.incomplete`)才算成功;流在这之前断开当作网络故障(会重试)。
  * [chatGptPlan] 为真时请求用的是用户的 ChatGPT 套餐额度:HTTP 429 是额度到了上限、403 是账号不能这样用,都不重试。
+ * [accountLogin] 是用别家账号登录(如 xAI)时那一家的名字:HTTP 403 是订阅档位不能用这个接口([ModelError.AccountPlanNotAllowed])。
  */
 class ResponsesModel(
     baseUrl: String,
@@ -58,6 +59,7 @@ class ResponsesModel(
     private val headers: Map<String, String> = emptyMap(),
     /** null 使用服务端默认;服务端拒绝所选档位时照常报错,不悄悄换档重试。 */
     private val reasoningEffort: String? = null,
+    private val accountLogin: String? = null,
 ) : StreamingChatModel {
     override val name: String get() = model
     private val endpoint = baseUrl.trim().trimEnd('/') + "/responses"
@@ -193,7 +195,9 @@ class ResponsesModel(
     }
 
     private fun httpError(status: Int, retryAfter: String?, body: String, err: ErrorBody?): ModelError =
-        err?.let { errorOf(it.code, it.message, it.param) } ?: ModelAccessErrors.of(status, body, model) ?: when {
+        // 账号登录已经核对过身份:403 是档位不够,不当成 Key 不对或某个模型没开通
+        if (status == 403 && accountLogin != null) ModelError.AccountPlanNotAllowed(accountLogin, err?.message.orEmpty().take(200))
+        else err?.let { errorOf(it.code, it.message, it.param) } ?: ModelAccessErrors.of(status, body, model) ?: when {
             status == 401 -> ModelError.Auth()
             status == 403 -> if (chatGptPlan) ModelError.ChatGptNotEligible(err?.message.orEmpty().take(200)) else ModelError.Auth()
             status == 429 -> if (chatGptPlan) ModelError.ChatGptLimitReached() else ModelError.RateLimited(HttpSupport.retryAfterMs(retryAfter))

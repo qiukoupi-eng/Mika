@@ -52,6 +52,20 @@ class XaiAuthTest {
         assertFalse(denied.message.orEmpty(), denied.message.orEmpty().contains(secret))
     }
 
+    /** 用户在浏览器里时网络可能一时不通:连着几次连不上才算失败,中间成功一次就从头数。 */
+    @Test fun devicePollToleratesShortNetworkTrouble() = runTest {
+        val grant = DeviceGrant(DeviceChallenge("U", "https://x", null, 600, 1), "d")
+        val answers = ArrayDeque(listOf<DevicePoll>(
+            DevicePoll.Failed(ModelError.Network()), DevicePoll.Failed(ModelError.Network()), DevicePoll.Pending,
+            DevicePoll.Failed(ModelError.Server(502)), DevicePoll.Tokens(OauthTokens("ok")),
+        ))
+        var now = 0L
+        assertEquals("ok", awaitDeviceGrant(grant, now = { now }, sleep = { now += it }) { answers.removeFirst() }.accessToken)
+        val down = ArrayDeque(List(3) { DevicePoll.Failed(ModelError.Network()) })
+        val e = runCatching { awaitDeviceGrant(grant, now = { now }, sleep = { now += it }) { down.removeFirst() } }.exceptionOrNull()
+        assertEquals(AccountSignInFailure.Network, (e as AccountSignInException).reason)
+    }
+
     @Test fun badIssuerIsRefusedBeforeAnyRequest() {
         assertFalse(OauthUrls.allowed("http://evil.example/token", setOf("evil.example")))
         assertFalse(OauthUrls.allowed("https://user:pw@auth.x.ai/token", setOf("auth.x.ai")))
@@ -117,6 +131,7 @@ class XaiAuthTest {
         var now = 10_000L
         var stored = AccountSession(XaiAuth.PROVIDER, accessToken = "old", refreshToken = "r", expiresAtMs = 0)
         val tokens = AccountTokens(
+            account = "xAI",
             refresh = {
                 OauthTokenResult.Ok(OauthTokens("new", "r2", expiresInSec = 100))
             },
@@ -131,6 +146,7 @@ class XaiAuthTest {
         stored = stored.copy(accessToken = "keep")
         var calls = 0
         val again = AccountTokens(
+            account = "xAI",
             refresh = { calls++; OauthTokenResult.Rejected("invalid_grant", terminal = true) },
             load = { stored },
             save = { stored = it },

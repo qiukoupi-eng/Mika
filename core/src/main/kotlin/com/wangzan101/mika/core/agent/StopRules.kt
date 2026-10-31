@@ -69,5 +69,7 @@ internal fun userReason(e: ModelError): String = when (e) {
         "ChatGPT 额度用完了,稍后再试。用量可以在 ChatGPT 设置 › 用量(chatgpt.com/settings/usage)查看;Plus 每 5 小时的额度和其他用 ChatGPT 登录的 App 共用。也可以先换一个模型。"
     is ModelError.ChatGptNotEligible ->
         "这个账号不能在其他 App 里用 ChatGPT 额度(需要 Plus 或 Pro,并且所在地区和账号设置允许)。${if (e.detail.isEmpty()) "" else "服务端说明:${e.detail}。"}可以换一个模型。"
-    is ModelError.SignInExpired -> "ChatGPT 登录已失效,请在设置 › 模型里重新用 ChatGPT 登录。"
+    is ModelError.SignInExpired -> "${e.account} 登录已失效,请在设置 › 模型里重新用 ${e.account} 登录。"
+    is ModelError.AccountPlanNotAllowed ->
+        "你的 ${e.account} 订阅档位不能用这个接口(HTTP 403)。${if (e.detail.isEmpty()) "" else "服务端说明:${e.detail}。"}可以改用 ${e.account} 的 API Key,或在设置 › 模型里换一个模型。"
 }
