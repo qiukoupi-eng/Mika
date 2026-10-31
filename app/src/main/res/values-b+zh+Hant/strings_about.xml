@@ -40,7 +40,6 @@
     <string name="about_author">由 王贊 開發 · © 2026</string>
     <string name="about_license_title">Apache-2.0 授權條款</string>
     <string name="about_update_download">從 GitHub 下載</string>
-    <string name="about_update_mirror">備用下載</string>
     <string name="about_update_later">以後再說</string>
     <string name="about_no_browser">沒有能開啟連結的瀏覽器</string>
     <string name="about_version">版本 %1$s</string>
@@ -68,4 +67,17 @@
     <string name="diagnostics_share">分享</string>
     <string name="diagnostics_copied">已複製</string>
     <string name="diagnostics_loading">正在收集…</string>
+    <string name="about_update_download_in_app">下載更新</string>
+    <string name="about_update_downloading">正在下載…</string>
+    <string name="about_update_progress">正在下載 %1$d%%</string>
+    <string name="about_update_paused">下載已暫停，稍後自動繼續…</string>
+    <string name="about_update_install">安裝更新</string>
+    <string name="about_update_retry">重新下載</string>
+    <string name="about_update_cancel">刪除下載</string>
+    <string name="about_update_working">正在處理…</string>
+    <string name="about_update_install_hint">下載完成後點「安裝更新」，在系統安裝頁確認。第一次安裝需要允許 Mika 安裝未知應用程式。</string>
+    <string name="about_update_error">下載或安裝沒有完成，請稍後再試。</string>
+    <string name="about_update_bad_file">下載的安裝包不完整，或和發布的不一致，已刪除，請重新下載。</string>
+    <string name="about_update_not_newer">下載的安裝包不比已安裝的 Mika 新，已刪除。</string>
+    <string name="about_update_bad_signer">這個安裝包的簽名和已安裝的 Mika 不同，不能覆蓋安裝，已刪除。自己編譯的版本請先解除安裝，再裝官方版本。</string>
 </resources>

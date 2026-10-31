@@ -39,7 +39,7 @@ class AboutScreenTest {
 
     private val r020 = ReleaseInfo(
         "0.2.0", "Mika 0.2.0", "### 新增\n- 附件面板", "2026-11-05",
-        "https://github.com/wangzan101/Mika/releases/tag/v0.2.0", "https://github.com/x/mika-0.2.0.apk", "https://pan.example.cn/s/abc",
+        "https://github.com/wangzan101/Mika/releases/tag/v0.2.0", "https://github.com/x/mika-0.2.0.apk",
     )
 
     private class Calls {
@@ -202,7 +202,6 @@ class AboutScreenTest {
         compose.onNodeWithText("检查更新").performClick()
         compose.awaitOne("发现新版本 0.2.0")
         compose.onNodeWithText("当前 0.1.0 Beta · 2026-11-05 发布").assertExists()
-        compose.onNodeWithText("备用下载").assertExists()
         compose.onNodeWithText("以后再说").assertExists()
         compose.onNodeWithText("下载更新").assertExists()
         compose.waitForIdle()
@@ -266,15 +265,6 @@ class AboutScreenTest {
         }
         compose.onNodeWithText("重新下载").performClick()
         assertEquals(1, retries)
-    }
-
-    @Test
-    fun updateSheetHidesMirrorWhenNone() {
-        val r = r020.copy(mirrorUrl = null)
-        about(UpdateState(latest = r, update = r))
-        compose.onNodeWithText("检查更新").performClick()
-        compose.awaitOne("发现新版本 0.2.0")
-        compose.onAllNodesWithText("备用下载").assertCountEquals(0)
     }
 
     @Test

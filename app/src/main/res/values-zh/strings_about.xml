@@ -53,7 +53,6 @@
     <string name="about_update_bad_file">下载的安装包不完整或和发布的不一致，已删除，请重新下载。</string>
     <string name="about_update_not_newer">下载的安装包不比已装的 Mika 新，已删除。</string>
     <string name="about_update_bad_signer">这个安装包的签名和已装的 Mika 不同，不能覆盖安装，已删除。自己编译的版本请先卸载再装官方版。</string>
-    <string name="about_update_mirror">备用下载</string>
     <string name="about_update_later">以后再说</string>
     <string name="about_no_browser">没有能打开链接的浏览器</string>
     <string name="about_version">版本 %1$s</string>

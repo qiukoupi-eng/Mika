@@ -8,17 +8,16 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
-/** 一个发布的版本:版本号(不带 v)、标题、更新说明(Markdown)、发布日期、发布页、APK 直链、备用下载。 */
+/** 一个发布的版本:版本号(不带 v)、标题、更新说明(Markdown)、发布日期、发布页、APK 直链。 */
 data class ReleaseInfo(
     val version: String,
     val name: String,
-    /** 更新说明;「备用下载」那一行已拿掉,另放在 [mirrorUrl]。 */
+    /** 更新说明。 */
     val notes: String,
     /** 发布日期 yyyy-MM-dd;来源没写时为空。 */
     val date: String?,
     val pageUrl: String,
     val apkUrl: String?,
-    val mirrorUrl: String?,
     /** APK 附件的字节数;接口没给时为空。 */
     val apkSize: Long? = null,
     /** APK 附件的摘要,形如 `sha256:<hex>`;较早的附件没有,这时只靠包名、版本号和签名把关。 */
@@ -31,14 +30,9 @@ data class ReleaseInfo(
 /**
  * 读 GitHub 发布页接口(releases/latest)的版本信息:tag_name、name、body、published_at、html_url、
  * assets 里第一个 .apk 的 browser_download_url。
- *
- * 备用下载的约定:更新说明里单独一行写「备用下载: <地址>」(冒号全角半角都行,也可以写成 Markdown 链接
- * `[备用下载](<地址>)`;「备用下载」前面带别的字也认)。读到后从说明里拿掉这一行,显示成按钮。
  */
 object Releases {
     private val json = Json { ignoreUnknownKeys = true }
-
-    private val MIRROR_LINE = Regex("""备用下载.*?(https?://[^\s)>\]]+)""")
 
     fun fromGitHub(text: String): ReleaseInfo {
         val o = json.parseToJsonElement(text).jsonObject
@@ -52,21 +46,14 @@ object Releases {
         return ReleaseInfo(
             version = version,
             name = o.str("name")?.takeIf { it.isNotBlank() } ?: version,
-            notes = withoutMirrorLine(body),
+            notes = body.trim(),
             date = o.str("published_at")?.take(10)?.takeIf { it.length == 10 },
             pageUrl = o.str("html_url") ?: "${MikaLinks.RELEASES}/tag/$tag",
             apkUrl = apk?.str("browser_download_url"),
-            mirrorUrl = mirrorIn(body),
             apkSize = apk?.strOrNumber("size")?.toLongOrNull(),
             apkDigest = apk?.str("digest"),
         )
     }
-
-    /** 说明里「备用下载」那一行的地址;没有为空。 */
-    fun mirrorIn(notes: String): String? = notes.lineSequence().firstNotNullOfOrNull { MIRROR_LINE.find(it)?.groupValues?.get(1) }
-
-    fun withoutMirrorLine(notes: String): String =
-        notes.lines().filterNot { MIRROR_LINE.containsMatchIn(it) }.joinToString("\n").trim()
 
     /** 存盘用:记下最近一次查到的版本,下次打开 App 时红点还在。 */
     fun toJson(r: ReleaseInfo): JsonObject = buildJsonObject {
@@ -76,7 +63,6 @@ object Releases {
         r.date?.let { put("date", it) }
         put("pageUrl", r.pageUrl)
         r.apkUrl?.let { put("apkUrl", it) }
-        r.mirrorUrl?.let { put("mirrorUrl", it) }
         r.apkSize?.let { put("apkSize", it) }
         r.apkDigest?.let { put("apkDigest", it) }
     }
@@ -84,7 +70,7 @@ object Releases {
     fun fromJson(o: JsonObject): ReleaseInfo? = runCatching {
         ReleaseInfo(
             version = o.str("version")!!, name = o.str("name") ?: o.str("version")!!, notes = o.str("notes").orEmpty(),
-            date = o.str("date"), pageUrl = o.str("pageUrl") ?: MikaLinks.RELEASES, apkUrl = o.str("apkUrl"), mirrorUrl = o.str("mirrorUrl"),
+            date = o.str("date"), pageUrl = o.str("pageUrl") ?: MikaLinks.RELEASES, apkUrl = o.str("apkUrl"),
             apkSize = o.strOrNumber("apkSize")?.toLongOrNull(), apkDigest = o.str("apkDigest"),
         )
     }.getOrNull()

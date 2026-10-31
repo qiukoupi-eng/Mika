@@ -1,7 +1,6 @@
 package com.wangzan101.mika.about
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -14,7 +13,7 @@ class ReleasesTest {
           "html_url": "https://github.com/wangzan101/Mika/releases/tag/v0.2.0",
           "published_at": "2026-11-05T08:30:00Z",
           "prerelease": false,
-          "body": "### 新增\r\n- 附件面板\r\n\r\n备用下载：https://pan.example.cn/s/abc123\r\n",
+          "body": "### 新增\r\n- 附件面板\r\n",
           "assets": [
             {"name": "mika-0.2.0-gpl-sources.tar.gz", "browser_download_url": "https://github.com/x/src.tar.gz"},
             {"name": "mika-0.2.0.apk", "browser_download_url": "https://github.com/x/mika-0.2.0.apk", "size": 12345, "digest": "sha256:abc"}
@@ -33,9 +32,7 @@ class ReleasesTest {
         assertEquals(r.apkUrl, r.downloadUrl)
         assertEquals(12345L, r.apkSize)
         assertEquals("sha256:abc", r.apkDigest)
-        assertEquals("https://pan.example.cn/s/abc123", r.mirrorUrl)
         assertTrue(r.notes.contains("附件面板"))
-        assertFalse("mirror line is taken out of the notes", r.notes.contains("备用下载"))
     }
 
     @Test
@@ -47,7 +44,6 @@ class ReleasesTest {
         assertNull(r.apkUrl)
         assertNull(r.apkSize)
         assertNull(r.apkDigest)
-        assertNull(r.mirrorUrl)
         assertNull(r.date)
         assertEquals(r.pageUrl, r.downloadUrl)
     }
@@ -58,21 +54,10 @@ class ReleasesTest {
     }
 
     @Test
-    fun mirrorLineForms() {
-        assertEquals("https://a.cn/1", Releases.mirrorIn("备用下载: https://a.cn/1"))
-        assertEquals("https://a.cn/2", Releases.mirrorIn("- **备用下载**：https://a.cn/2 （提取码 1234）"))
-        assertEquals("https://a.cn/3", Releases.mirrorIn("说明\n[备用下载](https://a.cn/3)\n"))
-        assertEquals("https://a.cn/4", Releases.mirrorIn("备用下载：<https://a.cn/4>"))
-        assertEquals("前面带别的字也认", "https://a.cn/5", Releases.mirrorIn("网盘备用下载: https://a.cn/5"))
-        assertNull(Releases.mirrorIn("下载: https://github.com/x"))
-        assertNull(Releases.mirrorIn("备用下载：稍后补上"))
-    }
-
-    @Test
     fun storedReleaseRoundTrips() {
         val r = Releases.fromGitHub(github)
         assertEquals(r, Releases.fromJson(Releases.toJson(r)))
-        val bare = r.copy(date = null, apkUrl = null, mirrorUrl = null)
+        val bare = r.copy(date = null, apkUrl = null)
         assertEquals(bare, Releases.fromJson(Releases.toJson(bare)))
     }
 }
