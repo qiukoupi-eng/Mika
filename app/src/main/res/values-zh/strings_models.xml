@@ -105,4 +105,27 @@
     <string name="models_unverified">没测试通过，任务可能会失败</string>
     <string name="models_unverified_note">这家不提供模型列表，在用的 %1$s 还没测试通过，任务可能会失败。点「重新测试」用它试调用一次。</string>
     <string name="models_retest">重新测试</string>
+
+    <!-- 账号登录：xAI / Grok（设备码）。 -->
+    <string name="account_signin_title">用账号登录</string>
+    <string name="account_signin_xai_title">用 Grok 订阅</string>
+    <string name="account_signin_xai_body">用你的 xAI / Grok 订阅在 Mika 里调用 Grok。请求直接发到 xAI 的 Responses 接口。这项登录借用 xAI 官方命令行工具的公开登录入口，不是 xAI 专门给 Mika 开的。xAI 可能限制这种用法，账号有被限制的风险。令牌只加密存在这台手机上，不会写进日志。</string>
+    <string name="account_signin_xai_continue">使用 Grok 订阅继续</string>
+    <string name="account_signin_code">在浏览器里打开验证页，输入这个码：%1$s</string>
+    <string name="account_signin_copy">复制</string>
+    <string name="account_signin_copied">已复制</string>
+    <string name="account_signin_open">打开验证页</string>
+    <string name="account_signin_waiting">正在等你在浏览器里完成登录。</string>
+    <string name="account_signin_notif_title">正在登录账号</string>
+    <string name="account_signin_notif_body">正在等你在浏览器里完成登录</string>
+    <string name="account_fail_denied">已取消登录。</string>
+    <string name="account_fail_expired">登录码过期了，请再试一次。</string>
+    <string name="account_fail_timed_out">登录超时了，请再试一次。</string>
+    <string name="account_fail_rejected">登录被拒绝了（错误：%1$s），请再试一次。</string>
+    <string name="account_fail_no_sub">这个账号没有可用的 xAI 订阅。</string>
+    <string name="account_fail_network">连不上登录服务，请检查网络后再试。</string>
+    <string name="account_fail_issuer">登录地址不对，已停止，没有继续发送。</string>
+    <string name="account_signed_in_note_xai">在用你的 xAI / Grok 订阅。额度和这个账号的其他客户端共用。这项登录借用 xAI 官方命令行工具的公开登录入口，风险见登录前的说明。</string>
+    <string name="account_signed_out_note">这台手机上已退出登录。要连 xAI 那边的授权一起撤掉，到 xAI 账号设置里断开。选好的模型都还在。</string>
+    <string name="account_manage_xai">打开 xAI 账号</string>
 </resources>

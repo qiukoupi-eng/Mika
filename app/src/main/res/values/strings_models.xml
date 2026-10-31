@@ -109,4 +109,26 @@
     <string name="models_unverified">Not tested; tasks may fail</string>
     <string name="models_unverified_note">This provider has no model list, and %1$s (in use) hasn’t passed a test, so tasks may fail. Tap “Test again” to make one test call with it.</string>
     <string name="models_retest">Test again</string>
+
+    <string name="account_signin_title">Sign in with an account</string>
+    <string name="account_signin_xai_title">Use your Grok subscription</string>
+    <string name="account_signin_xai_body">Use your xAI / Grok subscription for requests in Mika. Requests go straight to the xAI Responses API. This sign-in reuses the public sign-in client of xAI\'s official command-line tool; it is not an app xAI registered for Mika. xAI may restrict this use, and the account can be limited. Tokens stay encrypted on this phone and are never written to logs.</string>
+    <string name="account_signin_xai_continue">Continue with Grok</string>
+    <string name="account_signin_code">Open the verification page and enter this code: %1$s</string>
+    <string name="account_signin_copy">Copy</string>
+    <string name="account_signin_copied">Copied</string>
+    <string name="account_signin_open">Open verification page</string>
+    <string name="account_signin_waiting">Waiting for you to finish signing in in the browser.</string>
+    <string name="account_signin_notif_title">Signing in to your account</string>
+    <string name="account_signin_notif_body">Waiting for you to finish signing in in the browser</string>
+    <string name="account_fail_denied">Sign-in was cancelled.</string>
+    <string name="account_fail_expired">The sign-in code expired. Please try again.</string>
+    <string name="account_fail_timed_out">Sign-in timed out. Please try again.</string>
+    <string name="account_fail_rejected">Sign-in was rejected (error: %1$s). Please try again.</string>
+    <string name="account_fail_no_sub">This account does not have a usable xAI subscription.</string>
+    <string name="account_fail_network">Could not reach the sign-in service. Check the network and try again.</string>
+    <string name="account_fail_issuer">The sign-in address was not allowed, so nothing was sent.</string>
+    <string name="account_signed_in_note_xai">Using your xAI / Grok subscription. Usage is shared with other clients on this account. This sign-in reuses the public sign-in client of xAI\'s official command-line tool; see the notice shown before you continue.</string>
+    <string name="account_signed_out_note">Signed out on this phone. To revoke the grant on xAI too, disconnect it in your xAI account settings. Model choices are kept.</string>
+    <string name="account_manage_xai">Open xAI account</string>
 </resources>

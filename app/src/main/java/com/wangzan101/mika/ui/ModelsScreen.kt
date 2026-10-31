@@ -1,6 +1,8 @@
 package com.wangzan101.mika.ui
 
 import com.wangzan101.mika.R
+import com.wangzan101.mika.core.oauth.AccountSignInException
+import com.wangzan101.mika.core.oauth.AccountSignInFailure
 import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.i18n.trPlural
 import androidx.compose.ui.res.stringResource
@@ -300,6 +302,8 @@ fun ProviderDetailContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetail
         GroupLabel(ModelsCopy.CONNECTION)
         if (p.kind == ProviderConfig.Kind.ChatGpt) {
             ChatGptConnection(ui, state, actions)
+        } else if (p.kind == ProviderConfig.Kind.Xai) {
+            AccountConnection(ui, p, state, actions)
         } else {
             GroupCard {
                 ListRow(null, ModelsCopy.STATUS, first = true) {
@@ -428,6 +432,37 @@ private fun ChatGptConnection(ui: ModelSetupUi, state: ListState?, actions: Prov
     FooterNote(if (signedIn) ModelsCopy.CHATGPT_PLAN_NOTE else ModelsCopy.CHATGPT_SIGNED_OUT_NOTE)
     if (ui.chatGptRevokeUnconfirmed) FooterNote(ModelsCopy.CHATGPT_REVOKE_UNCONFIRMED, color = c.warn)
     (ui.chatGptSignIn as? ListState.Failed)?.let { FooterNote(it.message, color = c.bad) }
+}
+
+/** xAI 的连接:账号、退出或再登录、打开 xAI 的账号页。退出只清这台手机上的令牌。 */
+@Composable
+private fun AccountConnection(ui: ModelSetupUi, p: Provider, state: ListState?, actions: ProviderDetailActions) {
+    val c = MikaTheme.colors
+    val account = ui.xaiAccount
+    val signedIn = account?.signedIn == true
+    val waiting = ui.accountSignIn.running && ui.accountSignIn.provider == AccountProvider.Xai
+    GroupCard {
+        ListRow(null, ModelsCopy.STATUS, first = true) {
+            when {
+                !signedIn -> RowValue(ModelsCopy.CHATGPT_SIGNED_OUT, ValueTone.Warn)
+                state == ListState.Running -> RowValue(ModelsCopy.LISTING)
+                state is ListState.Failed -> RowValue(ModelsCopy.LIST_FAILED, ValueTone.Bad)
+                else -> RowValue(ModelsCopy.CHATGPT_SIGNED_IN, ValueTone.Ok)
+            }
+        }
+        account?.label?.takeIf { it.isNotEmpty() }?.let { label -> ListRow(null, ModelsCopy.CHATGPT_ACCOUNT) { RowValue(label) } }
+        ListRow(null, ModelsCopy.ACCOUNT_MANAGE, titleColor = c.accent, onClick = actions.manageUsage) { RowChevron() }
+        if (signedIn) {
+            ListRow(null, ModelsCopy.CHATGPT_SIGN_OUT, titleColor = c.bad, onClick = actions.signOut)
+        } else {
+            ListRow(null, if (waiting) ModelsCopy.ACCOUNT_WAITING else ModelsCopy.ACCOUNT_XAI_CONTINUE, titleColor = c.accent, onClick = actions.signIn)
+        }
+    }
+    FooterNote(if (signedIn) ModelsCopy.ACCOUNT_SIGNED_IN_NOTE else ModelsCopy.ACCOUNT_SIGNED_OUT_NOTE)
+    if (!signedIn && waiting && ui.accountSignIn.userCode.isNotBlank()) {
+        FooterNote(ModelsCopy.accountCode(ui.accountSignIn.userCode))
+    }
+    ui.accountSignIn.failure?.takeIf { ui.accountSignIn.provider == AccountProvider.Xai }?.let { FooterNote(it, color = c.bad) }
 }
 
 /**
@@ -606,6 +641,31 @@ object ModelsCopy {
         SignInFailure.Network -> tr(R.string.chatgpt_fail_network)
     }
 
+    val ACCOUNT_TITLE: String get() = tr(R.string.account_signin_title)
+    val ACCOUNT_XAI_TITLE: String get() = tr(R.string.account_signin_xai_title)
+    val ACCOUNT_XAI_BODY: String get() = tr(R.string.account_signin_xai_body)
+    val ACCOUNT_XAI_CONTINUE: String get() = tr(R.string.account_signin_xai_continue)
+    val ACCOUNT_COPY: String get() = tr(R.string.account_signin_copy)
+    val ACCOUNT_OPEN: String get() = tr(R.string.account_signin_open)
+    val ACCOUNT_WAITING: String get() = tr(R.string.account_signin_waiting)
+    val ACCOUNT_SIGNED_OUT_NOTE: String get() = tr(R.string.account_signed_out_note)
+
+    fun accountCode(code: String) = tr(R.string.account_signin_code, code)
+
+    fun accountFailure(e: AccountSignInException): String = when (e.reason) {
+        AccountSignInFailure.Denied -> tr(R.string.account_fail_denied)
+        AccountSignInFailure.Expired -> tr(R.string.account_fail_expired)
+        AccountSignInFailure.TimedOut -> tr(R.string.account_fail_timed_out)
+        AccountSignInFailure.Rejected -> tr(R.string.account_fail_rejected, e.code ?: "unknown")
+        AccountSignInFailure.NoSubscription -> tr(R.string.account_fail_no_sub)
+        AccountSignInFailure.Network -> tr(R.string.account_fail_network)
+        AccountSignInFailure.BadIssuer -> tr(R.string.account_fail_issuer)
+    }
+
+    val ACCOUNT_SIGNED_IN_NOTE: String get() = tr(R.string.account_signed_in_note_xai)
+    val ACCOUNT_MANAGE: String get() = tr(R.string.account_manage_xai)
+    const val ACCOUNT_MANAGE_URL = "https://accounts.x.ai"
+
     /** 用途卡上的一行:[title] 是模型名([isModel])、「用主模型」「不用」或「未设置」([unset]),[subtitle] 是补充说明。 */
     data class RoleLine(val title: String, val subtitle: String, val isModel: Boolean = false, val unset: Boolean = false)
 
@@ -682,6 +742,7 @@ object ModelsCopy {
         ProviderConfig.Kind.Gemini -> "Gemini"
         ProviderConfig.Kind.OpenAiResponses -> "OpenAI Responses"
         ProviderConfig.Kind.ChatGpt -> "ChatGPT"
+        ProviderConfig.Kind.Xai -> "xAI Responses"
     }
 
     fun shortUrl(url: String) = url.removePrefix("https://").removePrefix("http://")
