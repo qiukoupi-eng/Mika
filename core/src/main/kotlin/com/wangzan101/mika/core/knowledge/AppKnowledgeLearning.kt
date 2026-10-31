@@ -31,7 +31,9 @@ enum class AppKnowledgeStage { Draft, Trial, Verified, Archived }
 @Serializable
 data class AppKnowledgeDraft(val id: String, val appName: String, val packageName: String,
     val markdown: String, val sourceRun: String, val stage: AppKnowledgeStage, val createdAt: Long,
-    val trialOutcomes: List<Boolean> = emptyList(), val lesson: Boolean = false, val revises: String? = null)
+    val trialOutcomes: List<Boolean> = emptyList(), val lesson: Boolean = false, val revises: String? = null,
+    /** 给用户看的 App 名字(如「设置」);旧记录没有,界面退回 [appName]。 */
+    val display: String = "")
 
 /** 注入时附在 App 说明后面的自学补充;[trial] 为 true 时还在试用,没被办成的任务用过。 */
 data class LearnedNote(val text: String, val trial: Boolean)
@@ -132,7 +134,7 @@ class AppKnowledgeDrafter(private val model: ChatModel) {
         val facts = raw.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
         if (facts == existing) return null
         return AppKnowledgeDraft(id, app.name, app.packages.first(), facts, run.runId, AppKnowledgeStage.Draft, atMs,
-            lesson = kind != AppRunKind.Done, revises = current?.id)
+            lesson = kind != AppRunKind.Done, revises = current?.id, display = app.display)
     }
 
     companion object {

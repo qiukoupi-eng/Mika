@@ -228,7 +228,7 @@ data class SkillsUi(val drafts: List<SkillRow> = emptyList(), val installed: Lis
             val all = appDrafts?.all().orEmpty()
             val byId = all.associateBy { it.id }
             val appRows = all.filter { it.stage != AppKnowledgeStage.Archived }.map { d ->
-                val row = AppKnowledgeRow(d.id, d.appName, d.markdown, d.stage)
+                val row = AppKnowledgeRow(d.id, d.display.ifBlank { d.appName }, d.markdown, d.stage)
                 if (d.stage != AppKnowledgeStage.Draft) row.copy(replaced = AppKnowledgeTrial.inUse(all, d.appName)?.id != d.id)
                 else row.copy(revision = d.revises != null,
                     changedLines = changedLines(d.revises?.let { byId[it] }?.markdown?.let(AppKnowledgeDrafter::facts).orEmpty(), d.markdown))

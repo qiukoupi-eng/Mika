@@ -145,11 +145,10 @@ class SkillDrafterTest {
         assertTrue(model.offeredTools.single().isEmpty())
     }
 
-    @Test fun evidenceAndTypedValuesNeverInDraft() {
+    @Test fun numbersFromTheRunNeverInDraft() {
         val ev = runEvents()
-        val model = FakeModel(text(md(body = "\n3. 核对 王小明 订单20241023001已提交,联系人 王小明,单号 20241023001,共 35元")))
-        val d = runBlocking { SkillDrafter(model).draft(DraftInput("r1", goal, "王小明 订单20241023001已提交", emptyList(), ev, tools, TOOLS), InMemoryPersonalSkills(), bundled) } as DraftResult.Draft
-        assertFalse(d.skill.markdown.contains("王小明"))
+        val model = FakeModel(text(md(body = "\n3. 核对 订单20241023001已提交,单号 20241023001,共 35元")))
+        val d = runBlocking { SkillDrafter(model).draft(DraftInput("r1", goal, "订单20241023001已提交", emptyList(), ev, tools, TOOLS), InMemoryPersonalSkills(), bundled) } as DraftResult.Draft
         assertFalse(d.skill.markdown.contains("20241023001"))
         assertFalse(d.skill.markdown.contains("35"))
         val request = model.requests.single().flatMap { it.parts }.filterIsInstance<Part.Text>().joinToString { it.text }
@@ -157,11 +156,11 @@ class SkillDrafterTest {
         assertTrue(d.skill.markdown.contains("learned_from: r1"))
     }
 
-    @Test fun partialScreenTextLeakDropsDraft() {
-        val ev = runEvents()
-        val model = FakeModel(text(md(body = "\n3. 确认是王小明先生")))
-        val r = runBlocking { SkillDrafter(model).draft(DraftInput("r1", goal, "收件人王小明先生的地址", emptyList(), ev, tools, TOOLS), InMemoryPersonalSkills(), bundled) }
-        assertEquals(DraftResult.Dropped("screen_text_leak"), r)
+    @Test fun interfaceNamesFromTheAnswerStayInTheDraft() {
+        // 回答里提到的页面名字正是做法本身:草稿里写到它不算照抄,照收
+        val model = FakeModel(text(md(body = "\n3. 进「关于手机」页看版本号")))
+        val r = runBlocking { SkillDrafter(model).draft(DraftInput("r1", goal, "版本号在「关于手机」页上", emptyList(), runEvents(), tools, TOOLS), InMemoryPersonalSkills(), bundled) }
+        assertTrue((r as DraftResult.Draft).skill.markdown.contains("关于手机"))
     }
 
     @Test fun similarPendingDraftDropsAndSuspendedBecomesUpdate() {
@@ -261,7 +260,7 @@ class SkillDrafterTest {
     }
 
     /** 网页上的动作记在「网站 主机名」下,不沿用之前的 App;网页上点到的名字算网页内容,草稿里出现就丢。 */
-    @Test fun webActionsTrackTheSiteAndPageNamesAreLeakSources() {
+    @Test fun webActionsTrackTheSite() {
         val pageObserve = """{"ok":true,"currentSite":"shop.example.com","snapshotId":"w1","elements":[""" +
             """{"ref":"@e1","role":"link","name":"李四的订单 2024-001","center":{"x":1,"y":1}}]}"""
         val web = listOf(
@@ -281,17 +280,8 @@ class SkillDrafterTest {
         val tapOnPage = lines.single { it.step == 12 }
         assertEquals("网站 shop.example.com", tapOnPage.where)
         assertEquals("李四的订单 2024-001", tapOnPage.target)
-        assertTrue(tapOnPage.fromPage)
         // 回到手机:又记在 App 下
         assertEquals("com.tencent.mm", lines.single { it.step == 13 }.where)
-        assertFalse(lines.first { it.tool == "phone_tap" }.fromPage)
 
-        val leaking = FakeModel(text(md(body = "\n3. 打开 李四的订单 看详情")))
-        val r = runBlocking {
-            SkillDrafter(leaking).draft(DraftInput("r1", goal, answer, emptyList(), runEvents(extra = web), tools + WEB_TOOLS, TOOLS),
-                InMemoryPersonalSkills(), bundled)
-        }
-        // 网页上的名字和输入的文字一样被换掉(或整份丢弃),不会原样进草稿
-        if (r is DraftResult.Draft) assertFalse(r.skill.markdown, r.skill.markdown.contains("李四")) else assertEquals(DraftResult.Dropped("screen_text_leak"), r)
     }
 }

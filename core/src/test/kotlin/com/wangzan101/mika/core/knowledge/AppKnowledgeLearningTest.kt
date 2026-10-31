@@ -48,6 +48,7 @@ class AppKnowledgeLearningTest {
         val d = draft(m, events())!!
         assertEquals(AppKnowledgeStage.Draft, d.stage)
         assertEquals("xianyu", d.appName)
+        assertEquals("闲鱼", d.display)
         assertEquals(facts, d.markdown)
         assertFalse(d.lesson)
         assertNull(d.revises)
