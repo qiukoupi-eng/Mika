@@ -22,6 +22,7 @@ import com.wangzan101.mika.settings.ProviderStore
 import com.wangzan101.mika.settings.RoleChoice
 import com.wangzan101.mika.settings.RoleChoices
 import com.wangzan101.mika.settings.ChatGptSignIns
+import com.wangzan101.mika.settings.AccountOutcome
 import com.wangzan101.mika.settings.DevicePrompt
 import com.wangzan101.mika.settings.SignInTarget
 import com.wangzan101.mika.core.chatgpt.ChatGptAuth
@@ -308,6 +309,31 @@ class ModelSetupViewModel(
                         else -> it
                     }
                 }
+            }
+        }
+        // 设备码的短码可能在界面重建之后才来
+        scope.launch {
+            signIns.device.collect { prompt ->
+                if (prompt == null) return@collect
+                val provider = AccountProvider.of(signIns.target) ?: return@collect
+                _state.update {
+                    it.copy(accountSignIn = it.accountSignIn.copy(
+                        provider = provider, running = true,
+                        userCode = prompt.userCode, openUrl = prompt.openUrl, expiresAtMs = prompt.expiresAtMs,
+                    ))
+                }
+            }
+        }
+        // 账号登录的结果交给现在这个界面(登录可能是重建前的那个界面开始的)
+        scope.launch {
+            signIns.outcome.collect { o ->
+                if (o == null) return@collect
+                val provider = AccountProvider.of(o.target) ?: return@collect
+                _state.update {
+                    if (o.providerId != null) snapshot(it.copy(accountSignIn = AccountSignInUi(), formOpen = false, signedInProvider = o.providerId))
+                    else it.copy(accountSignIn = AccountSignInUi(provider = provider, failure = o.failure))
+                }
+                signIns.consumeOutcome(o)
             }
         }
     }
@@ -641,18 +667,16 @@ class ModelSetupViewModel(
                 }
                 browser.returnToApp()
                 _state.update {
-                    snapshot(it.copy(
-                        accountSignIn = AccountSignInUi(), formOpen = false, signedInProvider = p.id,
-                        listing = if (failed != null) it.listing + (p.id to ListState.Failed(failed.message)) else it.listing - p.id,
-                    ))
+                    it.copy(listing = if (failed != null) it.listing + (p.id to ListState.Failed(failed.message)) else it.listing - p.id)
                 }
+                signIns.finishAccount(AccountOutcome(provider.target, providerId = p.id))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 val failure = e as? AccountSignInException ?: AccountSignInException(AccountSignInFailure.Network, cause = e)
                 signIns.recordAccountFailure(provider.name, failure.reason.name, failure.code)
                 browser.returnToApp()
-                _state.update { it.copy(accountSignIn = AccountSignInUi(provider = provider, failure = ModelsCopy.accountFailure(failure))) }
+                signIns.finishAccount(AccountOutcome(provider.target, failure = ModelsCopy.accountFailure(failure)))
             }
         }
         if (!started) _state.update { it.copy(accountSignIn = AccountSignInUi()) }
@@ -678,8 +702,8 @@ class ModelSetupViewModel(
     private fun publishDevice(c: DeviceChallenge) {
         val openUrl = c.verificationUriComplete ?: c.verificationUri
         val expiresAt = System.currentTimeMillis() + c.expiresInSec * 1000
+        // 界面经 signIns.device 接着显示(重建后的界面也收得到)
         signIns.showDevice(DevicePrompt(c.userCode, openUrl, expiresAt))
-        _state.update { it.copy(accountSignIn = it.accountSignIn.copy(userCode = c.userCode, openUrl = openUrl, expiresAtMs = expiresAt, running = true)) }
     }
 
     fun cancelAccountSignIn() {

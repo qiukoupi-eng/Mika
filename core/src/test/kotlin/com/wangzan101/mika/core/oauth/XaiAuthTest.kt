@@ -136,7 +136,7 @@ class XaiAuthTest {
                 OauthTokenResult.Ok(OauthTokens("new", "r2", expiresInSec = 100))
             },
             load = { stored },
-            save = { stored = it },
+            save = { _, next -> stored = next },
             now = { now },
         )
         assertEquals("new", tokens.get(fresh = false))
@@ -149,7 +149,7 @@ class XaiAuthTest {
             account = "xAI",
             refresh = { calls++; OauthTokenResult.Rejected("invalid_grant", terminal = true) },
             load = { stored },
-            save = { stored = it },
+            save = { _, next -> stored = next },
             now = { now },
         )
         val e = runCatching { again.get(fresh = false) }.exceptionOrNull()

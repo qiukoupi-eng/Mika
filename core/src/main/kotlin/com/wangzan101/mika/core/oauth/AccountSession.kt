@@ -58,6 +58,8 @@ data class AccountSession(
     val apiBase: String = "",
     val clientId: String = "",
     val issuer: String = "",
+    /** 登录时从发现文档读到、核对过主机的令牌地址;刷新用它。旧版本存下的没有,刷新时按签发方推。 */
+    val tokenUrl: String = "",
 ) {
     val signedIn: Boolean get() = accessToken.isNotEmpty() || refreshToken.isNotEmpty()
 
@@ -75,14 +77,14 @@ data class AccountSession(
 
 /**
  * 调用时用的访问令牌。快过期或上一个被拒了就经 [refresh] 换新的,同一时刻只有一个在换。
- * 换到的令牌先 [save] 再拿去用。授权已不能用就清掉令牌、抛 [ModelError.SignInExpired];网络或服务端一时出错照常抛,令牌留着。
+ * 换到的令牌先 [save] 再拿去用;[save] 同时收到换之前的那份,存储据此判断这期间用户有没有退出或重新登录(那样就不该写回)。授权已不能用就清掉令牌、抛 [ModelError.SignInExpired];网络或服务端一时出错照常抛,令牌留着。
  */
 class AccountTokens(
     /** 哪一家的登录(界面上的名字),登录失效时说给用户听。 */
     private val account: String,
     private val refresh: suspend (AccountSession) -> OauthTokenResult,
     private val load: () -> AccountSession?,
-    private val save: (AccountSession) -> Unit,
+    private val save: (before: AccountSession, after: AccountSession) -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
     private val refreshAheadMs: Long = 5 * 60_000L,
 ) : BearerToken {
@@ -102,12 +104,12 @@ class AccountTokens(
                     scopes = t.scopes.ifEmpty { s.scopes },
                     apiBase = t.apiBase ?: s.apiBase,
                 )
-                save(next)
+                save(s, next)
                 next.accessToken
             }
             is OauthTokenResult.Rejected -> {
                 if (r.terminal) {
-                    save(s.signedOut())
+                    save(s, s.signedOut())
                     throw ModelError.SignInExpired(account)
                 }
                 throw ModelError.Auth()

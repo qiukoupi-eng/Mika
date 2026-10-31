@@ -65,8 +65,9 @@ class OpenRouterAuthTest {
         assertFalse(a.accepts(mapOf("code" to "c", "state" to "other"), attempt))
         // 带 code 却没有 state:不是这次发起的
         assertFalse(a.accepts(mapOf("code" to "c"), attempt))
-        // 拒绝时不带 state,也不带 code:收下,当作没同意
-        assertTrue(a.accepts(emptyMap(), attempt))
+        // 拒绝时不带 state,也不带 code,带 error:收下,当作没同意;什么都没带的不是这次的
+        assertTrue(a.accepts(mapOf("error" to "access_denied"), attempt))
+        assertFalse(a.accepts(emptyMap(), attempt))
         assertEquals("c", a.readCallback(mapOf("code" to "c", "state" to attempt.state), attempt))
         val denied = runCatching { a.readCallback(mapOf("error" to "access_denied"), attempt) }.exceptionOrNull() as AccountSignInException
         assertEquals(AccountSignInFailure.Denied, denied.reason)

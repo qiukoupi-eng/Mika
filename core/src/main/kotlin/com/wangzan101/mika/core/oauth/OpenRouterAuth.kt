@@ -47,13 +47,13 @@ class OpenRouterAuth(
         .build().toString()
 
     /**
-     * 本机回调收不收这一次:state 对得上的收;没带 state 也没带 code 的(用户在授权页拒绝时 OpenRouter 不带 state)也收,
-     * 当作没同意。带了 code 却没有或对不上 state 的不收(不是这次发起的)。
+     * 本机回调收不收这一次:state 对得上的收;没带 state、没带 code、带了 `error` 的(用户在授权页拒绝时 OpenRouter 不带 state)也收,
+     * 当作没同意。别的(带 code 却没有或对不上 state,或什么都没带)不收:不是这次发起的,回 400 接着等。
      */
     fun accepts(params: Map<String, String>, attempt: OpenRouterAttempt): Boolean {
         val state = params["state"]
         if (state != null) return state == attempt.state
-        return params["code"].isNullOrEmpty()
+        return params["code"].isNullOrEmpty() && !params["error"].isNullOrEmpty()
     }
 
     /** 从回调里取出 `code`;没有就是用户没同意(或授权页报了错)。 */

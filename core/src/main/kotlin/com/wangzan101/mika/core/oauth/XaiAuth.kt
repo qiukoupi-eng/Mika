@@ -77,6 +77,7 @@ class XaiAuth(
             apiBase = API_BASE,
             clientId = clientId,
             issuer = issuer.trimEnd('/'),
+            tokenUrl = endpoints.tokenUrl,
         )
     }
 
@@ -84,7 +85,7 @@ class XaiAuth(
     suspend fun refresh(session: AccountSession): OauthTokenResult {
         if (session.refreshToken.isEmpty()) return OauthTokenResult.Rejected("no_refresh_token", terminal = true)
         val issuer = session.issuer.ifBlank { this.issuer }.trimEnd('/')
-        val tokenUrl = "$issuer/oauth2/token"
+        val tokenUrl = session.tokenUrl.ifBlank { "$issuer/oauth2/token" }
         val url = try {
             OauthUrls.check(tokenUrl, issuerHosts)
         } catch (e: AccountSignInException) {

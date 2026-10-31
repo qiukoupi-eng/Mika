@@ -658,6 +658,7 @@ object ModelsCopy {
     val KEY_GROUP: String get() = tr(R.string.signin_key_group)
     val SIGN_IN_RUNNING: String get() = tr(R.string.signin_running)
     val SIGN_IN_USE_KEY: String get() = tr(R.string.signin_use_key)
+    val SIGN_IN_BUSY: String get() = tr(R.string.signin_busy)
     val XAI_CODE_TITLE: String get() = tr(R.string.signin_xai_code_title)
     val XAI_CODE_BODY: String get() = tr(R.string.signin_xai_code_body)
     val XAI_CODE_COPY_REOPEN: String get() = tr(R.string.signin_xai_code_copy_reopen)

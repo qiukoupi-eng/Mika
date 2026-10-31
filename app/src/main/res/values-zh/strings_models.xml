@@ -150,4 +150,5 @@
     <string name="signin_set_main">设为主模型</string>
     <string name="signin_set_main_note">Mika 办事时用它</string>
     <string name="signin_sign_out_note">只清这台手机上的登录信息</string>
+    <string name="signin_busy">另一个登录还没结束，先完成或取消它。</string>
 </resources>

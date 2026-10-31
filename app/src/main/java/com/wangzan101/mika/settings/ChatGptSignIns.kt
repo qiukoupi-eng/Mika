@@ -20,6 +20,12 @@ enum class SignInTarget { None, ChatGpt, Xai, OpenRouter }
 data class DevicePrompt(val userCode: String, val openUrl: String, val expiresAtMs: Long = 0)
 
 /**
+ * 一次账号登录(xAI、OpenRouter)的结果:成功是存下的服务商 id,失败是给用户看的原因。
+ * 放在 [ChatGptSignIns] 里而不是界面状态里:登录期间界面可能重建,结果要交给当时在的那一个界面。
+ */
+data class AccountOutcome(val target: SignInTarget, val providerId: String? = null, val failure: String? = null)
+
+/**
  * 用账号登录(ChatGPT、xAI、OpenRouter)在进程里的那一份。登录要等用户在外部浏览器里输密码、过两步验证,期间 Mika 在后台:
  * 跑在 App 的作用域 [scope] 里(界面重建、退到后台都不断),开始时调 [keepAlive] 撑住进程(前台服务,
  * 免得进程被冻住、本机回调没人接);它起不来只记一句,登录照常。前台服务看着 [running],变回假就自己停,
@@ -55,12 +61,25 @@ class ChatGptSignIns(
     @Volatile var noticeBody: String? = null
         private set
 
-    /** 设备码登录正在显示的用户码;登录结束就清掉。 */
-    @Volatile var devicePrompt: DevicePrompt? = null
-        private set
+    private val _device = MutableStateFlow<DevicePrompt?>(null)
+    /** 设备码登录正在显示的用户码;登录结束就清掉。界面重建后靠它接着显示。 */
+    val device: StateFlow<DevicePrompt?> = _device.asStateFlow()
+    val devicePrompt: DevicePrompt? get() = _device.value
 
     fun showDevice(prompt: DevicePrompt) {
-        devicePrompt = prompt
+        _device.value = prompt
+    }
+
+    private val _outcome = MutableStateFlow<AccountOutcome?>(null)
+    /** 最近一次账号登录的结果,界面拿去显示后 [consumeOutcome]。 */
+    val outcome: StateFlow<AccountOutcome?> = _outcome.asStateFlow()
+
+    fun finishAccount(o: AccountOutcome) {
+        _outcome.value = o
+    }
+
+    fun consumeOutcome(o: AccountOutcome) {
+        _outcome.compareAndSet(o, null)
     }
 
     /** 开始一次登录,跑 [block];已有一次在跑时不开,返回假。 */
@@ -74,7 +93,8 @@ class ChatGptSignIns(
         this.target = target
         this.noticeTitle = noticeTitle
         this.noticeBody = noticeBody
-        devicePrompt = null
+        _device.value = null
+        _outcome.value = null
         _running.value = true
         runCatching(keepAlive).onFailure { log("sign-in keep-alive could not start", it) }
         // App 的作用域没有异常处理:漏出来的异常只记下,不让进程崩
@@ -94,7 +114,7 @@ class ChatGptSignIns(
                     job = null
                     _running.value = false
                     this.target = SignInTarget.None
-                    devicePrompt = null
+                    _device.value = null
                     this.noticeTitle = null
                     this.noticeBody = null
                 }

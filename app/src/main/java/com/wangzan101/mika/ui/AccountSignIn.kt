@@ -140,13 +140,14 @@ internal fun SignInSheetBody(ui: ModelSetupUi, kind: SignInKind, actions: SignIn
     Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 20.dp, end = 20.dp, bottom = 20.dp).testTag("signin-sheet-${kind.tag}")) {
         when {
             code != null -> DeviceCodeBody(ui.accountSignIn, code) { actions.cancel(kind) }
-            else -> IntroBody(kind, running, failure, actions)
+            // 同一时刻只有一次登录:别家正在登录时这里不能开始
+            else -> IntroBody(kind, running, failure, busy = !running && (ui.chatGptSignIn == ListState.Running || ui.accountSignIn.running), actions)
         }
     }
 }
 
 @Composable
-private fun IntroBody(kind: SignInKind, running: Boolean, failure: String?, actions: SignInSheetActions) {
+private fun IntroBody(kind: SignInKind, running: Boolean, failure: String?, busy: Boolean, actions: SignInSheetActions) {
     val c = MikaTheme.colors
     Text(ModelsCopy.signInTitle(kind), Modifier.fillMaxWidth(), style = MikaType.Title, color = c.ink, textAlign = TextAlign.Center)
     Text(ModelsCopy.signInBody(kind), Modifier.padding(top = 10.dp), fontSize = 13.5.sp, lineHeight = 21.sp, color = c.ink2)
@@ -154,8 +155,9 @@ private fun IntroBody(kind: SignInKind, running: Boolean, failure: String?, acti
     ModelsCopy.signInInfo(kind)?.let { Note(it, c.fill, c.ink2) }
     MikaButton(
         ModelsCopy.signInStart(kind), { actions.start(kind) },
-        Modifier.fillMaxWidth().padding(top = 16.dp).testTag("signin-start"), enabled = !running,
+        Modifier.fillMaxWidth().padding(top = 16.dp).testTag("signin-start"), enabled = !running && !busy,
     )
+    if (busy) Text(ModelsCopy.SIGN_IN_BUSY, Modifier.padding(top = 10.dp).testTag("signin-busy"), fontSize = 13.sp, lineHeight = 18.sp, color = c.ink2)
     if (running) {
         Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(ModelsCopy.signInWaiting(kind), Modifier.weight(1f), fontSize = 13.sp, lineHeight = 18.sp, color = c.ink2)

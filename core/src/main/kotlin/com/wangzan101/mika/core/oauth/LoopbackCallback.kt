@@ -57,8 +57,9 @@ class LoopbackCallback private constructor(private val server: ServerSocket) : C
                     respond(s.getOutputStream(), 404, "Not Found", "text/plain", "Not Found")
                     return@use
                 }
-                val params = parseQuery(target.substringAfter('?', ""))
-                if (!accept(params)) {
+                // 转义写坏的(如落单的 %)当作不是这次的回调
+                val params = runCatching { parseQuery(target.substringAfter('?', "")) }.getOrNull()
+                if (params == null || !accept(params)) {
                     respond(s.getOutputStream(), 400, "Bad Request", "text/plain", "Bad Request")
                     return@use
                 }

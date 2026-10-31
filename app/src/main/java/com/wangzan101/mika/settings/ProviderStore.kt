@@ -625,6 +625,17 @@ class ProviderStore(
         if (provider(providerId)?.signIn == OPENROUTER_SIGN_IN && providerId in keys) setKey(providerId, "")
     }
 
+    /**
+     * 刷新换到的令牌写回去,前提是这期间存着的登录没变:换令牌要等网络,用户可能已经退出或重新登录,
+     * 那样旧的刷新结果不能盖掉(否则退出了又被悄悄登录回来,或新登录被旧令牌顶掉)。
+     */
+    @Synchronized
+    private fun saveRefreshed(providerId: String, before: AccountSession, after: AccountSession) {
+        val now = accountSession(providerId) ?: return
+        if (now.refreshToken != before.refreshToken || now.accessToken != before.accessToken) return
+        saveAccount(providerId, after)
+    }
+
     private fun accountTokensFor(providerId: String): AccountTokens = synchronized(accountTokens) {
         accountTokens.getOrPut(providerId) {
             AccountTokens(
@@ -636,7 +647,7 @@ class ProviderStore(
                     }
                 },
                 load = { accountSession(providerId) },
-                save = { saveAccount(providerId, it) },
+                save = { before, after -> saveRefreshed(providerId, before, after) },
             )
         }
     }
