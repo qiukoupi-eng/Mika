@@ -814,7 +814,10 @@ class CapsuleController(
      */
     private fun applyDrag() {
         window?.draggable(drag)
-        window?.holdable(talkHold.takeIf { canTalk() }, CapsuleTalk.HOLD_MS)
+        val talkable = canTalk()
+        // 说着说着不能说了(例如这时 App 交到你手上、胶囊换成那一条):这一段丢掉,不发——用户没机会松开选落点
+        if (!talkable && talk.active) talk.abort()
+        window?.holdable(talkHold.takeIf { talkable }, CapsuleTalk.HOLD_MS)
         cardWindow?.draggable(cardDrag, cardHandle.takeIf { !zoomed } ?: Rect())
     }
 

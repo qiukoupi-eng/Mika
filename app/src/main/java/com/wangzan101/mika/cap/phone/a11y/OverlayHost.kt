@@ -5,6 +5,8 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.PixelFormat
 import android.util.Log
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.Choreographer
 import android.view.HapticFeedbackConstants
@@ -355,6 +357,8 @@ internal class OverlayFrame(context: Context) : FrameLayout(context) {
     /** 长按开始时自己发给里面内容的那个取消:它经过 [track] 时不当成系统的取消。 */
     private var ownCancel = false
     private val holdTimer = Runnable(::holdReached)
+    /** 长按计时走主线程的 Handler,不走 View.postDelayed:后者在窗口还没挂上时要等挂上才跑。 */
+    private val timer = Handler(Looper.getMainLooper())
 
     init {
         addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
@@ -362,14 +366,25 @@ internal class OverlayFrame(context: Context) : FrameLayout(context) {
         }
     }
 
+    /**
+     * 换长按的接收方([hold] 为 null 是不能长按了)。同一个接收方再装一次(每次重画都会装)什么都不变;
+     * 换了或拿掉时,正在进行的长按先通知旧的那个取消,这串触摸之后的抬起不再交给谁——否则旧的那个永远等不到收尾。
+     */
     fun setHold(hold: OverlayHold?, holdMs: Long) {
-        this.hold = hold
         this.holdMs = holdMs
-        if (hold == null) removeCallbacks(holdTimer)
+        if (hold === this.hold) return
+        val old = this.hold
+        this.hold = hold
+        timer.removeCallbacks(holdTimer)
+        if (holding) {
+            holding = false
+            tracking = false
+            old?.cancel()
+        }
     }
 
     fun release() {
-        removeCallbacks(holdTimer)
+        timer.removeCallbacks(holdTimer)
         hold = null
         holding = false
         drag = null
@@ -413,7 +428,7 @@ internal class OverlayFrame(context: Context) : FrameLayout(context) {
         val d = drag
         val h = hold
         if (d == null && h == null) {
-            removeCallbacks(holdTimer)
+            timer.removeCallbacks(holdTimer)
             tracking = false
             dragging = false
             holding = false
@@ -429,8 +444,8 @@ internal class OverlayFrame(context: Context) : FrameLayout(context) {
                 dragging = false
                 holding = false
                 gesture.down()
-                removeCallbacks(holdTimer)
-                if (tracking && h != null) postDelayed(holdTimer, holdMs)
+                timer.removeCallbacks(holdTimer)
+                if (tracking && h != null) timer.postDelayed(holdTimer, holdMs)
             }
             MotionEvent.ACTION_MOVE -> if (tracking) {
                 lastX = e.rawX
@@ -440,7 +455,7 @@ internal class OverlayFrame(context: Context) : FrameLayout(context) {
                 if (holding) {
                     hold?.move(e.rawX, e.rawY)
                 } else if (gesture.move(hypot(dx, dy)) == HoldGesture.Kind.Drag) {
-                    removeCallbacks(holdTimer)
+                    timer.removeCallbacks(holdTimer)
                     if (d != null) {
                         if (!dragging) {
                             dragging = true
@@ -451,7 +466,7 @@ internal class OverlayFrame(context: Context) : FrameLayout(context) {
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                removeCallbacks(holdTimer)
+                timer.removeCallbacks(holdTimer)
                 val up = e.actionMasked == MotionEvent.ACTION_UP
                 if (holding) {
                     if (up) hold?.end(e.rawX, e.rawY) else hold?.cancel()
