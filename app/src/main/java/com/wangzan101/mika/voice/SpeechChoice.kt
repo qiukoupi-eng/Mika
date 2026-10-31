@@ -38,7 +38,7 @@ class SpeechSettings(private val prefs: SharedPreferences) {
     val choice: StateFlow<SpeechChoice> = _choice.asStateFlow()
 
     fun set(choice: SpeechChoice) {
-        prefs.edit().putString(KEY, encode(choice).toString()).commit()
+        prefs.edit().putString(KEY, encode(choice).toString()).apply()
         _choice.value = choice
     }
 

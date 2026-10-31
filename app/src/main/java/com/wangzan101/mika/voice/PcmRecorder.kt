@@ -18,11 +18,11 @@ import kotlinx.coroutines.runBlocking
 /**
  * 录 16k 单声道 16 位 PCM。start 后每约 50ms 更新一次 [level](0..1,按每块 RMS 归一化);
  * stop 返回到目前为止的全部 PCM;录满 [maxMs] 自动停止,之后再 stop 仍返回已录的内容。
- * 录音权限由调用方先检查,这里拿不到麦克风就返回 false。
+ * 录音权限由调用方先检查,这里拿不到麦克风就返回 false。stop 会短暂阻塞(等读循环退出),别在主线程调。
  */
-class PcmRecorder(private val maxMs: Int = 60_000) {
+class PcmRecorder(private val maxMs: Int = 60_000) : Recorder {
     private val _level = MutableStateFlow(0f)
-    val level: StateFlow<Float> = _level
+    override val level: StateFlow<Float> = _level
 
     private val lock = Any()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -32,7 +32,7 @@ class PcmRecorder(private val maxMs: Int = 60_000) {
     private var size = 0
 
     @SuppressLint("MissingPermission") // 权限由调用方在 start 之前检查
-    fun start(): Boolean {
+    override fun start(): Boolean {
         synchronized(lock) {
             if (record != null) return false
             val minBuf = AudioRecord.getMinBufferSize(Wav.RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -79,9 +79,11 @@ class PcmRecorder(private val maxMs: Int = 60_000) {
             if (n <= 0) break // 读失败或已被停掉
             var sum = 0.0
             for (i in 0 until n) sum += buf[i].toDouble() * buf[i]
-            _level.value = (sqrt(sum / n) / 8000.0).coerceIn(0.0, 1.0).toFloat()
+            val lvl = (sqrt(sum / n) / 8000.0).coerceIn(0.0, 1.0).toFloat()
             val full = synchronized(lock) {
                 if (record !== rec) return // 已被 stop/cancel
+                // 在锁里、确认还没被停掉之后才写,免得 cancel 刚归零又被这一块的音量盖回去
+                _level.value = lvl
                 val take = minOf(n, pcm.size - size)
                 System.arraycopy(buf, 0, pcm, size, take)
                 size += take
@@ -94,12 +96,13 @@ class PcmRecorder(private val maxMs: Int = 60_000) {
             if (record === rec) {
                 release(rec)
                 record = null
+                _level.value = 0f // 不录了,波形别停在最后一块的音量上
             }
         }
     }
 
     /** 停止并返回到目前为止录到的全部 PCM;没在录(含已自动停止)也安全。 */
-    fun stop(): ShortArray {
+    override fun stop(): ShortArray {
         val (rec, j) = synchronized(lock) {
             val r = record
             record = null
@@ -118,7 +121,7 @@ class PcmRecorder(private val maxMs: Int = 60_000) {
     }
 
     /** 放弃这次录音,丢掉已录内容;可重复调用。 */
-    fun cancel() {
+    override fun cancel() {
         synchronized(lock) {
             record?.let { release(it) }
             record = null

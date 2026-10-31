@@ -479,6 +479,9 @@ class ProviderStore(
 
     private fun headers(sessionHeader: String?, session: ModelSession) = ClientHeaders.of(userAgent, sessionHeader, session)
 
+    /** 不属于任何对话的请求(如语音转写)给这家带的头:客户端标识,声明了会话头的用新的会话号。 */
+    fun clientHeaders(p: Provider): Map<String, String> = headers(p.sessionHeader, ModelSession.fresh())
+
     /** 服务商最近一次列出的模型里,给这个模型单独指定的接口;每次建模型时现查,重新列过就用新的。 */
     private fun endpointOf(cfg: ProviderConfig): ModelEndpoint? =
         provider(cfg.providerId)?.models?.firstOrNull { it.id == cfg.model }?.endpoint
@@ -936,6 +939,9 @@ class ProviderStore(
         private const val USE_NONE = "none"
 
         private val http by lazy { OkHttpClient.Builder().readTimeout(120, TimeUnit.SECONDS).build() }
+
+        /** 和对话模型共用的连接池;同一服务商的其他请求(如语音转写)也用它。 */
+        val modelHttp: OkHttpClient get() = http
 
         private val catalog by lazy { ModelCatalog(OkHttpClient.Builder().readTimeout(30, TimeUnit.SECONDS).build()) }
 
