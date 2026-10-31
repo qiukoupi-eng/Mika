@@ -32,6 +32,14 @@ class ConversationTest {
         assertTrue(text(listOf(Turn("问", "长".repeat(5000), "succeeded")), maxChars = 500).length <= 500)
     }
 
+    @Test fun keptPageSaysWhetherItIsStillOpen() {
+        val open = text(listOf(Turn("播放课程,挂着别关", "已开始播放", "succeeded", keptPage = "course.example.com")))
+        assertTrue("kept the page on course.example.com running in the background" in open)
+        val closed = text(listOf(Turn("播放课程", "已开始播放", "succeeded", keptPage = "course.example.com", keptPageClosed = "expired")))
+        assertTrue("has since been closed" in closed)
+        assertFalse("course.example.com" in text(listOf(Turn("播放课程", "已开始播放", "succeeded"))))
+    }
+
     @Test fun failedTurnShowsReason() {
         // 停止的那一轮没有交代时只说取消了(停止后补上交代的见 StopSummaryTest)
         val t = text(listOf(Turn("订票", "验证码一直过不去", "failed"), Turn("查天气", Conversation.CANCELLED_OUTCOME, "cancelled")))

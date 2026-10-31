@@ -180,6 +180,21 @@ The user is handling this page right now (takeover). Wait for the hand-back befo
 ## failure.site_mode_unavailable
 Switching between the desktop and mobile version is not available here. Continue with the page as it is.
 
+## failure.keep_open_unavailable
+Keeping a page open after the task is not available here. The page closes when the task ends; tell the user so.
+
+## failure.users_page
+This is the user's own page in Mika's browser; it stays open after the task anyway, so there is nothing to keep.
+
+## keep_open.kept
+This page will keep running in the background after the task ends, for at most {{hours}} hours. Tell the user it stays open.
+
+## keep_open.replaces
+This page will keep running in the background after the task ends, for at most {{hours}} hours. The page kept earlier on {{site}} will be closed then; tell the user.
+
+## keep_open.taken_back
+This page is no longer kept: it closes when the task ends.
+
 ## failure.downloads_unavailable
 Downloading files is not available yet. Do not say a file was downloaded; tell the user they can download it themselves.
 
