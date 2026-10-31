@@ -11,7 +11,7 @@ import kotlinx.serialization.json.contentOrNull
 import java.util.UUID
 
 /**
- * 把一次核查通过的成功运行记成路线。只看 [RunEvent.ActionTarget] 与接管、追问、确认、障碍、核查、结局一类事件;
+ * 把一次办成的运行记成路线。只看 [RunEvent.ActionTarget] 与接管、追问、确认、障碍、结局一类事件;
  * 有任何一项说明这次不该记(要用户出手、付款、密码框、防截屏、用了浏览器工具或沙箱工具),返回 null。
  */
 object RouteRecorder {

@@ -25,8 +25,8 @@
     <string name="memory_use_sub">关掉后不读也不记</string>
     <string name="memory_auto">自动记住我说过的事</string>
     <string name="memory_auto_sub">任务结束后从你的原话里整理</string>
-    <string name="memory_learn">从办成的任务里学技能</string>
-    <string name="memory_learn_sub">学到的技能要你收下才会用</string>
+    <string name="memory_learn">从做过的事里学(技能和 App 知识)</string>
+    <string name="memory_learn_sub">学到的技能和 App 知识要你收下才会用</string>
     <string name="memory_clear_sub">删掉所有记忆和学到的技能</string>
     <string name="edit_it">改一改</string>
     <string name="unpin">取消置顶</string>
@@ -57,7 +57,7 @@
     <string name="memory_said_via">你在 %1$s通过%2$s说:『%3$s』</string>
     <string name="memory_said">你在 %1$s说:『%2$s』</string>
     <string name="verify_returned">核查退回</string>
-    <string name="skills_drafts">新技能草稿，收下后先试用并核实</string>
+    <string name="skills_drafts">新技能草稿，收下后先试用</string>
     <string name="skills_accept_try">收下试用</string>
     <string name="skills_hide_full">收起全文</string>
     <string name="skills_view_full">看全文</string>
@@ -65,14 +65,14 @@
     <string name="skills_mine">我的技能</string>
     <string name="skills_empty">还没有学到的技能</string>
     <string name="skills_suspended">已停用</string>
-    <string name="skills_trial">试用中，未核实</string>
+    <string name="skills_trial">试用中，还没用它办成过事</string>
     <string name="skills_recent">最近:%1$s</string>
     <string name="skills_app_knowledge">App 知识</string>
     <string name="skills_restore_prev">恢复上一版</string>
     <string name="skills_edit_title">改一改再试用</string>
     <string name="skills_app_addition">补充，还没用上</string>
     <string name="skills_app_revision">修订，还没用上</string>
-    <string name="skills_verified">已核实</string>
+    <string name="skills_verified">用它办成过事</string>
     <string name="skills_archived">已归档</string>
     <string name="skills_archive">归档</string>
     <string name="skills_changed_lines">改了这几行:</string>

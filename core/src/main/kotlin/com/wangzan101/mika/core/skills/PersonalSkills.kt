@@ -1,6 +1,6 @@
 package com.wangzan101.mika.core.skills
 
-/** pending 草稿;trial 已收下但尚待实际核实;active 核实过;suspended 最近不灵。 */
+/** pending 草稿;trial 已收下、还没用它办成过事;active 用它办成过(见 LearnGate);suspended 最近不灵。 */
 @Suppress("EnumEntryName")
 enum class SkillStatus { active, pending, suspended, trial }
 

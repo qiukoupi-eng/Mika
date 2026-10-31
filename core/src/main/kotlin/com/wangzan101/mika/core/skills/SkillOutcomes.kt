@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.skills
 
+import com.wangzan101.mika.core.agent.FailKind
 import com.wangzan101.mika.core.agent.LearnGate
 import com.wangzan101.mika.core.agent.RunOutcome
 import com.wangzan101.mika.core.agent.TaskState
@@ -52,7 +53,8 @@ object SkillOutcomes {
     /**
      * 任务结局对应的结果;取消的不记(null)。[outcome] 是交出回答后判的结局([RunOutcome]):
      * 回答如实说没办成、只办了一部分的算 failed;没判成的不说明技能灵不灵,算 unreviewed;
-     * 办成的按 [LearnGate] 算 verified(没跑核查也算),核查跑过却没通过的算 unverified。
+     * 办成的按 [LearnGate] 算 verified(没跑核查也算),核查跑过却没通过的算 unverified;
+     * 失败的只有放弃、步数用完算 failed,模型出错、环境出问题、操作保护停下的算 unreviewed。
      */
     fun resultOf(end: TaskState, outcome: RunOutcome): SkillResult? = when (end) {
         is TaskState.Succeeded -> when {
@@ -63,7 +65,12 @@ object SkillOutcomes {
             LearnGate.done(end, outcome) -> SkillResult.verified
             else -> SkillResult.unverified
         }
-        is TaskState.Failed -> if (VERIFIER_REJECTED_MARK in end.reason) SkillResult.verifier_rejected else SkillResult.failed
+        is TaskState.Failed -> when {
+            VERIFIER_REJECTED_MARK in end.reason -> SkillResult.verifier_rejected
+            end.kind == FailKind.GaveUp || end.kind == FailKind.StepLimit -> SkillResult.failed
+            // 模型出错、运行环境出问题、操作保护停下:和照着做灵不灵无关
+            else -> SkillResult.unreviewed
+        }
         else -> null
     }
 }
