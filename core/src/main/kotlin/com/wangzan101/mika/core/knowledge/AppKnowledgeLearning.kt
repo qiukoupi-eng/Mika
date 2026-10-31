@@ -16,7 +16,6 @@ import com.wangzan101.mika.core.skills.ActionDigest
 import com.wangzan101.mika.core.skills.ActionLine
 import com.wangzan101.mika.core.skills.Eligibility
 import com.wangzan101.mika.core.skills.SkillDrafter
-import com.wangzan101.mika.core.skills.SkillRedactor
 import com.wangzan101.mika.core.tool.ToolIndex
 import com.wangzan101.mika.core.tool.Verb
 import kotlinx.coroutines.CancellationException
@@ -98,7 +97,7 @@ enum class AppRunKind(val wire: String) { Done("done"), Bumpy("bumpy"), NotDone(
  * 把一次运行在某个 App 里的经过,写成对这个 App 知识补充的修订:请一次模型(不带工具),交给它这个 App 的内置说明、
  * 在用的补充、结局和精简的动作清单(带出错码、界面变没变),要回补充改完以后的全文;没有值得补的(最常见)什么也不产出。
  *
- * 交回的补充里目标的值换成占位、数字换掉(内置说明、App 名字里自带的除外),写了密码、验证码这类东西的整份不收。
+ * 交回的补充照原样收;写了密码、验证码这类东西的整份不收。
  */
 class AppKnowledgeDrafter(private val model: ChatModel) {
     suspend fun draft(run: AppRunInput, app: KnowledgeEntry, builtIn: String?, current: AppKnowledgeDraft?, id: String, atMs: Long): AppKnowledgeDraft? {
@@ -114,9 +113,6 @@ class AppKnowledgeDrafter(private val model: ChatModel) {
             else -> return null
         }
         val existing = current?.let { facts(it.markdown) }
-        // 内置说明、在用的补充、App 的名字和包名里自带的数字(如铁路 App 的名字)保留
-        val keepDigits = (app.packages + listOfNotNull(builtIn, existing, app.display, app.name) + app.aliases)
-            .flatMap { Regex("\\d{2,}").findAll(it).map { m -> m.value }.toList() }.toSet()
         val request = Prompts.fill(INPUT, mapOf(
             "app" to app.display + " (" + app.packages.joinToString(", ") + ")",
             "outcome" to kind.wire,
@@ -133,12 +129,8 @@ class AppKnowledgeDrafter(private val model: ChatModel) {
         val raw = SkillDrafter.stripFence(reply.parts.filterIsInstance<Part.Text>().joinToString("") { it.text })
         if (raw.isEmpty() || raw.equals(NOTHING, ignoreCase = true)) return null
         if (!valid(raw, run.tools)) return null
-        val redacted = SkillRedactor.redact(raw, SkillRedactor.literals(run.goal, emptyList()))
-        // 写了密码、卡号这类东西说明起草走偏了,数字换掉也不收
-        if (SensitiveFilter.hit(redacted) != null) return null
-        val kept = SkillRedactor.scrubNumbers(redacted, keepDigits).lines().map { it.trim() }.filter { it.isNotEmpty() }
-        val facts = kept.joinToString("\n")
-        if (kept.isEmpty() || facts == existing) return null
+        val facts = raw.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+        if (facts == existing) return null
         return AppKnowledgeDraft(id, app.name, app.packages.first(), facts, run.runId, AppKnowledgeStage.Draft, atMs,
             lesson = kind != AppRunKind.Done, revises = current?.id)
     }
