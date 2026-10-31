@@ -171,4 +171,38 @@ class AppCopiesTest {
         }
         assertEquals(emptyList<String>(), screen.opened)
     }
+
+    private inner class ShownScreen(private val result: ActionResult) : ScreenPort by FakeScreen() {
+        override suspend fun listApps() = listOf("com.example.chat" to "Chat")
+        override suspend fun appCopies() = listOf(chatCopy)
+        override suspend fun openAppCopy(packageName: String, userId: Int, cold: Boolean) = result
+    }
+
+    private suspend fun launchCopy(result: ActionResult) =
+        toolDispatcher(ShownScreen(result)).execute(Part.ToolCall("l", "phone_launch_app", """{"package":"com.example.chat","user":128}"""))
+
+    @Test fun theResultSaysWhichCopyIsShowing() = runTest {
+        // 要的那份开出来了:照实带上是哪一份,不再提醒「这是另一份」
+        val right = launchCopy(ActionResult.Ok(inProfile = OpenedElsewhere.OTHER_PROFILE, profileUser = 128, requestedUser = 128))
+        assertEquals(128, right.content["profileUser"]!!.jsonPrimitive.int)
+        assertEquals("true", right.content["requestedCopy"]!!.jsonPrimitive.content)
+        assertFalse(right.content["hint"]?.jsonPrimitive?.content.orEmpty().contains("not the main one"))
+        // 开出来的是本来那份:明说不是要的那份
+        val wrong = launchCopy(ActionResult.Ok(inProfile = OpenedElsewhere.MAIN_PROFILE, profileUser = 0, requestedUser = 128))
+        assertEquals("false", wrong.content["requestedCopy"]!!.jsonPrimitive.content)
+        assertTrue(wrong.content["hint"]!!.jsonPrimitive.content.contains("This is the main app, not the requested copy."))
+        // 系统一直开别的那份:照实失败
+        val failed = launchCopy(ActionResult.Failed("copy_not_opened", "The main app opened instead (user 0). Requested: the copy in user 128."))
+        assertEquals("copy_not_opened", failed.content["error"]!!.jsonPrimitive.content)
+        assertTrue(failed.content["message"]!!.jsonPrimitive.content.contains("user 128"))
+    }
+
+    @Test fun chooserOptionIndicesFollowTheOptions() {
+        fun el(i: Int, name: String, clickable: Boolean = true) =
+            UiElement("@e$i", "LinearLayout", name, 0, 0, listOf(100, 300 + i * 100, 900, 380 + i * 100), null, clickable, false, false)
+        // 两项名字一模一样(只靠角标区分):两个都要点得到
+        val window = listOf(el(0, "使用以下方式打开", clickable = false), el(1, "Chat"), el(2, "Chat"), el(3, "取消"))
+        assertEquals(listOf(1, 2), LaunchChooser.optionIndices("Chat", window))
+        assertEquals(null, LaunchChooser.optionIndices("Chat", listOf(el(0, "取消"))))
+    }
 }

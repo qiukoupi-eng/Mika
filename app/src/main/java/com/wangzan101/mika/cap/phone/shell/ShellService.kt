@@ -134,6 +134,9 @@ class ShellService(
         val intent = launchIntent(packageName, userId) ?: return START_NOT_FOUND
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle()
+        // 另一份用户里的先走桌面打开图标的那条路:有的系统对程序启动的另一份先弹「用哪一个打开」,桌面这条路不弹
+        val component = intent.component
+        if (userId != myUser && component != null && startAsLauncher(component, userId, options)) return START_OK
         val ok = try {
             val start = taskManager.javaClass.methods.first { it.name == "startActivityAsUser" && it.parameterTypes.size == 12 }
             // (caller, callingPackage, callingFeatureId, intent, resolvedType, resultTo, resultWho,
@@ -151,6 +154,33 @@ class ShellService(
             exec("am", "start", *user, "--display", "$displayId", "-n", component) == 0
         }
         if (ok) START_OK else START_ERROR
+    }
+
+    /** ILauncherApps(LauncherApps 背后的系统服务);拿不到为 null。 */
+    private val launcherApps: Any? by lazy {
+        runCatching {
+            val binder = Class.forName("android.os.ServiceManager").getMethod("getService", String::class.java).invoke(null, "launcherapps")
+            Class.forName("android.content.pm.ILauncherApps\$Stub").getMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)
+        }.onFailure { Log.w(TAG, "launcherapps service unavailable", it) }.getOrNull()
+    }
+
+    /**
+     * 像桌面那样打开另一份用户 [userId] 里的启动页 [component]:ILauncherApps.startActivityAsUser(LauncherApps.startMainActivity
+     * 背后的接口),带同样的 [options](启动到 Mika 的屏)。系统那边按调用方查能不能碰那份用户:shell 有跨用户的权限,
+     * 包名也对得上自己的 uid。接口不在、或被拒(抛错)返回 false,调用方改走 startActivityAsUser。
+     */
+    private fun startAsLauncher(component: ComponentName, userId: Int, options: Bundle): Boolean = try {
+        val la = launcherApps ?: throw IllegalStateException("no launcherapps service")
+        val user = UserHandle.getUserHandleForUid(userId * PER_USER_RANGE)
+        // 安卓 11 起:(caller, callingPackage, callingFeatureId, component, sourceBounds, opts, user);更早没有 callingFeatureId
+        val m = la.javaClass.methods.first { it.name == "startActivityAsUser" && it.parameterTypes.size in 6..7 && ComponentName::class.java in it.parameterTypes }
+        val args: Array<Any?> = if (m.parameterTypes.size == 7) arrayOf(null, ShellContext.SHELL_PACKAGE, null, component, null, options, user)
+        else arrayOf(null, ShellContext.SHELL_PACKAGE, component, null, options, user)
+        m.invoke(la, *args)
+        true
+    } catch (t: Throwable) {
+        Log.w(TAG, "launcher-style start of ${component.flattenToShortString()} in user $userId failed", t)
+        false
     }
 
     /**

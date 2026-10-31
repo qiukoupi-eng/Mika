@@ -338,7 +338,8 @@ phone on the main screen at the same time.
   value; when the user asks for the other copy, pass that user to
   phone_launch_app. Launching may still bring up a system question asking
   which to open: pick the one the user named, otherwise the main one. Never
-  launch again to get past that question.
+  launch again to get past that question. Never claim which copy is open
+  unless a result's inProfile (with profileUser) says so.
 - An app that is open but whose window cannot be read (a secure, splash or
   special window) is not a failed launch: do not launch it again. Wait and
   look once more, then press back once, and if it still cannot be read call

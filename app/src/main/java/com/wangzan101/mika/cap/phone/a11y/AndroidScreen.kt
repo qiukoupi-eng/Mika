@@ -671,6 +671,7 @@ class AndroidScreen(
     private suspend fun awaitOpened(packageName: String, before: String?, hint: String?, sharing: Boolean = false, user: Int? = null): ActionResult {
         targetPackage = packageName
         chooserPackage = null
+        requestedUser = user
         // 打开了:Mika 屏上最上面的任务是它(问不到任务时退回看无障碍读到的最上面的窗口);指定了哪一份时还得是那份用户的任务
         fun launched(): Boolean = (foregroundTaskPackage()?.let { it == packageName } ?: (ScreenReader.topPackage(windows()) == packageName)) &&
             (user == null || userOf(runCatching { shell.topTaskId(displayId) }.getOrDefault(-1)).let { it < 0 || it == user })
@@ -682,6 +683,12 @@ class AndroidScreen(
         val onTop = launched()
         val task = if (onTop) shell.topTaskId(displayId) else -1
         _target.value = TargetApp(packageName, task, if (task >= 0) userOf(task) else user ?: -1)
+        if (!onTop && user != null) {
+            // 要的是另一份,系统却先问打开哪一个:自己逐个点选项,认开出来的是哪一份,不交给模型猜
+            if (chooserTargets(packageName, before) != null) return resolveCopyChooser(packageName, user, before, hint)
+            // 直接开出来的是这个 App 的别的那份:照实失败,不当成要的那份
+            if (foregroundTaskPackage() == packageName) return copyNotOpened(user, userOf(runCatching { shell.topTaskId(displayId) }.getOrDefault(-1)))
+        }
         // 系统在问打开哪一个(App 装了两份等):算打开了,等模型选;选完 App 到了前台,之后的动作照常认它是目标。
         // App 已在最上面时盖着的系统窗口(权限框)不算
         if (!onTop) chooserOf(packageName, before)?.let { first ->
@@ -706,6 +713,69 @@ class AndroidScreen(
         // 打开了,但另一个包的窗口盖在上面(权限弹窗、账号选择器):照实说是谁,仍算打开了
         val cover = ScreenReader.topPackage(windows())?.takeIf { it != packageName }
         return ok(hint = hint).let { if (cover != null) it.copy(coveredBy = cover, appSwitched = null, switchedByTarget = false) else it }
+    }
+
+    /**
+     * 要的是另一份用户 [user] 里的那份,系统却在 Mika 屏上问打开哪一个(选项可能名字一模一样,看不出哪个是哪份):
+     * 逐个点选项,等开出来,读最上面任务所属的用户;是要的那份就算打开。不是就按一次返回让它退到后台(那可能是用户手上那份的任务,
+     * 不结束它),再打开一次、点下一个。都试过还不是,照实失败 copy_not_opened,说开出来的是哪一份;不把错的那份当成功。
+     */
+    private suspend fun resolveCopyChooser(packageName: String, user: Int, before: String?, hint: String?): ActionResult {
+        fun topTask() = runCatching { shell.topTaskId(displayId) }.getOrDefault(-1)
+        suspend fun opened(): ActionResult? {
+            if (foregroundTaskPackage() != packageName) return null
+            val task = topTask()
+            if (userOf(task) != user) return null
+            _target.value = TargetApp(packageName, task, user)
+            return ok(hint = hint)
+        }
+        var tried = 0
+        var shown: Int? = null
+        while (true) {
+            val targets = chooserTargets(packageName, before) ?: break
+            if (tried >= targets.size) break
+            val (x, y) = targets[tried++]
+            if (!runCatching { shell.injectTap(displayId, x, y) }.getOrDefault(false)) break
+            val deadline = SystemClock.uptimeMillis() + LAUNCH_WAIT_MS
+            while (foregroundTaskPackage() != packageName && SystemClock.uptimeMillis() < deadline) delay(POLL_MS)
+            waitStable(SETTLE_CAP_MS)
+            if (foregroundTaskPackage() != packageName) break
+            opened()?.let { return it }
+            shown = userOf(topTask())
+            Log.i(TAG, "chooser option $tried opened user $shown, not the requested $user")
+            runCatching { shell.injectKey(displayId, KeyEvent.KEYCODE_BACK) }
+            waitStable(SETTLE_CAP_MS)
+            if (tried >= targets.size) break
+            if (runCatching { shell.startAppInUser(displayId, packageName, user, false) }.getOrDefault(ShellService.START_ERROR) != ShellService.START_OK) break
+            val until = SystemClock.uptimeMillis() + LAUNCH_WAIT_MS
+            while (chooserTargets(packageName, before) == null && SystemClock.uptimeMillis() < until) {
+                // 这一次直接开出了要的那份
+                opened()?.let { return it }
+                delay(POLL_MS)
+            }
+        }
+        return copyNotOpened(user, shown)
+    }
+
+    /** 要的那份 [user] 没打开;[shown] 是开出来的那份所属的用户(没开出来或读不到为 null / 负数)。 */
+    private fun copyNotOpened(user: Int, shown: Int?): ActionResult.Failed {
+        val what = when {
+            shown == null || shown < 0 -> "Nothing from the app came to the front."
+            shown == myUser -> "The main app opened instead (user $shown)."
+            else -> "The copy in user $shown opened instead."
+        }
+        return ActionResult.Failed(COPY_NOT_OPENED, "$what Requested: the copy in user $user.")
+    }
+
+    /** 系统在 Mika 屏上问打开哪一个时,那几个选项的中心点(屏上像素,先后同选项);不是在问为 null。认法同 [chooserOf]。 */
+    private fun chooserTargets(packageName: String, before: String?): List<Pair<Int, Int>>? {
+        val w = ScreenReader.contentWindows(windows()).firstOrNull { it.root != null } ?: return null
+        val pkg = w.root?.packageName?.toString() ?: return null
+        if (pkg == packageName || pkg == before || !isSystemPackage(pkg)) return null
+        val label = appLabel(packageName) ?: return null
+        val entries = ScreenReader.read(listOf(w), display.width, display.height).entries
+        val picked = LaunchChooser.optionIndices(label, entries.map { it.element }) ?: return null
+        return picked.map { i -> android.graphics.Rect().also(entries[i].node::getBoundsInScreen).let { it.centerX() to it.centerY() } }
     }
 
     /**
@@ -740,6 +810,7 @@ class AndroidScreen(
             // 事先不知道由谁打开的链接,落地后再占;占不到也不撤回(外壳那边已查过别的屏)
             if (checkOtherTasks) reserve(opened)
             targetPackage = opened
+            requestedUser = null
             val task = shell.topTaskId(displayId)
             _target.value = TargetApp(opened, task, userOf(task))
         }
@@ -818,6 +889,7 @@ class AndroidScreen(
         val showing = action.silent && landed && topBefore != pkg
         if (landed && (!action.silent || showing)) {
             targetPackage = pkg
+            requestedUser = null
             val task = runCatching { shell.topTaskId(displayId) }.getOrDefault(-1)
             _target.value = TargetApp(pkg, task, userOf(task))
         }
@@ -1326,13 +1398,31 @@ class AndroidScreen(
         changed: Boolean? = null, relocatedTo: String? = null, verification: Verification? = null,
         hint: String? = null, secret: Boolean = false, spill: Spill? = null, inProfile: String? = null,
     ): ActionResult.Ok {
-        val profile = adoptTargetTask() ?: inProfile
+        val adopted = adoptTargetTask()
+        val shown = shownCopy()
+        val profile = adopted ?: inProfile ?: shown?.first
         val sw = switchedTo()
         return ActionResult.Ok(
             changed = changed, appSwitched = sw?.packageName, switchedByTarget = sw?.byTarget == true,
             relocated = relocatedTo != null, relocatedTo = relocatedTo, verification = verification, hint = hint, secret = secret,
             chooser = spill?.chooser, opened = spill?.opened, inProfile = profile,
+            profileUser = shown?.second, requestedUser = requestedUser.takeIf { shown != null },
         )
+    }
+
+    /** 打开 App 时要的那份用户(另一份);要的是本来那份、或这次不是打开 App 为 null。 */
+    @Volatile private var requestedUser: Int? = null
+
+    /**
+     * 目标 App 装了两份(列出过另一份、要的就是另一份,或打开的就是另一份)时,此刻 Mika 屏上是哪一份:(inProfile, 所属用户)。
+     * 只装一份、最上面不是它或读不到为 null;只装一份的 App 不多问。
+     */
+    private fun shownCopy(): Pair<String, Int>? {
+        val t = _target.value ?: return null
+        if (requestedUser == null && t.packageName !in copiedPackages && (t.userId < 0 || t.userId == myUser)) return null
+        if (foregroundTaskPackage() != t.packageName) return null
+        val user = userOf(runCatching { shell.topTaskId(displayId) }.getOrDefault(-1)).takeIf { it >= 0 } ?: return null
+        return (if (user == myUser) OpenedElsewhere.MAIN_PROFILE else OpenedElsewhere.OTHER_PROFILE) to user
     }
 
     // ---------- 编号解析 ----------
@@ -1633,6 +1723,7 @@ class AndroidScreen(
         /** Mika 所在的用户:本来那份 App 在这里。 */
         val myUser: Int get() = AppCopyReader.myUser
         const val COPY_NOT_FOUND = "copy_not_found"
+        const val COPY_NOT_OPENED = "copy_not_opened"
         const val HINT_PASTE_BLOCKED = "The text could not be entered: the field is not in the element list, so it can only be pasted, " +
             "and the clipboard could not be used safely right now. Call hand_to_user so the user can type it."
         val IN_USE_BY_OTHER = ActionResult.Failed("app_in_use_by_other_task")

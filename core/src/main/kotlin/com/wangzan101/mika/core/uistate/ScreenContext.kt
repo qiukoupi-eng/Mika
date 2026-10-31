@@ -72,7 +72,12 @@ internal fun ToolContext.action(r: ActionResult): ToolExecution = when (r) {
             r.opened?.let { openedHint(it) },
             // 系统在用户屏上问的,留给用户选:不说怎么选
             r.chooser?.takeIf { r.opened?.picker != true }?.let { Feedback.format("launch.chooser", "pkg" to it.packageName) },
-            (r.opened?.inProfile ?: r.inProfile)?.takeIf { it == OpenedElsewhere.OTHER_PROFILE }?.let { Feedback["profile.other"] },
+            // 要的就是另一份时,开出另一份不用再提醒;开出的不是要的那份,照实说
+            (r.opened?.inProfile ?: r.inProfile)?.takeIf { it == OpenedElsewhere.OTHER_PROFILE && r.requestedUser == null }?.let { Feedback["profile.other"] },
+            r.requestedUser?.takeIf { r.profileUser != null && r.profileUser != it }?.let { wanted ->
+                if (r.inProfile == OpenedElsewhere.MAIN_PROFILE) Feedback["profile.main_not_requested"]
+                else Feedback.format("profile.copy_not_requested", "user" to "${r.profileUser}", "wanted" to "$wanted")
+            },
             r.hint,
         )
         ToolExecution(okObj {
@@ -86,6 +91,8 @@ internal fun ToolContext.action(r: ActionResult): ToolExecution = when (r) {
             r.chooser?.let { put("chooser", it.toJson()) }
             r.opened?.let { put("opened", it.toJson()) }
             r.inProfile?.let { put("inProfile", it) }
+            r.profileUser?.let { put("profileUser", it) }
+            r.requestedUser?.let { wanted -> r.profileUser?.let { put("requestedCopy", it == wanted) } }
             if (hints.isNotEmpty()) put("hint", hints.joinToString(" "))
         }, changed = r.changed)
     }

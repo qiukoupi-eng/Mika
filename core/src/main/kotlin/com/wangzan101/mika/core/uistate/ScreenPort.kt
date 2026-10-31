@@ -150,7 +150,9 @@ sealed interface ActionResult {
      * [coveredBy] 打开的 App 已在最上面,但另一个包的窗口盖在它上面(权限弹窗、账号选择器)时那个包;
      * [chooser] 打开 App 后系统先问「打开哪一个」(同一 App 装了两份等),选好之前 App 还没到前台;
      * [opened] 这个动作让一个 App 开到了用户的主屏上(见 [OpenedElsewhere]);
-     * [inProfile] 刚到前台的 App 装了两份时开的是哪一份(见 [OpenedElsewhere.inProfile]),只在系统问过打开哪一个之后报。
+     * [inProfile] 刚到前台的 App 装了两份时开的是哪一份(见 [OpenedElsewhere.inProfile]):系统问过打开哪一个之后,
+     * 以及目标 App 列出过另一份、或要的就是另一份时每次都报;[profileUser] 是此刻屏上那一份所属的用户编号,
+     * [requestedUser] 是打开时要的那份用户(要的是本来那份为 null)。
      */
     data class Ok(
         val changed: Boolean? = null,
@@ -166,6 +168,8 @@ sealed interface ActionResult {
         val chooser: LaunchChoice? = null,
         val opened: OpenedElsewhere? = null,
         val inProfile: String? = null,
+        val profileUser: Int? = null,
+        val requestedUser: Int? = null,
     ) : ActionResult
 
     /** 引用已过期时 reason 为 "ref_expired"。[hint] 是端口的补充说明(例如盖住目标的是什么),原样附在错误说明后。 */

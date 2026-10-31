@@ -114,6 +114,9 @@ This action was not done: the previous action had just opened an app on the user
 ## failure.app_not_found
 That app is not installed or has no launchable screen. Use phone_list_apps to find the exact package.
 
+## failure.copy_not_opened
+The requested copy of the app could not be opened: the system kept opening a different copy (see the details). Nothing was left open as if it were the requested copy. Tell the user which copy opened instead; do not claim the requested copy is open.
+
 ## failure.copy_not_found
 There is no such copy of that app that Mika may open. Use phone_list_apps and pass a user value exactly as listed for that package, or leave user out to open the main app.
 
@@ -257,6 +260,12 @@ This action opened {{app}} as a popup on the user's own screen that needs them (
 
 ## spill.in_use
 This action opened {{app}}, which the user is using on their own screen, so it opened there in front of them and Mika left it alone. Do not repeat the action. Call hand_to_user with reason other so the user can do that step there, or wait and try again later.
+
+## profile.main_not_requested
+This is the main app, not the requested copy.
+
+## profile.copy_not_requested
+This is the copy in user {{user}}, not the requested copy (user {{wanted}}).
 
 ## profile.other
 inProfile other: this is the other copy of the app (clone or other profile), not the main one. If the user did not ask for that copy, go back and pick the other option.
