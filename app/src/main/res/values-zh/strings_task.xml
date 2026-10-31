@@ -29,7 +29,7 @@
     <string name="fail_no_main_model">还没有能用的主模型:请在设置里添加一个支持工具调用的模型。</string>
     <string name="fail_no_web">设备没有可用的网页能力，条件检查无法运行</string>
     <string name="task_waiting_display">排队中:等另一个任务做完再开始</string>
-    <string name="task_no_phone_helper">手机操作还没准备好:请在 Mika 里完成「设置手机操作」(打开无线调试并配对一次)。网页和文件类的事不受影响。</string>
+    <string name="task_no_phone_helper">手机操作还没准备好:请在 Mika 里完成「设置手机操作」。网页和文件类的事不受影响。</string>
     <string name="task_no_a11y">Mika 的无障碍服务没有开启:请在系统设置的无障碍里打开 Mika。</string>
     <string name="task_error">任务出错:%1$s</string>
     <string name="task_condition_interrupted">条件检查中断</string>
@@ -56,4 +56,5 @@
     <string name="task_stopped">任务已停止</string>
     <string name="task_stopped_body">你停止了这个任务</string>
     <string name="gate_user_on_page">你在操作，Mika 已暂停</string>
+    <string name="task_no_phone_helper_usb">手机助手已停止(多半是手机重启过):打开 Mika,再运行一次 USB 启动命令,命令在「设置手机操作」里可以复制。网页和文件类的事不受影响。</string>
 </resources>

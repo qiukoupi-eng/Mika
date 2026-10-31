@@ -1,5 +1,6 @@
 package com.wangzan101.mika.ui
 
+import com.wangzan101.mika.core.shell.HelperRestart
 import com.wangzan101.mika.ChineseUi
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.getValue
@@ -157,7 +158,7 @@ class SettingsScreenTest {
         compose.onNodeWithText("正常").assertIsDisplayed()
         compose.onNodeWithText("安卓 14").assertIsDisplayed()
         compose.onNodeWithText("满足").assertIsDisplayed()
-        compose.onNodeWithText(PhoneSetupCopy.USAGE_NOTE).assertExists()
+        compose.onNodeWithText(PhoneSetupCopy.usageNote(HelperRestart.None)).assertExists()
         compose.onNodeWithText(PhoneSetupCopy.REPAIR).performClick()
         assertEquals(1, repaired)
     }

@@ -30,7 +30,7 @@
     <string name="fail_no_main_model">No usable main model yet. Add a model with tool calling in Settings.</string>
     <string name="fail_no_web">Web isn’t available on this device, so the condition check can’t run</string>
     <string name="task_waiting_display">Queued: starts after the other task finishes</string>
-    <string name="task_no_phone_helper">Phone control isn’t ready. Finish “Set up phone control” in Mika (turn on Wireless debugging and pair once). Web and file tasks aren’t affected.</string>
+    <string name="task_no_phone_helper">Phone control isn’t ready. Finish “Set up phone control” in Mika. Web and file tasks aren’t affected.</string>
     <string name="task_no_a11y">Mika’s accessibility service is off. Turn on Mika under Accessibility in system settings.</string>
     <string name="task_error">Task error: %1$s</string>
     <string name="task_condition_interrupted">Condition check interrupted</string>
@@ -59,4 +59,5 @@
     <string name="task_stopped">Task stopped</string>
     <string name="task_stopped_body">You stopped this task</string>
     <string name="gate_user_on_page">You’re using the page, so Mika paused</string>
+    <string name="task_no_phone_helper_usb">The phone helper has stopped (usually after a phone restart). Open Mika and run the USB start command again; you can copy it in “Set up phone control”. Web and file tasks aren’t affected.</string>
 </resources>

@@ -5,6 +5,7 @@ import com.wangzan101.mika.i18n.ChineseTexts
 import com.wangzan101.mika.core.shell.BuiltinShellFailure
 import com.wangzan101.mika.core.shell.BuiltinShellFix
 import com.wangzan101.mika.core.shell.BuiltinShellStatus
+import com.wangzan101.mika.core.shell.HelperRestart
 import com.wangzan101.mika.core.shell.SetupStep
 import com.wangzan101.mika.core.shell.SetupSuspect
 import com.wangzan101.mika.settings.Problem
@@ -29,7 +30,7 @@ class PhoneSetupCopyTest {
         statuses.forEach { add(PhoneSetupCopy.statusLine(it)); add(PhoneSetupCopy.statusLine(it, usbDebugging = false)); add(PhoneSetupCopy.statusValue(it).first) }
         addAll(
             listOf(
-                PhoneSetupCopy.SUCCESS_LINE, PhoneSetupCopy.SUCCESS_NOTE, PhoneSetupCopy.USAGE_NOTE, PhoneSetupCopy.UNPAIR_BODY, PhoneSetupCopy.SKIP_NOTE, PhoneSetupCopy.DEGRADED_LINE, PhoneSetupCopy.PORT_FOUND,
+                PhoneSetupCopy.SUCCESS_LINE, PhoneSetupCopy.UNPAIR_BODY, PhoneSetupCopy.SKIP_NOTE, PhoneSetupCopy.DEGRADED_LINE, PhoneSetupCopy.PORT_FOUND,
                 PhoneSetupCopy.NEED_NOTIFICATIONS, PhoneSetupCopy.MANUAL_HINT, PhoneSetupCopy.NOTIFY_ENTER_TEXT,
                 PhoneSetupCopy.NOTIFY_ENTER_TITLE, PhoneSetupCopy.NOTIFY_ACTION, PhoneSetupCopy.NOTIFY_INPUT_LABEL,
                 PhoneSetupCopy.AUTO_READ_HINT, PhoneSetupCopy.ACCESSIBILITY_SKIP, PhoneSetupCopy.NOTIFY_WINDOW_FOUND,
@@ -39,6 +40,7 @@ class PhoneSetupCopyTest {
                 PhoneSetupCopy.REVISIT_BACK, PhoneSetupCopy.REVISIT_NOTE, PhoneSetupCopy.CONNECT_PORT_SUBMIT,
             ),
         )
+        HelperRestart.entries.forEach { add(PhoneSetupCopy.successNote(it)); add(PhoneSetupCopy.usageNote(it)) }
         suspects.forEach { add(PhoneSetupCopy.suspect(it)); add(PhoneSetupCopy.goBackTo(it.step)) }
         addAll(PhoneSetupCopy.NOTIFY_GUIDE)
         BuiltinShellFailure.entries.forEach { add(PhoneSetupCopy.notifyRetry(it)) }
@@ -177,13 +179,21 @@ class PhoneSetupCopyTest {
         assertTrue(PhoneSetupCopy.statusLine(BuiltinShellStatus.Running, usbDebugging = false).contains("Wi-Fi 断开后会停止"))
     }
 
-    /** 电脑起的助手停了:设置页、横幅都直说停了,以及两条再起的路。 */
+    /** USB 命令起的助手停了:设置页、横幅都直说停了、再运行命令;不往无线调试引(有的手机根本没有)。 */
     @Test
     fun usbHelperStoppedSaysHowToStartItAgain() {
         val stopped = BuiltinShellStatus.Failed(BuiltinShellFailure.UsbHelperStopped)
         assertEquals("手机助手已停止", PhoneSetupCopy.failure(BuiltinShellFailure.UsbHelperStopped).title)
         val line = PhoneSetupCopy.statusLine(stopped)
-        assertTrue(line, line.contains("USB 启动命令") && line.contains("配对无线调试"))
+        assertTrue(line, line.contains("USB 启动命令") && line.contains("再运行一次"))
+        assertFalse(line, line.contains("无线调试"))
+        assertEquals(BuiltinShellFix.RunUsbCommand, stopped.fix)
+        assertEquals("复制", PhoneSetupCopy.fixLabel(stopped.fix))
+        // 本来就是用命令起的:卡片说「再运行一次」,不说「打不开无线调试」
+        val (againTitle, againBody) = PhoneSetupCopy.usbCard(HelperRestart.UsbCommand)
+        assertEquals("再运行一次启动命令", againTitle)
+        assertTrue(againBody.contains("重启后"))
+        assertEquals(PhoneSetupCopy.USB_TITLE to PhoneSetupCopy.USB_BODY, PhoneSetupCopy.usbCard(HelperRestart.None))
         val banner = StatusCopy.banner(Problem.PhoneHelper(stopped))
         assertEquals("手机助手已停止", banner.title)
         assertEquals(line, banner.detail)
@@ -191,6 +201,18 @@ class PhoneSetupCopyTest {
         assertEquals("找不到无线调试？", PhoneSetupCopy.USB_ASK)
         assertTrue(PhoneSetupCopy.USB_BODY.contains("数据线"))
         assertTrue(PhoneSetupCopy.USB_BODY.contains("重启后"))
+    }
+
+    /** 成功页和设置页底部:USB 命令起的说重启后再运行命令,配对过的照旧说打开无线调试会自动重连。 */
+    @Test
+    fun restartNotesFollowHowTheHelperWasStarted() {
+        assertTrue(PhoneSetupCopy.successNote(HelperRestart.Wireless).contains("无线调试"))
+        assertEquals(PhoneSetupCopy.successNote(HelperRestart.Wireless), PhoneSetupCopy.successNote(HelperRestart.None))
+        val usb = PhoneSetupCopy.successNote(HelperRestart.UsbCommand)
+        assertTrue(usb, usb.contains("再运行一次命令"))
+        assertFalse(usb, usb.contains("无线调试"))
+        assertTrue(PhoneSetupCopy.usageNote(HelperRestart.UsbCommand).contains("再运行一次启动命令"))
+        assertTrue(PhoneSetupCopy.usageNote(HelperRestart.Wireless).contains("打开「无线调试」"))
     }
 
     @Test

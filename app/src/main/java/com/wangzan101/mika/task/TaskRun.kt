@@ -11,6 +11,7 @@ import com.wangzan101.mika.core.action.OutwardPacing
 import com.wangzan101.mika.core.cap.phone.OperatingPace
 import com.wangzan101.mika.core.usage.RunUsageTally
 import com.wangzan101.mika.core.shell.AccessibilityRepair
+import com.wangzan101.mika.core.shell.HelperRestart
 import com.wangzan101.mika.ui.StatusCopy
 import com.wangzan101.mika.core.cap.sandbox.SandboxStatus
 import com.wangzan101.mika.cap.sandbox.SandboxState
@@ -473,7 +474,10 @@ class TaskRun(
                 val shell = withTimeoutOrNull(SHELL_WAIT_MS) { conn.shell.filterNotNull().first() }
                     ?: run {
                         phoneServices.setupPrompt.request()
-                        throw PhoneUnavailable(NO_PHONE_HELPER)
+                        // 只用 USB 命令起过的助手停了:照实说要再运行命令,不让人去找无线调试
+                        throw PhoneUnavailable(
+                            if (phoneServices.shellControl.restart == HelperRestart.UsbCommand) NO_PHONE_HELPER_USB else NO_PHONE_HELPER,
+                        )
                     }
                 // 服务卡在「开着却没运行」、正在自动重启时多等一会儿,修好了接着做,放弃了照常报错
                 val a11y = AccessibilityRepair.awaitService(ScreenAccessibility.instance, phoneServices.recovery.accessibilityRepair.phase, A11Y_WAIT_MS)
@@ -1072,6 +1076,7 @@ class TaskRun(
         val WAITING_DISPLAY: String get() = tr(R.string.task_waiting_display)
         const val A11Y_WAIT_MS = 5_000L
         val NO_PHONE_HELPER: String get() = tr(R.string.task_no_phone_helper)
+        val NO_PHONE_HELPER_USB: String get() = tr(R.string.task_no_phone_helper_usb)
         val NO_ACCESSIBILITY: String get() = tr(R.string.task_no_a11y)
         const val TAG = "MikaTask"
     }

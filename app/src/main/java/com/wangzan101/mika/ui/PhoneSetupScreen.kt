@@ -60,6 +60,7 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.wangzan101.mika.core.shell.BuiltinShellFailure
 import com.wangzan101.mika.core.shell.BuiltinShellFix
 import com.wangzan101.mika.core.shell.BuiltinShellStatus
+import com.wangzan101.mika.core.shell.HelperRestart
 import com.wangzan101.mika.core.shell.PairingCode
 import com.wangzan101.mika.core.shell.PairingNotifyIssue
 import com.wangzan101.mika.core.shell.PhoneSetupFlow
@@ -168,6 +169,10 @@ fun PhoneSetupScreen(status: SystemStatus, repair: Boolean, onFix: (Fix) -> Unit
     LaunchedEffect(Unit) { phone.shellManager.usbScript.refresh() }
     val usbCommand = remember { phone.shellManager.usbScript.command() }
 
+    val copyUsbCommand = {
+        context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(PhoneSetupCopy.USB_TITLE, usbCommand))
+        Toast.makeText(context, PhoneSetupCopy.USB_COPIED, Toast.LENGTH_SHORT).show()
+    }
     val close = { pairing.cancelRepair(); onClose() }
     BackHandler(onBack = close)
     PhoneSetupContent(
@@ -188,6 +193,7 @@ fun PhoneSetupScreen(status: SystemStatus, repair: Boolean, onFix: (Fix) -> Unit
                 BuiltinShellFix.RePair -> { pairing.begin(); onFix(Fix.OpenWirelessDebugging) }
                 BuiltinShellFix.OpenWifi -> onFix(Fix.OpenWifi)
                 BuiltinShellFix.OpenWirelessDebugging -> onFix(Fix.OpenWirelessDebugging)
+                BuiltinShellFix.RunUsbCommand -> copyUsbCommand()
             }
         },
         onAllowNotifications = { onFix(Fix.AllowNotifications) },
@@ -211,10 +217,7 @@ fun PhoneSetupScreen(status: SystemStatus, repair: Boolean, onFix: (Fix) -> Unit
         },
         usbCommand = usbCommand,
         onAskUsb = { usbAsked = true },
-        onCopyUsbCommand = {
-            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(PhoneSetupCopy.USB_TITLE, usbCommand))
-            Toast.makeText(context, PhoneSetupCopy.USB_COPIED, Toast.LENGTH_SHORT).show()
-        },
+        onCopyUsbCommand = copyUsbCommand,
     )
     // 卡在哪一步都能把诊断信息发给作者:用的是引导页此刻的输入,用户确认过的步骤也在里面
     if (diagnosticsOpen) {
@@ -288,7 +291,7 @@ fun PhoneSetupContent(
                             val working = step == SetupStep.Connect && view.phase == SetupPhase.Working
                             if (working) WorkingLine(scanning)
                             if (usbCommand != null && (step == view.current || working)) {
-                                if (view.usbFallback) UsbStartCard(usbCommand, onCopyUsbCommand)
+                                if (view.usbFallback) UsbStartCard(view.restart, usbCommand, onCopyUsbCommand)
                                 else if (step == SetupStep.WirelessDebugging) LinkText(PhoneSetupCopy.USB_ASK, "setup-usb-ask", onAskUsb)
                             }
                         }
@@ -300,7 +303,7 @@ fun PhoneSetupContent(
             Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp)) {
                 if (view.phase == SetupPhase.Success) {
                     Text(
-                        PhoneSetupCopy.SUCCESS_NOTE, Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                        PhoneSetupCopy.successNote(view.restart), Modifier.fillMaxWidth().padding(bottom = 10.dp),
                         style = MikaType.Caption, color = c.ink3, textAlign = TextAlign.Center,
                     )
                 }
@@ -327,13 +330,17 @@ fun PhoneSetupContent(
     }
 }
 
-/** 另一条路:用电脑经 USB 数据线起助手。放在当前这一步里,和这一步的其他提示一样是一块浅色底:标题、一句说明、命令和复制按钮。 */
+/**
+ * 另一条路:用电脑经 USB 数据线起助手。放在当前这一步里,和这一步的其他提示一样是一块浅色底:标题、一句说明、命令和复制按钮。
+ * 助手本来就是这样起的([HelperRestart.UsbCommand])时,标题说「再运行一次」。
+ */
 @Composable
-private fun UsbStartCard(command: String, onCopy: () -> Unit) {
+private fun UsbStartCard(restart: HelperRestart, command: String, onCopy: () -> Unit) {
     val c = MikaTheme.colors
+    val (title, body) = PhoneSetupCopy.usbCard(restart)
     Column(Modifier.padding(top = 10.dp).fillMaxWidth().background(c.accentSoft, RoundedCornerShape(12.dp)).padding(12.dp).testTag("setup-usb")) {
-        Text(PhoneSetupCopy.USB_TITLE, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = c.ink)
-        Text(PhoneSetupCopy.USB_BODY, Modifier.padding(top = 2.dp), fontSize = 13.sp, lineHeight = 18.sp, color = c.ink2)
+        Text(title, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = c.ink)
+        Text(body, Modifier.padding(top = 2.dp), fontSize = 13.sp, lineHeight = 18.sp, color = c.ink2)
         Text(
             command, Modifier.padding(top = 8.dp).fillMaxWidth().background(c.fill, RoundedCornerShape(10.dp)).padding(10.dp).testTag("setup-usb-command"),
             fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp, color = c.ink,
@@ -413,7 +420,10 @@ private fun CurrentStepBody(
             Text(fc.title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = MikaTheme.colors.bad)
             Text(fc.body, Modifier.padding(top = 2.dp), fontSize = 13.sp, lineHeight = 18.sp, color = MikaTheme.colors.ink2)
         }
-        PillButton(PhoneSetupCopy.fixLabel(f.fix), primary = true, tag = "setup-fix") { onFailureFix(f.fix) }
+        // 要再运行 USB 命令时,下面的卡片里就有命令和复制按钮,不再重复一个
+        if (f.fix != BuiltinShellFix.RunUsbCommand || !view.usbFallback) {
+            PillButton(PhoneSetupCopy.fixLabel(f.fix), primary = true, tag = "setup-fix") { onFailureFix(f.fix) }
+        }
         // 自动找不到端口:让用户照着「无线调试」页面填
         if (step == SetupStep.Connect && f.reason == BuiltinShellFailure.ConnectFailed) onConnectPort?.let { ConnectPort(it) }
         if (view.phase == SetupPhase.Failed) onDiagnostics?.let { LinkText(PhoneSetupCopy.DIAGNOSTICS, "setup-diagnostics-failed", it) }

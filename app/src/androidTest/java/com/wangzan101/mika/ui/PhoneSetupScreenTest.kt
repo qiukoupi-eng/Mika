@@ -1,5 +1,6 @@
 package com.wangzan101.mika.ui
 
+import com.wangzan101.mika.core.shell.HelperRestart
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -248,7 +249,7 @@ class PhoneSetupScreenTest {
         show(SetupInputs(true, true, BuiltinShellStatus.Running))
         compose.onNodeWithText(PhoneSetupCopy.SUCCESS_LINE).assertIsDisplayed()
         compose.onNodeWithText(PhoneSetupCopy.step(SetupStep.DeveloperOptions).title).assertIsDisplayed()
-        compose.onNodeWithText(PhoneSetupCopy.SUCCESS_NOTE).assertIsDisplayed()
+        compose.onNodeWithText(PhoneSetupCopy.successNote(HelperRestart.None)).assertIsDisplayed()
         compose.onNodeWithText(PhoneSetupCopy.SUCCESS_DONE).assertIsDisplayed()
         assertEquals(emptyList<String>(), calls)
         compose.onNodeWithTag("setup-done").performClick()
