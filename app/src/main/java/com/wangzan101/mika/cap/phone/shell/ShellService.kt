@@ -70,7 +70,7 @@ class ShellService(
         DisplayManager::class.java.getDeclaredConstructor(Context::class.java)
             .apply { isAccessible = true }.newInstance(context)
 
-    // shell 进程不能使用部分 ROM 的 ClipboardManager 所依赖的普通 App ContentProvider 路径。
+    // 剪贴板要以 shell 包名访问(系统只对来自 shell 的剪贴板认「不弹已复制浮层」的标记);读取绕开 ClipboardManager 里 shell 进程走不通的 Settings 查询
     private val clipboard = ShellClipboard(context)
     private val clipLock = Any()
     /** 查占用和启动之间不能插进另一个任务的启动:两个任务同时开同一个 App 时只有一个能成。 */
