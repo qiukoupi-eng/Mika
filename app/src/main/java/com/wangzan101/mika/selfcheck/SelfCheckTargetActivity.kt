@@ -25,7 +25,8 @@ import java.lang.ref.WeakReference
  * 兼容性自检在 Mika 虚拟屏上操作的那一页:一个计数按钮、一个输入框、一列能滚动的行、一行一直在跳的数字和一条来回变色的横条
  * (画面一直在变,好看出虚拟屏会不会过几秒就不动了)。页面上写明这是 Mika 自己的测试页。
  *
- * 清单里不导出,别的 App 打不开;只经内置助手发 Mika 自己做好的 PendingIntent 打开到 Mika 的屏上(见 [intent])。
+ * 清单里导出,但要求调用方持有 INTERACT_ACROSS_USERS_FULL(shell 和系统有,普通 App 拿不到),没有 intent-filter:
+ * 只由内置助手以 shell 身份按组件名打开到 Mika 的屏上(见 [intent])。
  * 万一开到了主屏(屏号是 0),马上关掉,不打扰用户。控件用普通的 View 和资源 id,无障碍读到的就是这些 id。
  */
 class SelfCheckTargetActivity : Activity() {
@@ -134,8 +135,8 @@ class SelfCheckTargetActivity : Activity() {
         @Volatile private var current: WeakReference<SelfCheckTargetActivity>? = null
 
         /** 打开这一页用的 intent:指明组件,单独一个任务,不进最近任务。 */
-        fun intent(context: Context): Intent = Intent(SystemIntents.OWN_PAGE_ACTION)
-            .setClassName(context.packageName, SelfCheckTargetActivity::class.java.name)
+        fun intent(context: Context): Intent = Intent()
+            .setClassName(context.packageName, SystemIntents.OWN_PAGE_CLASS)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
         /** 自检结束或取消:还开着就关掉。主线程调。 */

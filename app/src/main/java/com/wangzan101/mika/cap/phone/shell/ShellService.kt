@@ -405,8 +405,8 @@ class ShellService(
      */
     override fun startSystemAction(displayId: Int, intent: Intent, asMika: android.app.PendingIntent?): Int = synchronized(launchLock) {
         if (!ownDisplay(displayId)) return START_ERROR
-        // Mika 自己不导出的自检页:shell 打不开,只发 Mika 自己做好的 PendingIntent,屏由这里指定
-        if (intent.action == SystemIntents.OWN_PAGE_ACTION) return startOwnPage(displayId, asMika)
+        // Mika 自己的兼容性自检页:以 shell 身份直接开到这块屏
+        if (intent.component?.className == SystemIntents.OWN_PAGE_CLASS) return startOwnPage(displayId, intent)
         if (!SystemIntents.allowed(intent.action, intent.dataString)) return START_INVALID_LINK
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val candidates = activitiesFor(intent, intent.type) ?: return START_ERROR
@@ -448,22 +448,30 @@ class ShellService(
     }
 
     /**
-     * 打开 Mika 自己不导出的一页(兼容性自检页)到这块屏:只认 Mika 自己做好的 [asMika](创建方的 uid 就是 Mika),
-     * 页面以 Mika 的身份打开、Mika 能开的才开得了;别人的 PendingIntent 一律不发。屏是这个服务自己建的,不碰主屏。
+     * 以 shell 身份把 Mika 的兼容性自检页([SystemIntents.OWN_PAGE_CLASS])开到这块屏,和 [startApp] 同一条路
+     * (startActivityAsUser 带 setLaunchDisplayId,不行退回 `am start --display`)。那一页只对持有 INTERACT_ACROSS_USERS_FULL 的
+     * 调用方开放(shell 有,普通 App 没有);shell 启动不受后台启动页面的限制。包名必须是 Mika 自己的,别的组件一律不开。
      */
-    private fun startOwnPage(displayId: Int, asMika: android.app.PendingIntent?): Int {
-        if (asMika == null || asMika.creatorUid != allowedUid) return START_INVALID_LINK
-        val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            options.setPendingIntentBackgroundActivityStartMode(ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED)
-        }
-        return try {
-            asMika.send(context, 0, null, null, null, null, options.toBundle())
-            START_OK
+    private fun startOwnPage(displayId: Int, intent: Intent): Int {
+        val component = intent.component ?: return START_INVALID_LINK
+        val mine = runCatching { context.packageManager.getPackagesForUid(allowedUid)?.toList() }.getOrNull().orEmpty()
+        // 只有 Mika 调得到这个服务;包名再核一次(查不到 Mika 的包名时只认类名)
+        if (component.className != SystemIntents.OWN_PAGE_CLASS || (mine.isNotEmpty() && component.packageName !in mine)) return START_INVALID_LINK
+        val page = Intent().setComponent(component).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle()
+        val ok = try {
+            val start = taskManager.javaClass.methods.first { it.name == "startActivityAsUser" && it.parameterTypes.size == 12 }
+            val result = start.invoke(
+                taskManager, null, ShellContext.SHELL_PACKAGE, null, page, null, null, null,
+                0, 0, null, options, USER_CURRENT,
+            ) as Int
+            if (result < 0) Log.w(TAG, "startActivityAsUser(own page) -> $result")
+            result >= 0
         } catch (t: Throwable) {
-            Log.w(TAG, "sending Mika's own page failed", t)
-            START_ERROR
+            Log.w(TAG, "startActivityAsUser unavailable, falling back to am start", t)
+            exec("am", "start", "--display", "$displayId", "-n", component.flattenToShortString()) == 0
         }
+        return if (ok) START_OK else START_ERROR
     }
 
     /**
