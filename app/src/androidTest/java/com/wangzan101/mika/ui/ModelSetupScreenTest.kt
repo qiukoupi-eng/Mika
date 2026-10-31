@@ -72,8 +72,9 @@ class ModelSetupScreenTest {
     @Test fun firstVisitShowsFormAndNextIsDisabled() {
         show(ModelSetupUi(form))
         compose.onNodeWithTag("setup-next").assertIsNotEnabled()
-        compose.onNodeWithTag("setup-test").assertIsEnabled().performClick()
-        compose.onNodeWithTag("preset-Kimi").performClick()
+        // 上面多了「用账号登录」一组,按钮可能在屏幕外:先滚到再点
+        compose.onNodeWithTag("setup-test").performScrollTo().assertIsEnabled().performClick()
+        compose.onNodeWithTag("preset-Kimi").performScrollTo().performClick()
         assertEquals(listOf("test", "preset Kimi"), calls)
     }
 
@@ -224,16 +225,18 @@ class ModelSetupScreenTest {
     @Test fun addFormListsAccountSignInsAboveApiKeys() {
         show(ModelSetupUi(form))
         compose.onNodeWithText(ModelsCopy.SIGN_IN_GROUP).assertIsDisplayed()
-        compose.onNodeWithText(ModelsCopy.KEY_GROUP).assertIsDisplayed()
-        compose.onNodeWithTag("signin-chatgpt").performClick()
-        compose.onNodeWithTag("signin-xai").performClick()
-        compose.onNodeWithTag("signin-openrouter").performClick()
+        compose.onNodeWithText(ModelsCopy.KEY_GROUP).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("signin-chatgpt").performScrollTo().performClick()
+        compose.onNodeWithTag("signin-xai").performScrollTo().performClick()
+        compose.onNodeWithTag("signin-openrouter").performScrollTo().performClick()
         assertEquals(listOf("signin ChatGpt", "signin Xai", "signin OpenRouter"), calls)
     }
 
     @Test fun signedInAccountRowOpensTheProvider() {
         show(ModelSetupUi(form, formOpen = true, providers = listOf(grok), xaiAccount = SubscriptionAccount("me@example.com", signedIn = true)))
-        compose.onNodeWithTag("signin-xai").performScrollTo().assertTextContains(ModelsCopy.CHATGPT_SIGNED_IN, substring = true).performClick()
+        compose.onNodeWithTag("signin-xai-signed-in", useUnmergedTree = true).assertExists()
+        compose.onNodeWithTag("signin-openrouter-signed-in", useUnmergedTree = true).assertDoesNotExist()
+        compose.onNodeWithTag("signin-xai").performScrollTo().performClick()
         assertEquals(listOf("provider p3"), calls)
     }
 

@@ -152,7 +152,7 @@ internal fun ProviderRow(p: Provider, line: String, first: Boolean, warning: Str
                 Text(p.name.take(1).uppercase(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = c.ink)
             }
             Column(Modifier.weight(1f)) {
-                Text(p.name, style = MikaType.Body, color = c.ink, maxLines = 1)
+                Text(ModelsCopy.providerName(p), style = MikaType.Body, color = c.ink, maxLines = 1)
                 Text(line, Modifier.padding(top = 2.dp), style = MikaType.Caption, color = c.ink3)
                 warning?.let { Text(it, Modifier.padding(top = 2.dp).testTag("provider-warning-${p.name}"), style = MikaType.Caption, color = c.warn) }
             }
@@ -217,7 +217,7 @@ fun RolePickerContent(ui: ModelSetupUi, role: ModelRole, actions: RolePickerActi
             if (q.isNotEmpty() && shown.isEmpty()) return@forEach
             anyShown = true
             val state = ui.listing[p.id]
-            GroupLabel(p.name)
+            GroupLabel(ModelsCopy.providerName(p))
             if (shown.isNotEmpty() || manual) {
                 GroupCard {
                     shown.take(PICK_AT_MOST).forEachIndexed { i, o ->
@@ -300,7 +300,7 @@ fun ProviderDetailContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetail
     var using by remember { mutableStateOf<ModelOption?>(null) }
     val state = ui.listing[p.id]
     val list = ui.sortedOptions(p)
-    Page(p.name, onBack) {
+    Page(ModelsCopy.providerName(p), onBack) {
         GroupLabel(ModelsCopy.CONNECTION)
         if (p.kind == ProviderConfig.Kind.ChatGpt) {
             ChatGptConnection(ui, state, actions)
@@ -389,7 +389,7 @@ fun ProviderDetailContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetail
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
-            title = { Text(ModelsCopy.deleteTitle(p.name)) },
+            title = { Text(ModelsCopy.deleteTitle(ModelsCopy.providerName(p))) },
             text = { Text(ModelsCopy.deleteBody(ui.rolesOf(p))) },
             confirmButton = {
                 TextButton({
@@ -491,7 +491,7 @@ fun AllModelsContent(ui: ModelSetupUi, p: Provider, actions: ProviderDetailActio
     val shown = all.filter { q.isEmpty() || it.id.contains(q, ignoreCase = true) }
     PageBackground {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars).windowInsetsPadding(WindowInsets.ime)) {
-            TopBar(ModelsCopy.allModelsTitle(p.name), MikaIcons.Back, onBack, stringResource(R.string.back), right = {
+            TopBar(ModelsCopy.allModelsTitle(ModelsCopy.providerName(p)), MikaIcons.Back, onBack, stringResource(R.string.back), right = {
                 BarIconButton(MikaIcons.Refresh, ModelsCopy.REFRESH, actions.refresh, enabled = state != ListState.Running)
             })
             Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 10.dp)) {
@@ -554,7 +554,7 @@ private fun UseAsSheet(ui: ModelSetupUi, p: Provider, model: String, onUse: (Mod
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true), containerColor = c.surface, shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(bottom = 8.dp).testTag("use-as")) {
             Text(model, Modifier.padding(horizontal = 16.dp), style = ModelIdStyle, color = c.ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            Text(ModelsCopy.useAsSubtitle(p.name), Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp), style = MikaType.Caption, color = c.ink3)
+            Text(ModelsCopy.useAsSubtitle(ModelsCopy.providerName(p)), Modifier.padding(start = 16.dp, end = 16.dp, top = 2.dp, bottom = 6.dp), style = MikaType.Caption, color = c.ink3)
             ModelRole.entries.forEachIndexed { i, role ->
                 val on = ui.picked(role, p.id, model)
                 RadioRow(
@@ -659,6 +659,10 @@ object ModelsCopy {
     val SIGN_IN_RUNNING: String get() = tr(R.string.signin_running)
     val SIGN_IN_USE_KEY: String get() = tr(R.string.signin_use_key)
     val SIGN_IN_BUSY: String get() = tr(R.string.signin_busy)
+
+    /** 界面上服务商的名字:授权来的 OpenRouter 加一句来历,和用户自己填 Key 的那一家分得开。 */
+    fun providerName(p: Provider): String =
+        if (p.signIn == ProviderStore.OPENROUTER_SIGN_IN) tr(R.string.signin_openrouter_name, p.name) else p.name
     val XAI_CODE_TITLE: String get() = tr(R.string.signin_xai_code_title)
     val XAI_CODE_BODY: String get() = tr(R.string.signin_xai_code_body)
     val XAI_CODE_COPY_REOPEN: String get() = tr(R.string.signin_xai_code_copy_reopen)
@@ -767,7 +771,7 @@ object ModelsCopy {
 
     /** 用途卡上写什么:选了模型写模型名和服务商;「用主模型」写主模型是谁;「不用」写只靠文字读屏。 */
     fun roleLine(ui: ModelSetupUi, role: ModelRole): RoleLine {
-        fun modelLine(cfg: ProviderConfig) = RoleLine(cfg.model, ui.providerOf(cfg)?.name ?: cfg.name, isModel = true)
+        fun modelLine(cfg: ProviderConfig) = RoleLine(cfg.model, ui.providerOf(cfg)?.let(::providerName) ?: cfg.name, isModel = true)
         val main = ui.configFor(ModelRole.Main)
         return when (val choice = ui.roles[role]) {
             null -> RoleLine(UNSET, if (ui.providers.isEmpty()) MAIN_ADD_FIRST else MAIN_PICK, unset = true)

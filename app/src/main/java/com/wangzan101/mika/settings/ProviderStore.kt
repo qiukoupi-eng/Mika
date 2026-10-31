@@ -309,7 +309,8 @@ class ProviderStore(
      * 「测试并保存」连上了一个服务商:存下它(名字、接口类型、地址、Key)和列出的模型。
      * 接口类型、地址和名字都相同的服务商已经有了,就更新那一个(换 Key、换列表),不重复添加。
      * [apiKey] 为 null 时不改已存的 Key。[verified] 是这次试调用得到回复的模型名,记进 [Provider.verifiedModels]。
-     * [signIn] 是 Key 的来历(见 [Provider.signIn]):用户自己填 Key 连上的为 null,原先授权来的标记随之去掉。
+     * [signIn] 是 Key 的来历(见 [Provider.signIn]):用户自己填 Key 的为 null,授权来的为那一家的标记。
+     * 两种来历各是各的服务商(地址、名字一样也不合并):授权不会顶掉用户自己填的 Key,退出登录也只删授权来的那把。
      */
     @Synchronized
     fun connect(
@@ -318,8 +319,8 @@ class ProviderStore(
         verified: Set<String> = emptySet(),
         signIn: String? = null,
     ): Provider {
-        val found = findOrAddProvider(name, kind, baseUrl)
-        val p = found.copy(models = models, sessionHeader = sessionHeader, verifiedModels = found.verifiedModels + verified, signIn = signIn)
+        val found = findOrAddProvider(name, kind, baseUrl, signIn)
+        val p = found.copy(models = models, sessionHeader = sessionHeader, verifiedModels = found.verifiedModels + verified)
         _providers.value = _providers.value.map { if (it.id == p.id) p else it }
         if (apiKey != null) setKey(p.id, apiKey)
         writeConfig()
@@ -613,7 +614,7 @@ class ProviderStore(
 
     /**
      * 授权换到了 Key:按 OpenRouter 预设存成一家普通的 OpenAI 兼容服务商(Key 照常加密),标上是授权来的。
-     * 已经有填 Key 的 OpenRouter 就更新那一家(换成这把 Key),不重复添加。
+     * 已经有授权来的那一家就更新它;用户自己填 Key 的 OpenRouter 不动,两家并存。
      */
     @Synchronized
     fun connectOpenRouter(apiKey: String, models: List<ListedModel>): Provider =
@@ -686,10 +687,10 @@ class ProviderStore(
         }
     }
 
-    private fun findOrAddProvider(name: String, kind: ProviderConfig.Kind, baseUrl: String): Provider {
+    private fun findOrAddProvider(name: String, kind: ProviderConfig.Kind, baseUrl: String, signIn: String? = null): Provider {
         val key = ProviderConnection.keyOf(kind, baseUrl, name)
-        _providers.value.firstOrNull { it.key == key }?.let { return it }
-        val p = Provider(newId(), name.trim(), kind, baseUrl.trim())
+        _providers.value.firstOrNull { it.key == key && it.signIn == signIn }?.let { return it }
+        val p = Provider(newId(), name.trim(), kind, baseUrl.trim(), signIn = signIn)
         _providers.value = _providers.value + p
         return p
     }

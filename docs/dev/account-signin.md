@@ -24,7 +24,7 @@ OpenRouter 官方给第三方应用的登录方式（文档：https://openrouter
 - 用系统浏览器打开 `https://openrouter.ai/auth?callback_url=…&code_challenge=…&code_challenge_method=S256&key_label=Mika&state=…`。校验串每次新生成，只在本机。
 - 回调带回 `code` 和 `state`：state 对不上的回 400、接着等；没带 code 也没带 state 的（用户在授权页拒绝）当作没同意。
 - `POST https://openrouter.ai/api/v1/auth/keys`，JSON `{code, code_verifier, code_challenge_method: "S256"}`，返回 `key`。403 是 code 或校验串不对、或 code 过期（10 分钟），400 是校验方式对不上。出错只留状态码，不留正文。换完才把结果页回给浏览器。
-- 存法：按 OpenRouter 预设存成一家 OpenAI 兼容服务商（`https://openrouter.ai/api/v1`），Key 和别的 API Key 一样经 `KeyCipher` 加密存在 `provider-keys.json`；服务商上记 `signIn = "openrouter"`（`providers.json` 的 `services[].signIn`），详情里显示成账号登录的样子。已经有填 Key 的 OpenRouter 就更新那一家；之后用户自己填 Key「测试并保存」同一家，这个标记随之去掉。列模型、调用都和填 Key 的一样。
+- 存法：按 OpenRouter 预设存成一家 OpenAI 兼容服务商（`https://openrouter.ai/api/v1`），Key 和别的 API Key 一样经 `KeyCipher` 加密存在 `provider-keys.json`；服务商上记 `signIn = "openrouter"`（`providers.json` 的 `services[].signIn`），详情里显示成账号登录的样子。授权来的和用户自己填 Key 的 OpenRouter 各是一家（列表里授权来的写作「OpenRouter（账号登录）」），授权不会顶掉用户自己填的 Key，再登录只更新授权来的那一家。列模型、调用都和填 Key 的一样。
 - 退出登录只删本机的 Key，服务商、模型和用途留着；界面提示到 OpenRouter 的 Keys 页面（`https://openrouter.ai/settings/keys`）删掉名为 Mika 的那把。
 
 ## 不做

@@ -150,4 +150,5 @@
     <string name="signin_set_main_note">Mika 辦事時用它</string>
     <string name="signin_sign_out_note">只清這臺手機上的登入資訊</string>
     <string name="signin_busy">另一個登入還沒結束，先完成或取消它。</string>
+    <string name="signin_openrouter_name">%1$s（帳號登入）</string>
 </resources>

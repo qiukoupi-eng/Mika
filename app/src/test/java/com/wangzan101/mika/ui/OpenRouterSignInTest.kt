@@ -130,14 +130,34 @@ class OpenRouterSignInTest {
         assertEquals(0, server.requestCount)
     }
 
-    /** 用户自己填 Key 连上同一家:去掉「授权来的」标记,详情里回到填 Key 的样子。 */
-    @Test fun typingAKeyForTheSameProviderDropsTheSignInMark() {
+    /**
+     * 用户已经自己填了 OpenRouter 的 Key:授权登录另存一家,不顶掉那把 Key;退出登录只删授权来的那把。
+     * 之后再自己填 Key「测试并保存」,也只更新自己填的那一家,不碰授权来的。
+     */
+    @Test fun signInKeepsAKeyTheUserTypedForOpenRouter() {
         val s = store()
-        val p = s.connectOpenRouter("sk-or-v1-a", emptyList())
-        assertEquals(p.id, s.openRouterAccount()?.id)
-        val again = s.connect("OpenRouter", ProviderConfig.Kind.OpenAiCompat, OpenRouterAuth.API_BASE, "sk-typed", emptyList())
-        assertEquals(p.id, again.id)
-        assertNull(s.openRouterAccount())
-        assertEquals("sk-typed", s.providerKey(p.id))
+        val typed = s.connect("OpenRouter", ProviderConfig.Kind.OpenAiCompat, OpenRouterAuth.API_BASE, "sk-typed", emptyList())
+        val signed = s.connectOpenRouter("sk-or-v1-signed", emptyList())
+        assertFalse(typed.id == signed.id)
+        assertEquals("sk-typed", s.providerKey(typed.id))
+        assertEquals("sk-or-v1-signed", s.providerKey(signed.id))
+        assertNull(typed.signIn)
+        assertEquals(signed.id, s.openRouterAccount()?.id)
+        // 再登录一次更新授权来的那一家,不多出第三家
+        assertEquals(signed.id, s.connectOpenRouter("sk-or-v1-again", emptyList()).id)
+        assertEquals(2, s.providers.value.size)
+        // 自己再填一次 Key:更新自己那一家
+        assertEquals(typed.id, s.connect("OpenRouter", ProviderConfig.Kind.OpenAiCompat, OpenRouterAuth.API_BASE, "sk-typed-2", emptyList()).id)
+        assertEquals("sk-or-v1-again", s.providerKey(signed.id))
+        s.signOutOpenRouter(signed.id)
+        assertNull(s.providerKey(signed.id))
+        assertEquals("sk-typed-2", s.providerKey(typed.id))
+        // 填 Key 的那一家不能被当成登录退出
+        s.signOutOpenRouter(typed.id)
+        assertEquals("sk-typed-2", s.providerKey(typed.id))
+        // 重新读入后两家照样分开
+        val reloaded = store()
+        assertEquals(signed.id, reloaded.openRouterAccount()?.id)
+        assertEquals("sk-typed-2", reloaded.providerKey(typed.id))
     }
 }

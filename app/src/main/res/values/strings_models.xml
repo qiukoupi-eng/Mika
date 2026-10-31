@@ -154,4 +154,5 @@
     <string name="signin_set_main_note">Mika uses it to get things done</string>
     <string name="signin_sign_out_note">Only clears the sign-in on this phone</string>
     <string name="signin_busy">Another sign-in is in progress. Finish or cancel it first.</string>
+    <string name="signin_openrouter_name">%1$s (signed in)</string>
 </resources>
