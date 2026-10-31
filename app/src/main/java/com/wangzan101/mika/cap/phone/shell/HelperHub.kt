@@ -12,6 +12,7 @@ import android.util.Log
 import com.wangzan101.mika.cap.phone.PhoneServices
 import com.wangzan101.mika.core.shell.HandoffNonces
 import com.wangzan101.mika.core.shell.HelperHandoff
+import com.wangzan101.mika.core.shell.HelperRestoreReport
 import com.wangzan101.mika.core.shell.NonceSlots
 import com.wangzan101.mika.core.shell.NonceStore
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,10 @@ class HelperHub(context: Context) {
     private val _shell = MutableStateFlow<IMikaShell?>(null)
     /** 现在手里的助手接口;助手进程死了就变回 null。 */
     val shell: StateFlow<IMikaShell?> = _shell.asStateFlow()
+
+    private val _restores = MutableStateFlow<HelperRestoreReport?>(null)
+    /** 助手交接时报来的「Mika 被杀后由它拉起来」的记录(诊断信息用);没拉过为 null。 */
+    val restores: StateFlow<HelperRestoreReport?> = _restores.asStateFlow()
 
     /** 经助手代连本进程的 WebView 调试套接字;助手不在时抛 IOException,助手拒绝或连不上为 null。 */
     fun openDevtoolsSocket(endpoint: String): ParcelFileDescriptor? {
@@ -87,6 +92,11 @@ class HelperHub(context: Context) {
         }
         // 换了新的助手:旧的随后会被新的结束,它的死亡通知因为不是当前这个而被忽略
         _shell.value = shell
+        if (extras?.containsKey(HelperHandoff.KEY_RESTORED_AT) == true) {
+            _restores.value = HelperRestoreReport(
+                extras.getLong(HelperHandoff.KEY_RESTORED_AT), extras.getInt(HelperHandoff.KEY_RESTORES), extras.getLong(HelperHandoff.KEY_GAVE_UP_AT),
+            )
+        }
         Log.i(TAG, "helper pid $callingPid handed off")
         return Bundle().apply {
             putBoolean(HelperHandoff.KEY_ACCEPTED, true)

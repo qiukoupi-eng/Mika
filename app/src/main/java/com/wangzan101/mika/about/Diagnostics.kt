@@ -5,6 +5,8 @@ import com.wangzan101.mika.core.record.Redactor
 import com.wangzan101.mika.core.shell.BuiltinShellStatus
 import com.wangzan101.mika.core.shell.PairingDiscovery
 import com.wangzan101.mika.core.shell.PhoneSetupFlow
+import com.wangzan101.mika.core.shell.A11yLossRecord
+import com.wangzan101.mika.core.shell.HelperRestoreReport
 import com.wangzan101.mika.core.shell.RecoveryCapability
 import com.wangzan101.mika.core.shell.RecoveryConsent
 import com.wangzan101.mika.core.shell.SetupInputs
@@ -60,6 +62,10 @@ data class DiagnosticsSnapshot(
         /** 系统电池优化里 Mika 是不是不受限制;读不到为 null。 */
         val ignoringBatteryOptimizations: Boolean?,
         val lastRestore: String?,
+        /** 内置助手在 Mika 被杀后把它拉起来的记录(助手交接时报来);没有为 null。 */
+        val helperRestores: HelperRestoreReport? = null,
+        /** 上一次 Mika 启动时发现无障碍服务被拿掉或没绑定;没有为 null。 */
+        val lastA11yLoss: A11yLossRecord? = null,
     )
 
     data class Models(
@@ -112,6 +118,11 @@ object Diagnostics {
         line("write secure settings", if (r.writeSecureSettings) "granted" else "not granted")
         line("battery optimization", when (r.ignoringBatteryOptimizations) { true -> "unrestricted"; false -> "restricted"; null -> "unreadable" })
         line("last reboot restore", r.lastRestore ?: "none")
+        line("restored by helper", r.helperRestores?.let { h ->
+            (if (h.lastRestoredAtMs > 0) "${ago(s.generatedAtMs - h.lastRestoredAtMs)}, ${h.recent} recently" else "never") +
+                (if (h.gaveUpAtMs > 0) ", backed off ${ago(s.generatedAtMs - h.gaveUpAtMs)}" else "")
+        } ?: "never")
+        line("accessibility on start", r.lastA11yLoss?.let { "${it.loss.name.lowercase()} ${ago(s.generatedAtMs - it.atMs)}" } ?: "ok")
 
         section("Models")
         val m = s.models

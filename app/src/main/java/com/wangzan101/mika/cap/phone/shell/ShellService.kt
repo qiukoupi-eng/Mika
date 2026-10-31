@@ -715,6 +715,13 @@ class ShellService(
 
     override fun runCommand(command: String): Bundle = exec(command, null)
 
+    /** 助手进程看 Mika 交来的心愿(见 [setRestoreWish]);Mika 死后据此决定要不要把它拉起来。 */
+    @Volatile var onRestoreWish: ((Int) -> Unit)? = null
+
+    override fun setRestoreWish(flags: Int) {
+        onRestoreWish?.invoke(flags)
+    }
+
     private fun commandResult(code: Int, output: String) = Bundle().apply { putInt("exitCode", code); putString("output", output) }
 
     /** 以 shell 身份跑 `sh -c`,合并输出,限时限长;[displayId] 不为空时放进 MIKA_DISPLAY_ID。 */

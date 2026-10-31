@@ -18,6 +18,10 @@ object HelperHandoff {
     const val KEY_UID = "uid"
     const val KEY_PID = "pid"
     const val KEY_APK = "apk"
+    /** 助手把 Mika 拉起来的记录(见 [HelperRestoreReport]);没拉过时不带。 */
+    const val KEY_RESTORED_AT = "restoredAt"
+    const val KEY_RESTORES = "restores"
+    const val KEY_GAVE_UP_AT = "restoreGaveUpAt"
 
     // Mika → 助手
     const val KEY_ACCEPTED = "accepted"

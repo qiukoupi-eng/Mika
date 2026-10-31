@@ -195,6 +195,21 @@ class DiagnosticsTest {
         assertTrue(t, t.contains("last reboot restore: NotRecovered"))
     }
 
+    /** 内置助手拉起 Mika 的记录、启动时无障碍服务的问题:有就写何时、几次,没有写 never / ok。 */
+    @Test
+    fun helperRestoresAndAccessibilityLoss() {
+        val base = snapshot()
+        val none = Diagnostics.render(base)
+        assertTrue(none, none.contains("restored by helper: never"))
+        assertTrue(none, none.contains("accessibility on start: ok"))
+        val t = Diagnostics.render(base.copy(recovery = base.recovery.copy(
+            helperRestores = com.wangzan101.mika.core.shell.HelperRestoreReport(now - 3 * 60_000, 2, now - 60_000),
+            lastA11yLoss = com.wangzan101.mika.core.shell.A11yLossRecord(com.wangzan101.mika.core.shell.A11yLoss.Removed, now - 2 * 3_600_000),
+        )))
+        assertTrue(t, t.contains("restored by helper: 3m ago, 2 recently, backed off 1m ago"))
+        assertTrue(t, t.contains("accessibility on start: removed 2h ago"))
+    }
+
     /** 最近一次 ChatGPT 登录失败:写类别、错误代码和说明;说明里像令牌的串遮住。 */
     @Test
     fun chatGptSignInFailureShowsCodeWithoutTokens() {

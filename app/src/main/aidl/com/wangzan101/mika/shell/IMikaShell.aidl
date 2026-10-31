@@ -81,6 +81,9 @@ interface IMikaShell {
     // 以 shell 身份跑一条设置用的命令(授权、无障碍列表等;和经已配对的无线调试跑一样),不限于某块屏;返回 exitCode 和 output。
     // 助手是电脑经 USB 起的、没配对过无线调试时,Mika 的这类命令只能经这里
     Bundle runCommand(String command) = 36;
+    // Mika 的进程被杀后助手要不要把它拉起来(RestoreWish.flags:1=拉起来 2=拉起来前写回无障碍服务)。
+    // 助手读不到 Mika 的设置,只记最后交来的这一份;Mika 每次交接后和心愿变了时都交一次
+    void setRestoreWish(int flags) = 37;
 
     // 沿用早先定下的销毁事务号;AIDL 要求要么全部方法编号要么都不编号
     void destroy() = 16777114;
