@@ -24,6 +24,13 @@ class VoiceCopyTest {
         assertEquals("没能转成文字：额度已用完", VoiceCopy.failure(SpeechFailure.Provider(ModelError.QuotaExceeded())))
     }
 
+    @Test fun silentPhoneRecognizerPointsToSpeechSettings() {
+        assertEquals(
+            "手机自带的语音识别没有响应，听不到字。到「设置 › 模型 › 语音转文字」选一个服务商的语音模型就能用。",
+            VoiceCopy.unavailable(SpeechEngineSpec.Why.SystemNoResponse),
+        )
+    }
+
     @Test fun countdownOnlyInTheLastTenSeconds() {
         assertNull(VoiceCopy.countdown(49_000))
         assertEquals("还剩 10 秒", VoiceCopy.countdown(50_000))

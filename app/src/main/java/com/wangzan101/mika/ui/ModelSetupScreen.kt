@@ -97,7 +97,10 @@ fun ModelSetupScreen(
         ModelSetupViewModel(
             store, scope, browser = AndroidSignInBrowser(context.applicationContext), signIns = signIns,
             speech = (context.applicationContext as? MikaApp)?.speech,
-            systemSpeech = { SystemSpeech.capability(context.applicationContext) },
+            systemSpeech = {
+                val silent = (context.applicationContext as? MikaApp)?.speech?.systemSilent?.value ?: false
+                SystemSpeech.capability(context.applicationContext, silent)
+            },
         )
     }
     val ui by vm.state.collectAsState()

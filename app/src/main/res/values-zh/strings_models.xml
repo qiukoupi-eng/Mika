@@ -166,6 +166,9 @@
     <string name="speech_system_gone">这台手机没有</string>
     <string name="speech_tag_ok">可用</string>
     <string name="speech_tag_none">没有</string>
+    <string name="speech_system_silent">没有响应</string>
+    <string name="speech_system_silent_note">上次在这台手机上没有响应，重新选它可以再试</string>
+    <string name="speech_tag_silent">没响应</string>
     <string name="speech_tag_speech">语音</string>
     <string name="speech_off_note">输入框和胶囊不能按住说话</string>
     <string name="speech_footer">只列像语音模型的；不提供列表的服务商可以手填模型名，选的时候先试转一小段。</string>

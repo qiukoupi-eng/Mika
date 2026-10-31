@@ -27,6 +27,21 @@ class SpeechSettingsTest {
         }
     }
 
+    @Test fun silentMarkSurvivesUntilSystemIsPickedAgain() {
+        val prefs = MemoryPrefs()
+        val s = SpeechSettings(prefs)
+        assertEquals(false, s.systemSilent.value)
+        s.markSystemSilent()
+        assertEquals(true, s.systemSilent.value)
+        assertEquals(true, SpeechSettings(prefs).systemSilent.value)
+        // 选别的不清:记号说的是这台手机的识别服务
+        s.set(SpeechChoice.Off)
+        assertEquals(true, SpeechSettings(prefs).systemSilent.value)
+        s.set(SpeechChoice.System)
+        assertEquals(false, s.systemSilent.value)
+        assertEquals(false, SpeechSettings(prefs).systemSilent.value)
+    }
+
     @Test fun brokenJsonReadsAsAuto() {
         for (bad in listOf("{not json", "[]", """{"type":"nope"}""", """{"type":"provider","providerId":"p1"}""")) {
             val prefs = MemoryPrefs()

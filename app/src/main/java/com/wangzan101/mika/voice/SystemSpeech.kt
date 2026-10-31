@@ -15,12 +15,15 @@ import java.util.Locale
 
 /** 手机自带识别:能力检测、错误码怎么归类、识别用的语言。 */
 object SystemSpeech {
-    /** 安卓 11 起要在清单里声明查询 RecognitionService,否则这里永远是不可用。 */
-    fun capability(context: Context): SystemCapability {
+    /**
+     * 安卓 11 起要在清单里声明查询 RecognitionService,否则这里永远是不可用。
+     * [silent] 是之前试过、服务不响应的记号(见 [SpeechSettings.systemSilent]):系统只能说有没有,理不理要试了才知道。
+     */
+    fun capability(context: Context, silent: Boolean = false): SystemCapability {
         val onDevice = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
             runCatching { SpeechRecognizer.isOnDeviceRecognitionAvailable(context) }.getOrDefault(false)
         val online = runCatching { SpeechRecognizer.isRecognitionAvailable(context) }.getOrDefault(false)
-        return SystemCapability(available = online || onDevice, onDevice = onDevice)
+        return SystemCapability(available = online || onDevice, onDevice = onDevice, responsive = !silent)
     }
 
     /**
@@ -58,6 +61,14 @@ object SystemSpeech {
         }
     }
 
+    /**
+     * 开始听之后 [SystemSpeechSession.NO_RESPONSE_MS] 内识别服务一个回调都没给时怎么办。
+     * [answered] 是这个识别器之前回过话(说明服务是好的,只是这一段卡住了):按已听到的收尾,什么都没听到就是没听清。
+     * 从没回过话就是这台手机的识别服务不理第三方 App 的请求,再等也不会有字,报 [SpeechEngineSpec.Why.SystemNoResponse]。
+     */
+    fun afterSilence(answered: Boolean): Outcome =
+        if (answered) Outcome.Finish else Outcome.Fail(SpeechFailure.Unavailable(SpeechEngineSpec.Why.SystemNoResponse))
+
     /** 本机识别说这个语言用不了(没装语言包等):换成联网识别再试。 */
     internal fun languageMissing(code: Int) = code == ERROR_LANGUAGE_NOT_SUPPORTED || code == ERROR_LANGUAGE_UNAVAILABLE
 
@@ -90,11 +101,14 @@ object SystemSpeech {
  * 手机自带识别的一次会话。[SpeechRecognizer] 只能在主线程建和调,所以这里所有对它的操作都投到主线程。
  * 按着期间识别服务自己结束一段(出最终结果或「没听到」)就立刻重开,各段由 [Segments] 拼起来;
  * 松开后 stopListening,最多等 [FINAL_WAIT_MS] 拿最终结果,等不到就用最后一次中间结果。
+ * 每次 startListening 后 [NO_RESPONSE_MS] 内服务一个回调都没有,按 [SystemSpeech.afterSilence] 收尾;
+ * 从没回过话时调 [onNoResponse],让设置记下这台手机的自带识别不响应。
  */
 class SystemSpeechSession(
     context: Context,
     private val onDevice: Boolean,
     private val languageTag: String,
+    private val onNoResponse: () -> Unit = {},
 ) : SpeechSession {
     private val context = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
@@ -109,7 +123,20 @@ class SystemSpeechSession(
     private var holding = true
     private val restarts = Restarts()
     private var restartPending = false
-    private val timeout = Runnable { finish(SpeechEvent.Final(segments.full())) }
+    /** 当前识别器回过话没有(任何回调都算)。 */
+    private var answered = false
+    // 还没回过话时由 [silence] 收尾:松开后的等待不抢先给「没听清」
+    private val timeout = Runnable { if (answered) finish(SpeechEvent.Final(segments.full())) }
+    private val silence = Runnable {
+        if (done()) return@Runnable
+        when (val o = SystemSpeech.afterSilence(answered)) {
+            is SystemSpeech.Outcome.Fail -> {
+                onNoResponse()
+                finish(SpeechEvent.Failed(o.why))
+            }
+            else -> finish(SpeechEvent.Final(segments.full()))
+        }
+    }
     private val restart = Runnable {
         restartPending = false
         if (!done() && holding) listen()
@@ -157,6 +184,7 @@ class SystemSpeechSession(
             return
         }
         recognizer = rec
+        answered = false
         rec.setRecognitionListener(listener)
         listen()
     }
@@ -170,6 +198,8 @@ class SystemSpeechSession(
             // 联网识别时:手机有本机识别能力就请服务尽量离线识别
             if (!usingOnDevice && onDevice) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
         }
+        main.removeCallbacks(silence)
+        main.postDelayed(silence, NO_RESPONSE_MS)
         try {
             recognizer?.startListening(intent)
         } catch (e: RuntimeException) {
@@ -194,8 +224,15 @@ class SystemSpeechSession(
         }
     }
 
+    /** 服务回了话:这一段不算没响应。 */
+    private fun heard() {
+        answered = true
+        main.removeCallbacks(silence)
+    }
+
     private fun teardown() {
         main.removeCallbacks(timeout)
+        main.removeCallbacks(silence)
         main.removeCallbacks(restart)
         restartPending = false
         recognizer?.let { runCatching { it.destroy() } }
@@ -210,19 +247,21 @@ class SystemSpeechSession(
         results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull().orEmpty()
 
     private val listener = object : RecognitionListener {
-        override fun onReadyForSpeech(params: Bundle?) {}
-        override fun onBeginningOfSpeech() {}
-        override fun onBufferReceived(buffer: ByteArray?) {}
-        override fun onEndOfSpeech() {}
-        override fun onEvent(eventType: Int, params: Bundle?) {}
+        override fun onReadyForSpeech(params: Bundle?) = heard()
+        override fun onBeginningOfSpeech() = heard()
+        override fun onBufferReceived(buffer: ByteArray?) = heard()
+        override fun onEndOfSpeech() = heard()
+        override fun onEvent(eventType: Int, params: Bundle?) = heard()
 
         override fun onRmsChanged(rmsdB: Float) {
+            heard()
             if (done()) return
             // 识别服务给的大致在 -2..10 dB,压到 0..1 画波形
             out.send(SpeechEvent.Level(((rmsdB + 2f) / 12f).coerceIn(0f, 1f)))
         }
 
         override fun onPartialResults(partialResults: Bundle?) {
+            heard()
             if (done()) return
             val text = firstText(partialResults)
             if (text.isBlank()) return
@@ -231,6 +270,7 @@ class SystemSpeechSession(
         }
 
         override fun onResults(results: Bundle?) {
+            heard()
             if (done()) return
             val text = firstText(results)
             segments.segmentDone(text)
@@ -250,6 +290,7 @@ class SystemSpeechSession(
         }
 
         override fun onError(error: Int) {
+            heard()
             if (done()) return
             if (usingOnDevice && SystemSpeech.languageMissing(error) && segments.full().isEmpty()) {
                 open(preferOnDevice = false)
@@ -271,5 +312,11 @@ class SystemSpeechSession(
     companion object {
         /** 松开后等最终结果的上限。 */
         const val FINAL_WAIT_MS = 2_000L
+
+        /**
+         * 开始听之后等识别服务第一个回调(通常是 onReadyForSpeech,正常几百毫秒内到)的上限。
+         * 留出识别服务进程冷启动的时间;超过就当这一段没响应。
+         */
+        const val NO_RESPONSE_MS = 3_000L
     }
 }

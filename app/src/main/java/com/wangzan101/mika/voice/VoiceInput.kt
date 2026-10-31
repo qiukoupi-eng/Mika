@@ -28,7 +28,7 @@ class VoiceInput(
 
     /** 界面先问一下能不能用、用的是哪个(卡片顶上那个小标签)。 */
     override fun spec(): SpeechEngineSpec =
-        SpeechResolver.resolve(settings.choice.value, SystemSpeech.capability(context), providers.providers.value)
+        SpeechResolver.resolve(settings.choice.value, SystemSpeech.capability(context, settings.systemSilent.value), providers.providers.value)
 
     /**
      * 开一次会话,按下时调(要在主线程)。[language] 是识别语言(BCP-47);null 跟 App 界面语言。
@@ -42,7 +42,7 @@ class VoiceInput(
         }
         val tag = language ?: SystemSpeech.speechTag(AppLanguage.current(context))
         return when (spec) {
-            is SpeechEngineSpec.System -> SystemSpeechSession(context, spec.onDevice, tag)
+            is SpeechEngineSpec.System -> SystemSpeechSession(context, spec.onDevice, tag, onNoResponse = settings::markSystemSilent)
             is SpeechEngineSpec.Provider -> {
                 val p = spec.provider
                 val t = transcriber(p)

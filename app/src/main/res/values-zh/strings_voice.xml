@@ -25,6 +25,7 @@
     <string name="voice_unavailable_title">还不能语音输入</string>
     <string name="voice_unavailable_no_engine">这台手机没有自带的语音识别，也还没选转文字的模型。到「设置 › 模型 › 语音转文字」选一个服务商的语音模型就能用。</string>
     <string name="voice_unavailable_system_gone">语音转文字选的是手机自带的识别，这台手机现在没有。到「设置 › 模型 › 语音转文字」换一个就能用。</string>
+    <string name="voice_unavailable_system_silent">手机自带的语音识别没有响应，听不到字。到「设置 › 模型 › 语音转文字」选一个服务商的语音模型就能用。</string>
     <string name="voice_unavailable_provider_gone">选的语音模型所在的服务商已经删掉了。到「设置 › 模型 › 语音转文字」重新选一个就能用。</string>
     <string name="voice_unavailable_off">语音转文字设成了不用。到「设置 › 模型 › 语音转文字」选一个就能用。</string>
     <string name="voice_go_pick">去选</string>

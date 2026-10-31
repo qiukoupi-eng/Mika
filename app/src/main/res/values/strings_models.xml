@@ -169,6 +169,9 @@
     <string name="speech_system_gone">Not on this phone</string>
     <string name="speech_tag_ok">Available</string>
     <string name="speech_tag_none">None</string>
+    <string name="speech_system_silent">Not responding</string>
+    <string name="speech_system_silent_note">Didn’t respond on this phone last time. Pick it again to retry</string>
+    <string name="speech_tag_silent">No response</string>
     <string name="speech_tag_speech">Speech</string>
     <string name="speech_off_note">The text box and capsule can’t be held to talk</string>
     <string name="speech_footer">Only models that look like speech models are listed. For a provider with no list, type a model name; a short clip is transcribed as a test when you pick it.</string>

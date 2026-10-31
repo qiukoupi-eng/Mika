@@ -155,6 +155,7 @@ internal object VoiceCopy {
     fun unavailable(why: SpeechEngineSpec.Why): String = when (why) {
         SpeechEngineSpec.Why.NoSystemNoModel -> tr(R.string.voice_unavailable_no_engine)
         SpeechEngineSpec.Why.SystemGone -> tr(R.string.voice_unavailable_system_gone)
+        SpeechEngineSpec.Why.SystemNoResponse -> tr(R.string.voice_unavailable_system_silent)
         SpeechEngineSpec.Why.ProviderGone -> tr(R.string.voice_unavailable_provider_gone)
         SpeechEngineSpec.Why.Off -> tr(R.string.voice_unavailable_off)
     }

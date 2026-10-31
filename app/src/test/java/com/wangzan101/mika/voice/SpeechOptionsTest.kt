@@ -52,6 +52,16 @@ class SpeechOptionsTest {
         assertNull(s.sub)
     }
 
+    @Test fun silentSystemSaysNotResponding() {
+        val silent = SystemCapability(available = true, onDevice = true, responsive = false)
+        for (choice in listOf(SpeechChoice.Auto, SpeechChoice.System)) {
+            val s = SpeechOptions.summary(choice, silent, listOf(openAi))
+            assertEquals("手机自带", s.title)
+            assertEquals("没有响应", s.sub)
+            assertFalse(s.subOk)
+        }
+    }
+
     @Test fun missingProviderIsUnset() {
         val choice = SpeechChoice.Provider("gone", "whisper-1", TranscribeMethod.AudioTranscriptions)
         val s = SpeechOptions.summary(choice, SystemCapability(true, true), listOf(openAi))

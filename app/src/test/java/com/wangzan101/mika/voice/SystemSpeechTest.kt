@@ -19,6 +19,16 @@ class SystemSpeechTest {
     }
 
     @Test
+    fun silenceFromAServiceThatNeverAnsweredIsNoResponse() {
+        assertEquals(
+            SystemSpeech.Outcome.Fail(SpeechFailure.Unavailable(SpeechEngineSpec.Why.SystemNoResponse)),
+            SystemSpeech.afterSilence(answered = false),
+        )
+        // 回过话的服务只是这一段卡住:按已听到的收尾,不记成不响应
+        assertEquals(SystemSpeech.Outcome.Finish, SystemSpeech.afterSilence(answered = true))
+    }
+
+    @Test
     fun languageTagsFollowAppLanguage() {
         assertEquals("zh-CN", SystemSpeech.speechTag(com.wangzan101.mika.i18n.AppLanguage.SimplifiedChinese, java.util.Locale.US))
         assertEquals("zh-TW", SystemSpeech.speechTag(com.wangzan101.mika.i18n.AppLanguage.TraditionalChinese, java.util.Locale.US))

@@ -26,13 +26,21 @@ object SpeechOptions {
 
     fun summary(choice: SpeechChoice, system: SystemCapability, providers: List<Provider>): Summary {
         val unset = Summary(tr(R.string.settings_not_set), null, false)
+        // 系统说有、试过却不响应
+        val silent = Summary(tr(R.string.speech_system), tr(R.string.speech_system_silent), false)
         return when (choice) {
             SpeechChoice.Off -> Summary(tr(R.string.models_off), null, false)
-            SpeechChoice.Auto ->
-                if (system.available) systemSummary(system) else unset
-            SpeechChoice.System ->
+            SpeechChoice.Auto -> when {
+                system.usable -> systemSummary(system)
+                system.available -> silent
+                else -> unset
+            }
+            SpeechChoice.System -> when {
                 // 明确选了手机自带、现在却用不了:照实说,不悄悄换别的
-                if (system.available) systemSummary(system) else Summary(tr(R.string.speech_system), tr(R.string.speech_system_gone), false)
+                system.usable -> systemSummary(system)
+                system.available -> silent
+                else -> Summary(tr(R.string.speech_system), tr(R.string.speech_system_gone), false)
+            }
             is SpeechChoice.Provider -> {
                 val p = providers.firstOrNull { it.id == choice.providerId } ?: return unset
                 Summary(choice.model, p.name, false)

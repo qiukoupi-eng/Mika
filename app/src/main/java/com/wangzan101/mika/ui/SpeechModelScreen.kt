@@ -50,7 +50,10 @@ fun SpeechModelScreen(store: ProviderStore, onBack: () -> Unit) {
         ModelSetupViewModel(
             store, scope,
             speech = (context.applicationContext as? MikaApp)?.speech,
-            systemSpeech = { SystemSpeech.capability(context.applicationContext) },
+            systemSpeech = {
+                val silent = (context.applicationContext as? MikaApp)?.speech?.systemSilent?.value ?: false
+                SystemSpeech.capability(context.applicationContext, silent)
+            },
         )
     }
     val ui by vm.state.collectAsState()
@@ -73,7 +76,8 @@ fun SpeechModelContent(ui: ModelSetupUi, probe: Map<String, String>, actions: Sp
     val system = ui.systemSpeech
     val choice = ui.speech
     // 没选过时有手机自带就是在用它,所以「没选过」也把它标成选中
-    val systemSelected = system.available && (choice == SpeechChoice.System || choice == SpeechChoice.Auto)
+    // 记成不响应时不标选中;行仍可点,重新选它就清掉记号再试
+    val systemSelected = system.usable && (choice == SpeechChoice.System || choice == SpeechChoice.Auto)
     Page(tr(R.string.role_speech), onBack) {
         Text(
             tr(R.string.speech_hint), Modifier.padding(top = 4.dp, bottom = 12.dp), fontSize = 14.5.sp, lineHeight = 22.sp, color = c.ink2,
@@ -85,13 +89,17 @@ fun SpeechModelContent(ui: ModelSetupUi, probe: Map<String, String>, actions: Sp
                 subtitle = tr(
                     when {
                         !system.available -> R.string.speech_system_none_note
+                        !system.responsive -> R.string.speech_system_silent_note
                         system.onDevice -> R.string.speech_system_note
                         else -> R.string.speech_system_note_online
                     },
                 ),
                 trailing = {
-                    if (system.available) StatusPill(tr(R.string.speech_tag_ok), PillTone.Ok)
-                    else StatusPill(tr(R.string.speech_tag_none), PillTone.Neutral)
+                    when {
+                        system.usable -> StatusPill(tr(R.string.speech_tag_ok), PillTone.Ok)
+                        system.available -> StatusPill(tr(R.string.speech_tag_silent), PillTone.Neutral)
+                        else -> StatusPill(tr(R.string.speech_tag_none), PillTone.Neutral)
+                    }
                 },
             )
             RadioRow(

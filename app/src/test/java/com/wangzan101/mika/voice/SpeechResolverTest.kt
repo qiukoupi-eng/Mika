@@ -30,6 +30,16 @@ class SpeechResolverTest {
         )
     }
 
+    @Test fun silentSystemIsUnavailableNotSwappedForAProvider() {
+        val silent = SystemCapability(available = true, onDevice = false, responsive = false)
+        for (choice in listOf(SpeechChoice.Auto, SpeechChoice.System)) {
+            assertEquals(
+                SpeechEngineSpec.Unavailable(SpeechEngineSpec.Why.SystemNoResponse),
+                SpeechResolver.resolve(choice, silent, listOf(p1)),
+            )
+        }
+    }
+
     @Test fun providerGone() {
         val choice = SpeechChoice.Provider("p9", "whisper-1", TranscribeMethod.AudioTranscriptions)
         assertEquals(

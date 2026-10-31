@@ -165,6 +165,9 @@
     <string name="speech_system_gone">這臺手機沒有</string>
     <string name="speech_tag_ok">可用</string>
     <string name="speech_tag_none">沒有</string>
+    <string name="speech_system_silent">沒有回應</string>
+    <string name="speech_system_silent_note">上次在這臺手機上沒有回應，重新選它可以再試</string>
+    <string name="speech_tag_silent">沒回應</string>
     <string name="speech_tag_speech">語音</string>
     <string name="speech_off_note">輸入框和膠囊不能按住說話</string>
     <string name="speech_footer">只列像語音模型的；不提供列表的服務商可以手填模型名稱，選的時候先試轉一小段。</string>
