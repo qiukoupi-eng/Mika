@@ -342,7 +342,8 @@ The debug build is not precompiled and its UI is several times slower; use the p
 ## Contact
 
 - X: [@wangzan101](https://x.com/wangzan101)
-- WeChat: in the app, open "About Mika" (关于 Mika) in Settings and scan the code to add the author on WeChat, with the note "Mika", to join the beta group.
+- WeChat group: in the app, open "About Mika" › "Join the community" in Settings and scan the code.
+- X group chat: <https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X>
 
 ## License
 

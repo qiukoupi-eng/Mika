@@ -341,7 +341,8 @@ CLI 测试另需 Python 3.10+,可用 `-PmikaPython=/path/to/python3` 指定解�
 ## 联系作者
 
 - X：[@wangzan101](https://x.com/wangzan101)
-- 微信：在 App 设置里的「关于 Mika」扫码加作者微信，备注「Mika」，拉你进内测群。
+- 微信群：在 App 设置的「关于 Mika」›「加入交流群」扫码。
+- X 群聊：<https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X>
 
 ## 许可证
 
