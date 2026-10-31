@@ -668,13 +668,19 @@ class ProviderStore(
         }
         return when (kind) {
             ProviderConfig.Kind.OpenAiCompat ->
-                OpenAiCompatModel(baseUrl, apiKey, cfg.model, cfg.capabilities, http, endpoint?.reasoningField, setup.headers)
+                OpenAiCompatModel(baseUrl, apiKey, cfg.model, cfg.capabilities, http, endpoint?.reasoningField, setup.headers,
+                    reasoningEffort = setup.reasoningEffort)
             ProviderConfig.Kind.Anthropic -> AnthropicModel(
                 baseUrl, apiKey.orEmpty(), cfg.model, cfg.capabilities, http,
-                maxTokens = setup.maxOutputTokens ?: DEFAULT_ANTHROPIC_MAX_TOKENS, headers = setup.headers,
+                // 开思考后输出上限里同时算思考,原来给连接测试的量不够一次像样的思考
+                maxTokens = setup.maxOutputTokens ?: if (setup.reasoningEffort?.let { it != "none" } == true) {
+                    ANTHROPIC_THINKING_MAX_TOKENS
+                } else DEFAULT_ANTHROPIC_MAX_TOKENS,
+                headers = setup.headers, reasoningEffort = setup.reasoningEffort,
             )
             ProviderConfig.Kind.Gemini ->
-                GeminiModel(baseUrl, apiKey.orEmpty(), cfg.model, cfg.capabilities, http, setup.headers, setup.maxOutputTokens)
+                GeminiModel(baseUrl, apiKey.orEmpty(), cfg.model, cfg.capabilities, http, setup.headers, setup.maxOutputTokens,
+                    reasoningEffort = setup.reasoningEffort)
             ProviderConfig.Kind.OpenAiResponses ->
                 ResponsesModel(baseUrl, BearerToken.fixed(apiKey), cfg.model, cfg.capabilities, http, headers = setup.headers,
                     reasoningEffort = setup.reasoningEffort)
@@ -963,6 +969,8 @@ class ProviderStore(
         private val PROBE_TOOL = ToolSpec("get_time", "Returns the current time.", """{"type":"object","properties":{}}""")
         private const val PROBE_MAX_TOKENS = 1024
         private const val DEFAULT_ANTHROPIC_MAX_TOKENS = 4096
+        /** 选了思考强度时 Claude 的输出上限:思考也占这个额度,4K 往往在出答案前就用完。 */
+        private const val ANTHROPIC_THINKING_MAX_TOKENS = 16_000
 
         /**
          * 列模型的接口:OpenAI 兼容、Responses、ChatGPT 和 xAI 都是 `GET {base}/models`(Bearer;订阅登录的 [apiKey] 是访问令牌)。

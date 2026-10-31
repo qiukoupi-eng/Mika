@@ -80,15 +80,41 @@ class ReasoningSettingsTest {
         assertTrue(s.setReasoningEffort(ModelRole.Main, null))
     }
 
-    @Test fun actualProtocolDeterminesWhetherEffortIsOffered() {
+    @Test fun providerReportedLevelsWorkForEveryProtocol() {
         val cfg = ProviderConfig("c", ProviderConfig.Kind.OpenAiCompat, "https://example.test", "m", caps)
         assertNull(ReasoningOptions.of(cfg, null))
-        val responses = ListedModel("m", endpoint = ModelEndpoint(ModelProtocol.Responses, "https://example.test"), reasoningEfforts = listOf("low"))
-        assertEquals(listOf("low"), ReasoningOptions.of(cfg, responses)!!.levels)
-        val direct = cfg.copy(kind = ProviderConfig.Kind.OpenAiResponses)
+        val chat = ListedModel(
+            "m", endpoint = ModelEndpoint(ModelProtocol.ChatCompletions, "https://example.test"),
+            reasoningEfforts = listOf("low", "high"),
+        )
+        listOf(ModelProtocol.ChatCompletions, ModelProtocol.Messages, ModelProtocol.GenerateContent, ModelProtocol.Responses)
+            .forEach { protocol ->
+                val listed = chat.copy(endpoint = ModelEndpoint(protocol, "https://example.test"))
+                assertEquals(listOf("low", "high"), ReasoningOptions.of(cfg, listed)!!.levels)
+                assertTrue(ReasoningOptions.of(cfg, listed)!!.fromProvider)
+            }
+    }
+
+    @Test fun manualLevelsFollowTheProtocolAndNeedReasoningSupport() {
+        val direct = ProviderConfig("c", ProviderConfig.Kind.OpenAiResponses, "https://example.test", "m", caps)
         assertFalse(ReasoningOptions.of(direct, null)!!.fromProvider)
         assertEquals(emptyList<String>(), ReasoningOptions.of(direct, ListedModel("m", reasoning = false))!!.levels)
-        assertNull(ReasoningOptions.of(direct, responses.copy(endpoint = ModelEndpoint(ModelProtocol.Messages, "https://example.test"))))
+        assertFalse(ReasoningOptions.of(ProviderConfig("x", ProviderConfig.Kind.Xai, "https://example.test", "m", caps), null)!!.fromProvider)
+        // 列表还没加载、或没写明支持思考:不猜
+        assertNull(ReasoningOptions.of(direct.copy(kind = ProviderConfig.Kind.Anthropic), null))
+        assertNull(ReasoningOptions.of(direct.copy(kind = ProviderConfig.Kind.Gemini), null))
+        // 兼容接口即使说了能思考,也不给手动档位(不把 reasoning_effort 发给没声明它的端点)
+        val thinking = ListedModel("m", reasoning = true)
+        assertNull(ReasoningOptions.of(direct.copy(kind = ProviderConfig.Kind.OpenAiCompat), thinking))
+        // Messages、generateContent 说了能思考但没给档位:给各自协议认的通用档位
+        assertEquals(
+            listOf("low", "medium", "high", "xhigh", "max"),
+            ReasoningOptions.of(direct.copy(kind = ProviderConfig.Kind.Anthropic), thinking)!!.levels,
+        )
+        assertEquals(
+            listOf("minimal", "low", "medium", "high"),
+            ReasoningOptions.of(direct.copy(kind = ProviderConfig.Kind.Gemini), thinking)!!.levels,
+        )
     }
 
     @Test fun metadataRefreshKeepsTheSavedChoiceButAllowsResettingAnUnavailableLevel() {
@@ -119,6 +145,34 @@ class ReasoningSettingsTest {
             s.modelFor(ModelRole.Main)!!.complete("", emptyList(), emptyList())
             val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
             assertEquals("high", body["reasoning"]!!.jsonObject["effort"]!!.jsonPrimitive.content)
+        }
+    }
+
+    @Test fun savedRoleEffortReachesEveryAdapter() = runTest {
+        MockWebServer().use { server ->
+            server.start()
+            val base = server.url("/").toString().trimEnd('/')
+            for (protocol in listOf(ModelProtocol.ChatCompletions, ModelProtocol.Messages, ModelProtocol.GenerateContent)) {
+                val s = ProviderStore(tmp.newFolder("p-${protocol.wire}"), AesGcmKeyCipher { key })
+                val p = s.connect("P", ProviderConfig.Kind.of(protocol), base, "k",
+                    listOf(ListedModel("m", endpoint = ModelEndpoint(protocol, base), reasoningEfforts = listOf("high"))))
+                s.use(ModelRole.Main, p.id, "m", caps)
+                assertTrue(s.setReasoningEffort(ModelRole.Main, "high"))
+                val reply = when (protocol) {
+                    ModelProtocol.ChatCompletions -> """{"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}"""
+                    ModelProtocol.Messages -> """{"content":[],"stop_reason":"end_turn"}"""
+                    else -> """{"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}"""
+                }
+                server.enqueue(MockResponse().setHeader("Content-Type", "application/json").setBody(reply))
+                s.modelFor(ModelRole.Main)!!.complete("", emptyList(), emptyList())
+                val body = Json.parseToJsonElement(server.takeRequest().body.readUtf8()).jsonObject
+                val sent = when (protocol) {
+                    ModelProtocol.ChatCompletions -> body["reasoning_effort"]
+                    ModelProtocol.Messages -> body["output_config"]!!.jsonObject["effort"]
+                    else -> body["generationConfig"]!!.jsonObject["thinkingConfig"]!!.jsonObject["thinkingLevel"]
+                }
+                assertEquals("high", sent!!.jsonPrimitive.content.lowercase())
+            }
         }
     }
 }

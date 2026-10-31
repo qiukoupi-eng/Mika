@@ -335,6 +335,18 @@ class OpenAiCompatModelTest {
         assertFalse(body().toString().contains("cache_control"))
     }
 
+    @Test fun sendsReasoningEffortOnlyWhenChosen() = runTest {
+        val reply = """{"choices":[{"finish_reason":"stop","message":{"content":"ok"}}]}"""
+        server.enqueue(ok(reply))
+        OpenAiCompatModel(server.url("/v1").toString().trimEnd('/'), "sk-x", "m", caps(), OkHttpClient(), reasoningEffort = "high")
+            .complete("s", user, emptyList())
+        assertEquals("high", body()["reasoning_effort"]!!.jsonPrimitive.content)
+
+        server.enqueue(ok(reply))
+        model().complete("s", user, emptyList())
+        assertFalse(body().containsKey("reasoning_effort"))
+    }
+
     // 插话打断后:半截回复是一条只有文字的 assistant 消息,不带调用和思考字段;后面两条 user 消息各自原样发出
     @Test fun interruptedReplyIsAPlainAssistantMessageBeforeTheSteer() = runTest {
         server.enqueue(ok("""{"choices":[{"finish_reason":"stop","message":{"content":"好"}}]}"""))

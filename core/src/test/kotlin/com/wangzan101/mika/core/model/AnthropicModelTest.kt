@@ -24,9 +24,9 @@ class AnthropicModelTest {
     @Before fun setUp() { server = MockWebServer().also { it.start() } }
     @After fun tearDown() { server.shutdown() }
 
-    private fun model(vision: Boolean = false, maxTokens: Int = 4096) = AnthropicModel(
+    private fun model(vision: Boolean = false, maxTokens: Int = 4096, reasoningEffort: String? = null) = AnthropicModel(
         server.url("/").toString().trimEnd('/'), "sk-ant", "claude-x",
-        Capabilities(true, vision, 200000, false), OkHttpClient(), maxTokens,
+        Capabilities(true, vision, 200000, false), OkHttpClient(), maxTokens, reasoningEffort = reasoningEffort,
     )
     private val user = listOf(Message(Role.User, listOf(Part.Text("hi")), Author.Mika))
     private fun ok(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
@@ -52,12 +52,84 @@ class AnthropicModelTest {
     @Test fun parsesThinkingBlocksAndStopReasons() = runTest {
         server.enqueue(ok("""{"content":[{"type":"thinking","thinking":"想","signature":"s"},{"type":"text","text":"好"}],"stop_reason":"end_turn"}"""))
         val r = model().complete("s", user, emptyList())
-        assertEquals(listOf(Part.Thinking("想"), Part.Text("好")), r.parts)
+        assertEquals(listOf(Part.Thinking("想", "anthropic:s"), Part.Text("好")), r.parts)
         assertEquals(StopReason.EndTurn, r.stopReason)
+        server.enqueue(ok("""{"content":[{"type":"redacted_thinking","data":"xyz"}],"stop_reason":"end_turn"}"""))
+        assertEquals(listOf(Part.Thinking("", "redacted:xyz")), model().complete("s", user, emptyList()).parts)
         server.enqueue(ok("""{"content":[{"type":"text","text":"x"}],"stop_reason":"max_tokens"}"""))
         assertEquals(StopReason.MaxTokens, model().complete("s", user, emptyList()).stopReason)
         server.enqueue(ok("""{"content":[{"type":"text","text":"x"}],"stop_reason":"refusal"}"""))
         assertEquals(StopReason.Other, model().complete("s", user, emptyList()).stopReason)
+    }
+
+    @Test fun sendsAdaptiveThinkingWithEffortOnlyWhenChosen() = runTest {
+        server.enqueue(ok("""{"content":[],"stop_reason":"end_turn"}"""))
+        model(reasoningEffort = "high").complete("s", user, emptyList())
+        val j = sentBody()
+        assertEquals("adaptive", j["thinking"]!!.jsonObject.str("type"))
+        assertEquals("summarized", j["thinking"]!!.jsonObject.str("display"))
+        assertEquals("high", j["output_config"]!!.jsonObject.str("effort"))
+
+        server.enqueue(ok("""{"content":[],"stop_reason":"end_turn"}"""))
+        model().complete("s", user, emptyList())
+        assertFalse(sentBody().containsKey("thinking"))
+
+        server.enqueue(ok("""{"content":[],"stop_reason":"end_turn"}"""))
+        model(reasoningEffort = "none").complete("s", user, emptyList())
+        val off = sentBody()
+        assertEquals("disabled", off["thinking"]!!.jsonObject.str("type"))
+        assertFalse(off.containsKey("output_config"))
+    }
+
+    // 带工具调用的回合必须把签名思考块原样带回;明确关掉思考时不带
+    @Test fun replaysSignedThinkingBlocksOnlyWhenThinkingIsOn() = runTest {
+        val history = listOf(
+            Message(Role.User, listOf(Part.Text("go")), Author.Mika),
+            Message(Role.Assistant, listOf(
+                Part.Thinking("想", "anthropic:sig-1"), Part.Thinking("", "redacted:xyz"),
+                // 别的服务商留下的思考不能被当成本家的签名发出去
+                Part.Thinking("旧", """{"endpoint":"https://other.test","via":"reasoning"}"""),
+                Part.Text("a"), Part.ToolCall("t1", "phone_tap", "{}"),
+            ), Author.Mika),
+            Message(Role.Tool, listOf(Part.ToolResult("t1", "done", false)), Author.Mika),
+        )
+        repeat(2) { server.enqueue(ok("""{"content":[],"stop_reason":"end_turn"}""")) }
+        model(reasoningEffort = "high").complete("s", history, emptyList())
+        val asst = sentBody().arr("messages")[1].jsonObject.arr("content").map { it.jsonObject }
+        assertEquals(listOf("thinking", "redacted_thinking", "text", "tool_use"), asst.map { it.str("type") })
+        assertEquals("想", asst[0].str("thinking"))
+        assertEquals("sig-1", asst[0].str("signature"))
+        assertEquals("xyz", asst[1].str("data"))
+
+        model(reasoningEffort = "none").complete("s", history, emptyList())
+        val without = sentBody().arr("messages")[1].jsonObject.arr("content").map { it.jsonObject }
+        assertEquals(listOf("text", "tool_use"), without.map { it.str("type") })
+    }
+
+    @Test fun streamsThinkingSignatureForReplay() = runTest {
+        val sse = """
+            event: content_block_start
+            data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"想"}}
+
+            event: content_block_delta
+            data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig"}}
+
+            event: content_block_stop
+            data: {"type":"content_block_stop","index":0}
+
+            event: message_delta
+            data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}
+
+            event: message_stop
+            data: {"type":"message_stop"}
+
+        """.trimIndent() + "\n\n"
+        server.enqueue(MockResponse().setHeader("Content-Type", "text/event-stream").setBody(sse))
+        val r = model(reasoningEffort = "high").completeStreaming("s", user, emptyList()) {}
+        assertEquals(listOf(Part.Thinking("想", "anthropic:sig")), r.parts)
     }
 
     @Test fun marksCacheOnSystemAndTools() = runTest {
