@@ -8,6 +8,7 @@ import com.wangzan101.mika.about.DiagnosticsCollector
 import com.wangzan101.mika.about.setupInputs
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.os.SystemClock
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -39,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.Saver
@@ -84,6 +86,7 @@ import com.wangzan101.mika.ui.components.ProgressDots
 import com.wangzan101.mika.ui.theme.MikaType
 import com.wangzan101.mika.ui.theme.MikaShapes
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** 用户确认做好的几步,转屏、进后台后还在。 */
@@ -114,9 +117,24 @@ fun PhoneSetupScreen(status: SystemStatus, repair: Boolean, onFix: (Fix) -> Unit
     var accessibilitySkipped by rememberSaveable { mutableStateOf(false) }
 
     var diagnosticsOpen by rememberSaveable { mutableStateOf(false) }
+    var usbAsked by rememberSaveable { mutableStateOf(false) }
+    var stalledMs by remember { mutableLongStateOf(0L) }
 
-    val inputs = status.setupInputs(discovery, repairing, accessibilitySkipped, confirmed, revisit)
+    val inputs = status.setupInputs(discovery, repairing, accessibilitySkipped, confirmed, revisit, stalledMs, usbAsked)
     val view = PhoneSetupFlow.view(inputs)
+    // 停在同一处没有进展时计时,换了地方从头算;到了时限就不用再数
+    val stallPoint = PhoneSetupFlow.stallPoint(view)
+    LaunchedEffect(stallPoint) {
+        stalledMs = 0L
+        if (stallPoint == null) return@LaunchedEffect
+        val start = SystemClock.elapsedRealtime()
+        while (stalledMs < PhoneSetupFlow.STALL_MS) {
+            delay(1_000L)
+            stalledMs = SystemClock.elapsedRealtime() - start
+        }
+    }
+    // 「改用电脑启动」出现过就留着,不因为又开始连接而收回
+    LaunchedEffect(view.usbFallback) { if (view.usbFallback) usbAsked = true }
     // 回去重做的那一步:读到它从关着变成开着,就自动回到原来的步骤,不用再点
     val revisitDetected = revisit?.let { PhoneSetupFlow.detected(it, inputs) }
     var revisitSawOff by rememberSaveable(revisit) { mutableStateOf(false) }
@@ -185,8 +203,9 @@ fun PhoneSetupScreen(status: SystemStatus, repair: Boolean, onFix: (Fix) -> Unit
             }
         },
         usbCommand = usbCommand,
+        onAskUsb = { usbAsked = true },
         onCopyUsbCommand = {
-            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(PhoneSetupCopy.USB_TOGGLE, usbCommand))
+            context.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(PhoneSetupCopy.USB_TITLE, usbCommand))
             Toast.makeText(context, PhoneSetupCopy.USB_COPIED, Toast.LENGTH_SHORT).show()
         },
     )
@@ -204,7 +223,8 @@ fun PhoneSetupScreen(status: SystemStatus, repair: Boolean, onFix: (Fix) -> Unit
  * [onDiagnostics] 不为空时底部总有「复制诊断信息」,失败时出错的那一步里也有一个。
  * 除了成功,哪个阶段底部都有「稍后再说」,返回也总能离开:不把用户困在这一页。
  * [scanning] 为真时连接一步说明正在本机找端口;连不上时 [onConnectPort] 收用户填的无线调试端口(已校验 1–65535)。
- * [usbCommand] 不为空时,没成功前清单下面有一条收起的另一条路「用电脑启动」,展开是命令和复制按钮([onCopyUsbCommand])。
+ * [usbCommand] 不为空时才有「改用电脑启动」:平时不出现,只在无线调试一步有一行「找不到无线调试?」([onAskUsb]);
+ * [SetupView.usbFallback] 为真时,在当前这一步里给一张卡片,是一句说明、命令和复制按钮([onCopyUsbCommand])。
  */
 @Composable
 fun PhoneSetupContent(
@@ -226,6 +246,7 @@ fun PhoneSetupContent(
     scanning: Boolean = false,
     onConnectPort: ((Int) -> Unit)? = null,
     usbCommand: String? = null,
+    onAskUsb: () -> Unit = {},
     onCopyUsbCommand: () -> Unit = {},
 ) {
     val canRevisit = view.phase == SetupPhase.Guide || view.phase == SetupPhase.Failed
@@ -257,11 +278,15 @@ fun PhoneSetupContent(
                                 step, view, onStepAction, onFailureFix, onAllowNotifications, onOpenPairingChannel, headsUpLowered, onOpenHeadsUp,
                                 onConfirmStep, onSubmit, onAppInfo, onSkipAccessibility, onRevisit, onDiagnostics, onConnectPort,
                             )
-                            if (step == SetupStep.Connect && view.phase == SetupPhase.Working) WorkingLine(scanning)
+                            val working = step == SetupStep.Connect && view.phase == SetupPhase.Working
+                            if (working) WorkingLine(scanning)
+                            if (usbCommand != null && (step == view.current || working)) {
+                                if (view.usbFallback) UsbStartCard(usbCommand, onCopyUsbCommand)
+                                else if (step == SetupStep.WirelessDebugging) LinkText(PhoneSetupCopy.USB_ASK, "setup-usb-ask", onAskUsb)
+                            }
                         }
                     }
                 }
-                if (usbCommand != null && view.phase != SetupPhase.Success) UsbStartOption(usbCommand, onCopyUsbCommand)
                 if (SetupStep.entries.any(::revisitable)) FooterNote(PhoneSetupCopy.REVISIT_NOTE)
                 if (view.phase != SetupPhase.Success) FooterNote(PhoneSetupCopy.SKIP_NOTE)
             }
@@ -295,29 +320,18 @@ fun PhoneSetupContent(
     }
 }
 
-/** 另一条路:用电脑经 USB 数据线起助手。默认收起,只占一行;展开是一句说明、命令和复制按钮。 */
+/** 另一条路:用电脑经 USB 数据线起助手。放在当前这一步里,和这一步的其他提示一样是一块浅色底:标题、一句说明、命令和复制按钮。 */
 @Composable
-private fun UsbStartOption(command: String, onCopy: () -> Unit) {
+private fun UsbStartCard(command: String, onCopy: () -> Unit) {
     val c = MikaTheme.colors
-    var open by rememberSaveable { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)) {
-        MikaButton(
-            PhoneSetupCopy.USB_TOGGLE, { open = !open }, Modifier.testTag("setup-usb-toggle"),
-            kind = ButtonKind.Text, size = ButtonSize.Small,
+    Column(Modifier.padding(top = 10.dp).fillMaxWidth().background(c.accentSoft, RoundedCornerShape(12.dp)).padding(12.dp).testTag("setup-usb")) {
+        Text(PhoneSetupCopy.USB_TITLE, fontSize = 14.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, color = c.ink)
+        Text(PhoneSetupCopy.USB_BODY, Modifier.padding(top = 2.dp), fontSize = 13.sp, lineHeight = 18.sp, color = c.ink2)
+        Text(
+            command, Modifier.padding(top = 8.dp).fillMaxWidth().background(c.fill, RoundedCornerShape(10.dp)).padding(10.dp).testTag("setup-usb-command"),
+            fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp, color = c.ink,
         )
-        if (open) {
-            Column(Modifier.fillMaxWidth().cardSurface(c, MikaShapes.Card).padding(16.dp).testTag("setup-usb")) {
-                Text(PhoneSetupCopy.USB_BODY, style = MikaType.Caption, color = c.ink2)
-                Text(
-                    command, Modifier.padding(top = 10.dp).fillMaxWidth().background(c.fill, RoundedCornerShape(10.dp)).padding(10.dp).testTag("setup-usb-command"),
-                    fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp, color = c.ink,
-                )
-                MikaButton(
-                    PhoneSetupCopy.USB_COPY, onCopy, Modifier.padding(top = 10.dp).testTag("setup-usb-copy"),
-                    kind = ButtonKind.Tonal, size = ButtonSize.Small,
-                )
-            }
-        }
+        PillButton(PhoneSetupCopy.USB_COPY, primary = false, tag = "setup-usb-copy", onClick = onCopy)
     }
 }
 

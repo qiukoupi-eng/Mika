@@ -33,6 +33,8 @@ fun SystemStatus.setupInputs(
     accessibilitySkipped: Boolean = false,
     confirmed: Set<SetupStep> = emptySet(),
     revisit: SetupStep? = null,
+    stalledMs: Long = 0L,
+    usbAsked: Boolean = false,
 ) = SetupInputs(
     developerOptions = developerOptions, wirelessDebugging = wirelessDebugging,
     status = builtinShell, discovery = discovery, notificationsAllowed = notificationsAllowed,
@@ -40,6 +42,7 @@ fun SystemStatus.setupInputs(
     usbDebugging = usbDebugging, accessibility = accessibility == AccessibilityState.On,
     accessibilitySkipped = accessibilitySkipped, restrictedSettings = restrictedSettings,
     confirmed = confirmed, revisit = revisit,
+    wirelessMissing = wirelessDebuggingMissing, stalledMs = stalledMs, usbAsked = usbAsked,
 )
 
 /**

@@ -122,8 +122,9 @@
     <string name="phone_connect_port_submit">連線</string>
     <string name="fail_usb_stopped">手機助手已停止</string>
     <string name="fail_usb_stopped_body">它是用電腦啟動的,手機重啟後就會停。在電腦上再執行一次 USB 啟動指令,或配對無線偵錯讓它自動恢復。</string>
-    <string name="phone_usb_toggle">用電腦啟動(USB 傳輸線)</string>
-    <string name="phone_usb_body">插上 USB 傳輸線、開啟「USB 偵錯」,在電腦上執行下面這條指令。手機重啟後要再執行一次,或配對無線偵錯讓它自動恢復。</string>
+    <string name="phone_usb_ask">找不到無線偵錯？</string>
+    <string name="phone_usb_title">這台手機打不開無線偵錯？改用電腦啟動</string>
+    <string name="phone_usb_body">用傳輸線連上電腦，在電腦上執行這條指令。手機重啟後要再執行一次。</string>
     <string name="phone_usb_copy">複製</string>
     <string name="phone_usb_copied">指令已複製</string>
 </resources>
