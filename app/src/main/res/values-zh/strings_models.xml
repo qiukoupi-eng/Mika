@@ -171,7 +171,7 @@
     <string name="speech_tag_silent">没响应</string>
     <string name="speech_tag_speech">语音</string>
     <string name="speech_off_note">输入框和胶囊不能按住说话</string>
-    <string name="speech_footer">只列像语音模型的；不提供列表的服务商可以手填模型名，选的时候先试转一小段。</string>
+    <string name="speech_footer">只列像语音模型的；列表里没有的可以手填模型名，选的时候先试转一小段。</string>
     <string name="speech_pick_failed">这个模型没能转写：%1$s</string>
     <string name="speech_pick_timeout">%1$s 试转一小段，%2$d 秒没有回应</string>
 </resources>

@@ -30,12 +30,10 @@ class SpeechOptionsTest {
     @Test fun onlySpeechModelsAreListed() {
         val g = SpeechOptions.groups(listOf(openAi)).single()
         assertEquals(listOf("whisper-1"), g.models)
-        assertFalse(g.manual)
     }
 
-    @Test fun providerWithoutListGetsManualEntry() {
+    @Test fun providerWithoutListStillGetsAGroup() {
         val g = SpeechOptions.groups(listOf(noList)).single()
-        assertTrue(g.manual)
         assertTrue(g.models.isEmpty())
     }
 

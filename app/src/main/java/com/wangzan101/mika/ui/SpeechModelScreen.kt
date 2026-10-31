@@ -1,6 +1,9 @@
 package com.wangzan101.mika.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -70,6 +73,7 @@ fun SpeechModelScreen(store: ProviderStore, onBack: () -> Unit) {
 }
 
 /** 不带状态的选择页,便于测试:顶上一段说明,「手机自带」「不用」,下面按服务商分组单选。 */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SpeechModelContent(ui: ModelSetupUi, probe: Map<String, String>, actions: SpeechPickActions, onBack: () -> Unit) {
     val c = MikaTheme.colors
@@ -111,26 +115,31 @@ fun SpeechModelContent(ui: ModelSetupUi, probe: Map<String, String>, actions: Sp
             val p = g.provider
             val testing = ui.speechTesting == p.id
             GroupLabel(ModelsCopy.providerName(p))
-            if (g.models.isNotEmpty() || g.manual) {
-                GroupCard {
-                    g.models.forEachIndexed { i, id ->
-                        val selected = (choice as? SpeechChoice.Provider)?.let { it.providerId == p.id && it.model == id } == true
-                        RadioRow(
-                            id, selected = selected, onClick = { actions.pickModel(p.id, id) }, first = i == 0,
-                            titleStyle = ModelIdStyle, enabled = ui.speechTesting == null,
-                            trailing = { CapabilityTag(tr(R.string.speech_tag_speech)) },
-                        )
-                    }
-                    if (g.manual) {
-                        Box(Modifier.testTag("speech-manual-${p.name}")) {
-                            ManualModel(p, if (testing) ListState.Running else null, first = g.models.isEmpty()) { actions.pickModel(p.id, it) }
-                        }
-                    }
+            // 手填选上的模型不在列表里,也补一行标成选中,让人看得出现在用的是哪个
+            val picked = (choice as? SpeechChoice.Provider)?.takeIf { it.providerId == p.id }?.model
+            val rows = if (picked != null && picked !in g.models) g.models + picked else g.models
+            GroupCard {
+                rows.forEachIndexed { i, id ->
+                    RadioRow(
+                        id, selected = id == picked, onClick = { actions.pickModel(p.id, id) }, first = i == 0,
+                        titleStyle = ModelIdStyle, enabled = ui.speechTesting == null,
+                        trailing = { CapabilityTag(tr(R.string.speech_tag_speech)) },
+                    )
+                }
+                // 列表里没有的(列表不全、或这家不给列表)手填
+                Box(Modifier.testTag("speech-manual-${p.name}")) {
+                    ManualModel(p, if (testing) ListState.Running else null, first = rows.isEmpty()) { actions.pickModel(p.id, it) }
                 }
             }
             when {
-                probe[p.id] != null -> FooterNote(probe.getValue(p.id), Modifier.testTag("speech-pick-failed"), color = c.bad)
-                testing && !g.manual -> FooterNote(ModelSetupCopy.TESTING, Modifier.testTag("speech-pick-running"))
+                probe[p.id] != null -> {
+                    // 列表长时原因落在屏幕外,点了像没反应:出来时滚到看得见
+                    val why = probe.getValue(p.id)
+                    val into = remember { BringIntoViewRequester() }
+                    LaunchedEffect(why) { into.bringIntoView() }
+                    FooterNote(why, Modifier.bringIntoViewRequester(into).testTag("speech-pick-failed"), color = c.bad)
+                }
+                testing && rows.isNotEmpty() -> FooterNote(ModelSetupCopy.TESTING, Modifier.testTag("speech-pick-running"))
             }
         }
         FooterNote(tr(R.string.speech_footer), Modifier.padding(top = 8.dp))

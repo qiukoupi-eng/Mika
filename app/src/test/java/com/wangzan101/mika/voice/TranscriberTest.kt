@@ -71,6 +71,59 @@ class TranscriberTest {
     }
 
     @Test
+    fun chatInputAudioUriSendsDataUri() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"choices":[{"message":{"content":"明天晴"}}]}"""))
+        val out = t.transcribe(provider(ProviderConfig.Kind.OpenAiCompat, "/v1"), "k", "m", TranscribeMethod.ChatInputAudioUri, wav, null)
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(body, body.contains("\"data\":\"data:audio/wav;base64,"))
+        assertTrue(body, body.contains("\"format\":\"wav\""))
+        assertEquals("明天晴", out)
+    }
+
+    @Test
+    fun chatInputAudioOnlySendsNoInstruction() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"choices":[{"message":{"content":"明天晴"}}]}"""))
+        val out = t.transcribe(provider(ProviderConfig.Kind.OpenAiCompat, "/v1"), "k", "m", TranscribeMethod.ChatInputAudioOnly, wav, null)
+        val body = server.takeRequest().body.readUtf8()
+        assertTrue(body, body.contains("data:audio/wav;base64,"))
+        assertFalse(body, body.contains("\"type\":\"text\""))
+        assertEquals("明天晴", out)
+    }
+
+    @Test
+    fun detectTriesAudioOnlyLast() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("not found"))
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":{"message":"The provided URL does not appear to be valid."}}"""))
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":{"message":"this task does not support this input"}}"""))
+        server.enqueue(MockResponse().setBody("""{"choices":[{"message":{"content":"嗯。"}}]}"""))
+        val m = t.detect(provider(ProviderConfig.Kind.OpenAiCompat, "/v1"), "k", "m")
+        assertEquals(TranscribeMethod.ChatInputAudioOnly, m)
+        assertEquals(4, server.requestCount)
+        repeat(3) { assertTrue(server.takeRequest().body.readUtf8().let { it.isEmpty() || it.contains("\"type\":\"text\"") || it.contains("name=\"model\"") }) }
+        assertFalse(server.takeRequest().body.readUtf8().contains("\"type\":\"text\""))
+    }
+
+    @Test
+    fun chatInputAudioSendsRawBase64() = runBlocking {
+        server.enqueue(MockResponse().setBody("""{"choices":[{"message":{"content":"x"}}]}"""))
+        t.transcribe(provider(ProviderConfig.Kind.OpenAiCompat, "/v1"), "k", "m", TranscribeMethod.ChatInputAudio, wav, null)
+        val body = server.takeRequest().body.readUtf8()
+        assertFalse(body, body.contains("data:audio"))
+    }
+
+    @Test
+    fun detectTriesDataUriWhenRawBase64IsRejected() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("not found"))
+        server.enqueue(MockResponse().setResponseCode(400).setBody("""{"error":{"message":"format is empty","code":"UNSUPPORTED_FORMAT"}}"""))
+        server.enqueue(MockResponse().setBody("""{"choices":[{"message":{"content":""}}]}"""))
+        val m = t.detect(provider(ProviderConfig.Kind.OpenAiCompat, "/v1"), "k", "m")
+        assertEquals(TranscribeMethod.ChatInputAudioUri, m)
+        assertEquals(3, server.requestCount)
+        server.takeRequest(); server.takeRequest()
+        assertTrue(server.takeRequest().body.readUtf8().contains("data:audio/wav;base64,"))
+    }
+
+    @Test
     fun unauthorizedMapsToKey() = runBlocking {
         server.enqueue(MockResponse().setResponseCode(401).setBody("""{"error":{"message":"bad key"}}"""))
         try {

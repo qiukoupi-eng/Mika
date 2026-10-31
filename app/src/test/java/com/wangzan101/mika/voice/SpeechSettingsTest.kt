@@ -17,6 +17,8 @@ class SpeechSettingsTest {
             SpeechChoice.Provider("p1", "whisper-1", TranscribeMethod.AudioTranscriptions),
             SpeechChoice.Provider("p2", "gpt-4o-audio", TranscribeMethod.ChatInputAudio),
             SpeechChoice.Provider("p3", "gemini-flash", TranscribeMethod.GeminiInline),
+            SpeechChoice.Provider("p4", "asr-x", TranscribeMethod.ChatInputAudioUri),
+            SpeechChoice.Provider("p5", "asr-y", TranscribeMethod.ChatInputAudioOnly),
         )
         for (c in choices) {
             val prefs = MemoryPrefs()
@@ -40,6 +42,12 @@ class SpeechSettingsTest {
         s.set(SpeechChoice.System)
         assertEquals(false, s.systemSilent.value)
         assertEquals(false, SpeechSettings(prefs).systemSilent.value)
+    }
+
+    @Test fun earlierStoredMethodStillReads() {
+        val prefs = MemoryPrefs()
+        prefs.edit().putString("speech_choice", """{"type":"provider","providerId":"p2","model":"m","method":"ChatInputAudio"}""").commit()
+        assertEquals(SpeechChoice.Provider("p2", "m", TranscribeMethod.ChatInputAudio), SpeechSettings(prefs).choice.value)
     }
 
     @Test fun brokenJsonReadsAsAuto() {

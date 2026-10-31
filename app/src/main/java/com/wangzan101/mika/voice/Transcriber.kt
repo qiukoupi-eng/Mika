@@ -22,7 +22,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.Base64
 
 /**
- * 用服务商的模型把一段录音转成文字,三种接口形态见 [TranscribeMethod]。
+ * 用服务商的模型把一段录音转成文字,接口形态见 [TranscribeMethod]。
  * 报错和对话模型走同一套映射([ModelHttp]),界面可以直接复用现有的说法;只按协议发请求,不按模型名特判。
  * [headers] 是每个请求都带的头(客户端标识等,见 ClientHeaders),Key 的头由这里按接口类型加。
  */
@@ -47,7 +47,8 @@ class Transcriber(
                     .build()
                 builder("$base/audio/transcriptions", key, gemini).post(body).build()
             }
-            TranscribeMethod.ChatInputAudio -> {
+            TranscribeMethod.ChatInputAudio, TranscribeMethod.ChatInputAudioUri, TranscribeMethod.ChatInputAudioOnly -> {
+                val data = if (method == TranscribeMethod.ChatInputAudio) base64(wav) else "data:audio/wav;base64,${base64(wav)}"
                 val payload = buildJsonObject {
                     put("model", model)
                     put("stream", false)
@@ -57,9 +58,12 @@ class Transcriber(
                             put("content", buildJsonArray {
                                 add(buildJsonObject {
                                     put("type", "input_audio")
-                                    putJsonObject("input_audio") { put("data", base64(wav)); put("format", "wav") }
+                                    putJsonObject("input_audio") { put("data", data); put("format", "wav") }
                                 })
-                                add(buildJsonObject { put("type", "text"); put("text", INSTRUCTION) })
+                                // 专做转写的模型不收文字块;通用模型没有这句指令会当成聊天回话
+                                if (method != TranscribeMethod.ChatInputAudioOnly) {
+                                    add(buildJsonObject { put("type", "text"); put("text", INSTRUCTION) })
+                                }
                             })
                         })
                     })
@@ -97,7 +101,11 @@ class Transcriber(
      */
     suspend fun detect(p: Provider, key: String?, model: String): TranscribeMethod {
         val order = if (p.kind == ProviderConfig.Kind.Gemini) listOf(TranscribeMethod.GeminiInline)
-        else listOf(TranscribeMethod.AudioTranscriptions, TranscribeMethod.ChatInputAudio)
+        // 只发音频不带指令的放最后:通用模型也会回 2xx(把录音当聊天回一段话),排在前面会被误选
+        else listOf(
+            TranscribeMethod.AudioTranscriptions, TranscribeMethod.ChatInputAudio,
+            TranscribeMethod.ChatInputAudioUri, TranscribeMethod.ChatInputAudioOnly,
+        )
         val wav = Wav.silence(1000)
         var last: ModelError? = null
         for (method in order) {
@@ -125,7 +133,7 @@ class Transcriber(
             ?: throw ModelError.BadResponse("not json: ${body.take(120)}")
         val text = when (method) {
             TranscribeMethod.AudioTranscriptions -> root.str("text")
-            TranscribeMethod.ChatInputAudio -> {
+            TranscribeMethod.ChatInputAudio, TranscribeMethod.ChatInputAudioUri, TranscribeMethod.ChatInputAudioOnly -> {
                 val msg = ((root["choices"] as? JsonArray)?.firstOrNull() as? JsonObject)?.get("message") as? JsonObject
                 when (val c = msg?.get("content")) {
                     is JsonPrimitive -> c.contentOrNull

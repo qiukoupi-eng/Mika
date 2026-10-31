@@ -170,7 +170,7 @@
     <string name="speech_tag_silent">沒回應</string>
     <string name="speech_tag_speech">語音</string>
     <string name="speech_off_note">輸入框和膠囊不能按住說話</string>
-    <string name="speech_footer">只列像語音模型的；不提供列表的服務商可以手填模型名稱，選的時候先試轉一小段。</string>
+    <string name="speech_footer">只列像語音模型的；列表裡沒有的可以手填模型名稱，選的時候先試轉一小段。</string>
     <string name="speech_pick_failed">這個模型沒能轉寫：%1$s</string>
     <string name="speech_pick_timeout">%1$s 試轉一小段，%2$d 秒沒有回應</string>
 </resources>

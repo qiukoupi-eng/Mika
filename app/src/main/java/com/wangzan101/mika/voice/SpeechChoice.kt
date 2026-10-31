@@ -29,8 +29,14 @@ sealed interface SpeechChoice {
     data class Provider(val providerId: String, val model: String, val method: TranscribeMethod) : SpeechChoice
 }
 
-/** 服务商转写音频的三种接口形态。 */
-enum class TranscribeMethod { AudioTranscriptions, ChatInputAudio, GeminiInline }
+/**
+ * 服务商转写音频的接口形态。存的是名字,只能往后加、不能改名或删,旧设置才读得回来。
+ * 带 ChatInputAudio 前缀的三种都是对话接口里的 input_audio,只是写法不同,选模型试转时依次都试:
+ * [ChatInputAudio] 的 data 放裸 base64 并附一句转写指令;[ChatInputAudioUri] 的 data 换成
+ * `data:audio/wav;base64,...` 的 data URI(有的服务只认这种);[ChatInputAudioOnly] 也用 data URI,
+ * 但只发音频不带指令(专做转写的模型不收文字块)。
+ */
+enum class TranscribeMethod { AudioTranscriptions, ChatInputAudio, GeminiInline, ChatInputAudioUri, ChatInputAudioOnly }
 
 /**
  * 选择存在 [FeatureFlags] 那份设置里,一个键、一段 JSON;读不出来一律当 [SpeechChoice.Auto]。

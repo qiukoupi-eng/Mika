@@ -9,16 +9,15 @@ import com.wangzan101.mika.settings.Provider
  * 不碰界面和网络,所以能直接单测。
  */
 object SpeechOptions {
-    /** 选择页里的一组:[models] 只放像语音模型的;[manual] 为真表示这家不提供列表,给一个手填入口。 */
-    data class Group(val provider: Provider, val models: List<String>, val manual: Boolean)
+    /**
+     * 选择页里的一组:[models] 只放像语音模型的。每组下面都另有一个手填入口(界面负责):
+     * 服务商的模型列表常常不全,语音模型尤其容易漏掉,也可能根本不提供列表。
+     */
+    data class Group(val provider: Provider, val models: List<String>)
 
-    /** 能做转写的服务商各一组;列表里只留像语音模型的,没有列表的(列表是空的)服务商给手填入口。 */
+    /** 能做转写的服务商各一组;列表里只留像语音模型的。 */
     fun groups(providers: List<Provider>): List<Group> = providers.filter(Transcriber::supports).map { p ->
-        Group(
-            p,
-            p.models.orEmpty().filter(Transcriber::looksLikeSpeech).map { it.id },
-            manual = p.models?.isEmpty() == true,
-        )
+        Group(p, p.models.orEmpty().filter(Transcriber::looksLikeSpeech).map { it.id })
     }
 
     /** 卡片右边两行:[title] 是选了什么,[sub] 是补充(可能没有),[subOk] 为真时补充用「可用」的绿色。 */
