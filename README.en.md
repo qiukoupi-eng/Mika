@@ -174,4 +174,4 @@ More answers are in [features in detail](docs/features.en.md#faq).
 
 ## License
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](LICENSE) · [NOTICE](NOTICE) · [Third-party components](THIRD_PARTY_NOTICES.md)

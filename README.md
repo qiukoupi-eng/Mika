@@ -168,4 +168,4 @@
 
 ## 许可证
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](LICENSE) · [NOTICE](NOTICE) · [第三方组件](THIRD_PARTY_NOTICES.md)
