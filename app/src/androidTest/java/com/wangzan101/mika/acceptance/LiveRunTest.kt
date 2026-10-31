@@ -313,7 +313,10 @@ class LiveRunTest {
             File(dir, "kept-frame.png").outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
         }
         val notified = mikaNotifications().contains(appString(R.string.kept_notif_title))
-        return "keptPage=${page.host}\nkeptUrl=${tab.view.url}\nkeptMedia=${before.size}\nkeptMediaAdvanced=$mediaAdvanced\n" +
+        // WebView 只能在主线程上问
+        var keptUrl: String? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync { keptUrl = if (tab.destroyed) null else tab.view.url }
+        return "keptPage=${page.host}\nkeptUrl=$keptUrl\nkeptMedia=${before.size}\nkeptMediaAdvanced=$mediaAdvanced\n" +
             "keptTimerAdvanced=$timerAdvanced\nkeptPageAlive=${!tab.destroyed && keeper.page.value?.id == page.id}\nkeptNotification=$notified\n"
     }
 
