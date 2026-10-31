@@ -36,7 +36,7 @@ class AndroidSandboxDeviceTest {
 
     @Test fun commandTimezoneFollowsPhone() {
         val zone = java.time.ZoneId.systemDefault()
-        assertEquals(zone.id, sh("printf '%s' \"\$TZ\"").output)
+        assertEquals(ProcRunner.timezone(), sh("printf '%s' \"\$TZ\"").output)
         checkTimezone(zone, "")
     }
 

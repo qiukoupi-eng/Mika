@@ -60,6 +60,17 @@ class ProcRunnerArgsTest {
         }
     }
 
+    @Test fun fixedOffsetTimezonesKeepTheirSign() {
+        // POSIX 的 TZ 里 GMT+8 表示比 UTC 慢 8 小时,不能把 GMT+08:00 原样给出。
+        val cases = mapOf(
+            "GMT+08:00" to "Etc/GMT-8", "GMT-05:00" to "Etc/GMT+5", "GMT+05:45" to "<+0545>-05:45",
+            "GMT-03:30" to "<-0330>03:30", "GMT" to "UTC", "UTC" to "UTC",
+        )
+        for ((id, tz) in cases) assertEquals(id, tz, ProcRunner.timezone { TimeZone.getTimeZone(id).toZoneId() })
+        assertEquals("Etc/GMT-14", ProcRunner.timezone { java.time.ZoneOffset.ofHours(14) })
+        assertEquals("UTC", ProcRunner.timezone { throw java.time.DateTimeException("no zone") })
+    }
+
     @Test fun oddConversationIdsStayInsideWork() {
         for (id in listOf("../../etc", "a/b", "", "对话一")) {
             val f = dirs.workspace(id)

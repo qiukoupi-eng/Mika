@@ -4,6 +4,9 @@ import com.wangzan101.mika.core.workspace.SandboxPaths
 import java.io.File
 import java.io.InputStream
 import java.time.ZoneId
+import java.time.ZoneOffset
+import java.util.Locale
+import kotlin.math.abs
 
 /** 一次进程运行的原始结果;[timedOut] 只表示 Kotlin 侧的兜底时限到了。 */
 internal class ProcOutcome(val exitCode: Int, val output: ByteArray, val droppedBytes: Long, val timedOut: Boolean, val durationMs: Long)
@@ -41,11 +44,28 @@ object ProcRunner {
         put("LANG", "C.UTF-8")
         put("TMPDIR", "/tmp")
         // 每次启动都读取手机当前时区;Alpine 的 libc 不会读取 Android 的系统时区。
-        // IANA 名称由运行环境自带的 tzdata 解析,保留历史偏移与夏令时规则。
-        put("TZ", ZoneId.systemDefault().id)
+        put("TZ", timezone())
         bridgeName?.let { put("MIKA_BRIDGE", it) }
         token?.let { put("MIKA_TOKEN", it) }
         put("MIKA_CONVERSATION", conversationId)
+    }
+
+    /**
+     * 手机时区写成沙箱里的 TZ。地区名(如 Asia/Shanghai)原样给出,由运行环境自带的 tzdata 解析,保留历史偏移与夏令时;
+     * 固定偏移(GMT+08:00 之类)不能原样给:POSIX 的 TZ 里符号与它相反。整点的换成 Etc/GMT-8 这类 tzdata 名称,
+     * 其余写成 POSIX 形式 `<+0545>-05:45`;读不到时区时用 UTC。
+     */
+    internal fun timezone(zone: () -> ZoneId = ZoneId::systemDefault): String {
+        val z = runCatching(zone).getOrNull() ?: return "UTC"
+        val fixed = z as? ZoneOffset ?: z.id.takeIf { it.startsWith("GMT") || it.startsWith("UT") }?.let { z.normalized() as? ZoneOffset }
+        val s = fixed?.totalSeconds ?: return z.id
+        if (s == 0) return "UTC"
+        if (s % 3600 == 0 && s / 3600 in -12..14) return "Etc/GMT" + (if (s > 0) "-" else "+") + abs(s / 3600)
+        val a = abs(s)
+        val hm = String.format(Locale.ROOT, "%02d%02d", a / 3600, a / 60 % 60)
+        val posix = String.format(Locale.ROOT, "%02d:%02d", a / 3600, a / 60 % 60) +
+            (if (a % 60 != 0) String.format(Locale.ROOT, ":%02d", a % 60) else "")
+        return if (s > 0) "<+$hm>-$posix" else "<-$hm>$posix"
     }
 
     /** 读到流结束,结果见 [OutputCollector]。 */
