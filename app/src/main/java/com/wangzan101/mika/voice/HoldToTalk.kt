@@ -78,6 +78,8 @@ class HoldToTalk(private val clock: () -> Long, private val maxMs: Long = 60_000
             else -> {
                 released = true
                 current.release()
+                // 服务商的:录音器停下要一小会儿,Converting 事件才到;松开当下就显示在转,免得输入框先闪回占位
+                if (!s.live) _state.value = State.Converting
             }
         }
     }

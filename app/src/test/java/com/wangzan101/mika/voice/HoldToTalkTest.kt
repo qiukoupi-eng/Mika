@@ -133,6 +133,20 @@ class HoldToTalkTest {
     }
 
     @Test
+    fun providerConvertsRightOnRelease() {
+        val session = pressed(live = false)
+        now = 2_000
+        hold.release()
+        // 录音器停下要一小会儿,Converting 事件晚到;松开那一刻就该显示转文字,不闪回占位
+        assertEquals(HoldToTalk.State.Converting, hold.state.value)
+        assertEquals(1, session.released)
+        hold.tick()
+        assertEquals(HoldToTalk.State.Converting, hold.state.value)
+        hold.onEvent(SpeechEvent.Final(""))
+        assertEquals(HoldToTalk.State.Problem(null), hold.state.value)
+    }
+
+    @Test
     fun failureSurfaces() {
         pressed()
         hold.onEvent(SpeechEvent.Failed(SpeechFailure.Busy))
