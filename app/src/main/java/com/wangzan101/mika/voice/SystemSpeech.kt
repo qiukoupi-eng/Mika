@@ -37,6 +37,27 @@ object SystemSpeech {
         else -> SpeechFailure.Unavailable(SpeechEngineSpec.Why.SystemGone)
     }
 
+    /** 一个错误码到了之后怎么办:重开、按已听到的收尾、报失败。 */
+    sealed interface Outcome {
+        data object Retry : Outcome
+        data object Finish : Outcome
+        data class Fail(val why: SpeechFailure) : Outcome
+    }
+
+    /**
+     * [holding] 是手还按着,[heard] 是已经听到过字。已经听到的字不丢:松开后、或按着时中途出错,都按听到的收尾。
+     * 松开后有的服务在 stopListening 之后报 ERROR_CLIENT,什么都没听到时那是没听清,不是麦克风坏了。
+     */
+    fun afterError(code: Int, holding: Boolean, heard: Boolean): Outcome {
+        val failure = failureOf(code)
+        return when {
+            failure == null && holding -> Outcome.Retry
+            failure == null || heard -> Outcome.Finish
+            !holding && code == SpeechRecognizer.ERROR_CLIENT -> Outcome.Finish
+            else -> Outcome.Fail(failure)
+        }
+    }
+
     /** 本机识别说这个语言用不了(没装语言包等):换成联网识别再试。 */
     internal fun languageMissing(code: Int) = code == ERROR_LANGUAGE_NOT_SUPPORTED || code == ERROR_LANGUAGE_UNAVAILABLE
 
@@ -79,7 +100,13 @@ class SystemSpeechSession(
     private var recognizer: SpeechRecognizer? = null
     private var usingOnDevice = false
     private var holding = true
+    private val restarts = Restarts()
+    private var restartPending = false
     private val timeout = Runnable { finish(SpeechEvent.Final(segments.full())) }
+    private val restart = Runnable {
+        restartPending = false
+        if (!done() && holding) listen()
+    }
 
     init {
         onMain { open(onDevice) }
@@ -88,6 +115,11 @@ class SystemSpeechSession(
     override fun release() = onMain {
         if (!holding || done()) return@onMain
         holding = false
+        if (restartPending) {
+            // 上一段已经结束、还没重开:没有在听的,直接按已听到的收尾
+            finish(SpeechEvent.Final(segments.full()))
+            return@onMain
+        }
         recognizer?.stopListening()
         main.postDelayed(timeout, FINAL_WAIT_MS)
     }
@@ -144,8 +176,21 @@ class SystemSpeechSession(
         teardown()
     }
 
+    /** 按着时这一段空了:按 [Restarts] 决定隔多久重开,或者不再重开、按已听到的收尾。重开总是投到主线程稍后做,不在回调里直接开。 */
+    private fun emptySegment() {
+        when (val d = restarts.onEmpty(android.os.SystemClock.elapsedRealtime())) {
+            Restarts.Decision.GiveUp -> finish(SpeechEvent.Final(segments.full()))
+            is Restarts.Decision.Restart -> {
+                restartPending = true
+                main.postDelayed(restart, d.delayMs)
+            }
+        }
+    }
+
     private fun teardown() {
         main.removeCallbacks(timeout)
+        main.removeCallbacks(restart)
+        restartPending = false
         recognizer?.let { runCatching { it.destroy() } }
         recognizer = null
     }
@@ -174,16 +219,24 @@ class SystemSpeechSession(
             if (done()) return
             val text = firstText(partialResults)
             if (text.isBlank()) return
+            restarts.onSpeech()
             out.send(Segments.split(segments.partial(text)))
         }
 
         override fun onResults(results: Bundle?) {
             if (done()) return
-            segments.segmentDone(firstText(results))
+            val text = firstText(results)
+            segments.segmentDone(text)
             if (holding) {
                 // 识别服务觉得一句说完了,但手还按着:接着听下一段
-                out.send(Segments.split(segments.full()))
-                listen()
+                if (text.isBlank()) {
+                    emptySegment()
+                } else {
+                    restarts.onSpeech()
+                    out.send(Segments.split(segments.full()))
+                    restartPending = true
+                    main.post(restart)
+                }
             } else {
                 finish(SpeechEvent.Final(segments.full()))
             }
@@ -200,13 +253,10 @@ class SystemSpeechSession(
                 }
                 return
             }
-            val failure = SystemSpeech.failureOf(error)
-            when {
-                failure == null && holding -> listen()
-                // 已经听到的字不丢:松开后的错误(包括 stopListening 后有的服务报的 ERROR_CLIENT)、
-                // 按着时中途出错,都把听到的给出去
-                failure == null || segments.full().isNotEmpty() -> finish(SpeechEvent.Final(segments.full()))
-                else -> finish(SpeechEvent.Failed(failure))
+            when (val o = SystemSpeech.afterError(error, holding, heard = segments.full().isNotEmpty())) {
+                SystemSpeech.Outcome.Retry -> emptySegment()
+                SystemSpeech.Outcome.Finish -> finish(SpeechEvent.Final(segments.full()))
+                is SystemSpeech.Outcome.Fail -> finish(SpeechEvent.Failed(o.why))
             }
         }
     }
