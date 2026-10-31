@@ -1,5 +1,6 @@
 package com.wangzan101.mika.core.mcp
 
+import com.wangzan101.mika.core.device.DeviceAccess
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,12 +25,13 @@ class McpHost(
     private val clock: () -> Long = System::currentTimeMillis,
     private val onError: (Throwable) -> Unit = {},
     loopbackToken: () -> String? = { null },
+    device: DeviceAccess? = null,
 ) {
     private val access = McpAccess(token, clock, loopbackToken = loopbackToken)
     private val clients = LinkedHashMap<String, Long>()
     private val _activity = MutableStateFlow(McpActivity())
     val activity: StateFlow<McpActivity> = _activity.asStateFlow()
-    private val rpc = McpRpc(McpTaskTools(tasks), serverVersion) { remote, name -> seen(remote, name) }
+    private val rpc = McpRpc(McpTaskTools(tasks, device = device), serverVersion) { remote, name -> seen(remote, name) }
     private var server: MiniHttpServer? = null
 
     val boundPort: Int get() = server?.port ?: -1

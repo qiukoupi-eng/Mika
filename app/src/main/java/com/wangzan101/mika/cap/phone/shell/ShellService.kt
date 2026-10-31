@@ -878,6 +878,15 @@ class ShellService(
         onRestoreWish?.invoke(flags)
     }
 
+    private val deviceUnlock by lazy { DeviceUnlockInput(context,
+        inject = { inject(it, Display.DEFAULT_DISPLAY, waitForFinish = true) },
+        injectTo = { event, uid -> injectTo(event, Display.DEFAULT_DISPLAY, uid) },
+        command = { exec(*it.toTypedArray()) == 0 }) }
+
+    override fun wakeDevice(): Boolean = deviceUnlock.wake()
+    override fun dismissDeviceKeyguard(): Boolean = deviceUnlock.dismiss()
+    override fun enterDeviceCredential(kind: Int, credential: ByteArray): Boolean = deviceUnlock.enter(kind, credential)
+
     private fun commandResult(code: Int, output: String) = Bundle().apply { putInt("exitCode", code); putString("output", output) }
 
     /** 以 shell 身份跑 `sh -c`,合并输出,限时限长;[displayId] 不为空时放进 MIKA_DISPLAY_ID。 */
@@ -964,18 +973,37 @@ class ShellService(
     }
 
     @SuppressLint("PrivateApi")
-    private fun inject(event: InputEvent, displayId: Int): Boolean = try {
+    private fun inject(event: InputEvent, displayId: Int, waitForFinish: Boolean = false): Boolean = try {
         event.javaClass.getMethod("setDisplayId", Int::class.java).invoke(event, displayId)
-        // API 34 起注入入口在 InputManagerGlobal,更早在 InputManager
-        val manager = runCatching {
-            Class.forName("android.hardware.input.InputManagerGlobal").getMethod("getInstance").invoke(null)
-        }.getOrNull() ?: Class.forName("android.hardware.input.InputManager").getMethod("getInstance").invoke(null)
-        manager!!.javaClass.getMethod("injectInputEvent", InputEvent::class.java, Int::class.java)
-            .invoke(manager, event, INJECT_MODE_ASYNC) as Boolean
+        val manager = inputManager()
+        manager.javaClass.getMethod("injectInputEvent", InputEvent::class.java, Int::class.java)
+            .invoke(manager, event, if (waitForFinish) INJECT_MODE_WAIT_FOR_FINISH else INJECT_MODE_ASYNC) as Boolean
     } catch (t: Throwable) {
         Log.w(TAG, "injectInputEvent failed", t)
         false
     }
+
+    /**
+     * 只投给 [targetUid] 拥有的焦点窗口,等处理完再返回;焦点不在它那里时系统拒绝,事件不会落到别的窗口。
+     * 用安卓 13 起的隐藏重载 `injectInputEvent(event, mode, targetUid)`,没有这个重载时不注入。
+     * 失败只记异常类型:被拒的原因里不含按键,但这条路径输入的是锁屏凭据,不留多余信息。
+     */
+    @SuppressLint("PrivateApi")
+    private fun injectTo(event: InputEvent, displayId: Int, targetUid: Int): Boolean = try {
+        event.javaClass.getMethod("setDisplayId", Int::class.java).invoke(event, displayId)
+        val manager = inputManager()
+        manager.javaClass.getMethod("injectInputEvent", InputEvent::class.java, Int::class.java, Int::class.java)
+            .invoke(manager, event, INJECT_MODE_WAIT_FOR_FINISH, targetUid) as Boolean
+    } catch (t: Throwable) {
+        Log.w(TAG, "targeted injectInputEvent failed: ${(t.cause ?: t).javaClass.simpleName}")
+        false
+    }
+
+    /** API 34 起注入入口在 InputManagerGlobal,更早在 InputManager。 */
+    @SuppressLint("PrivateApi")
+    private fun inputManager(): Any = runCatching {
+        Class.forName("android.hardware.input.InputManagerGlobal").getMethod("getInstance").invoke(null)
+    }.getOrNull() ?: Class.forName("android.hardware.input.InputManager").getMethod("getInstance").invoke(null)!!
 
     private fun exec(vararg cmd: String): Int = sh(*cmd).first
 
@@ -1047,6 +1075,7 @@ class ShellService(
 
         private val TASK_INFO: Class<*> by lazy { Class.forName("android.app.TaskInfo") }
         private const val INJECT_MODE_ASYNC = 0 // InputManager.INJECT_INPUT_EVENT_MODE_ASYNC
+        private const val INJECT_MODE_WAIT_FOR_FINISH = 2 // InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH
         private const val VIRTUAL_KEYBOARD = -1 // KeyCharacterMap.VIRTUAL_KEYBOARD
         private const val USER_CURRENT = -2 // UserHandle.USER_CURRENT
         // WindowConfiguration.ACTIVITY_TYPE_*:桌面、最近任务、助理等是别的种类
