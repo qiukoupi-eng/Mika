@@ -1,0 +1,48 @@
+package com.wangzan101.mika.voice
+
+import com.wangzan101.mika.R
+import com.wangzan101.mika.i18n.tr
+import com.wangzan101.mika.settings.Provider
+
+/**
+ * 设置 › 模型 里「语音转文字」用到的纯逻辑:选择页怎么给服务商分组、用途卡片右边写什么。
+ * 不碰界面和网络,所以能直接单测。
+ */
+object SpeechOptions {
+    /** 选择页里的一组:[models] 只放像语音模型的;[manual] 为真表示这家不提供列表,给一个手填入口。 */
+    data class Group(val provider: Provider, val models: List<String>, val manual: Boolean)
+
+    /** 能做转写的服务商各一组;列表里只留像语音模型的,没有列表的(列表是空的)服务商给手填入口。 */
+    fun groups(providers: List<Provider>): List<Group> = providers.filter(Transcriber::supports).map { p ->
+        Group(
+            p,
+            p.models.orEmpty().filter(Transcriber::looksLikeSpeech).map { it.id },
+            manual = p.models?.isEmpty() == true,
+        )
+    }
+
+    /** 卡片右边两行:[title] 是选了什么,[sub] 是补充(可能没有),[subOk] 为真时补充用「可用」的绿色。 */
+    data class Summary(val title: String, val sub: String?, val subOk: Boolean)
+
+    fun summary(choice: SpeechChoice, system: SystemCapability, providers: List<Provider>): Summary {
+        val unset = Summary(tr(R.string.settings_not_set), null, false)
+        return when (choice) {
+            SpeechChoice.Off -> Summary(tr(R.string.models_off), null, false)
+            SpeechChoice.Auto ->
+                if (system.available) systemSummary(system) else unset
+            SpeechChoice.System ->
+                // 明确选了手机自带、现在却用不了:照实说,不悄悄换别的
+                if (system.available) systemSummary(system) else Summary(tr(R.string.speech_system), tr(R.string.speech_system_gone), false)
+            is SpeechChoice.Provider -> {
+                val p = providers.firstOrNull { it.id == choice.providerId } ?: return unset
+                Summary(choice.model, p.name, false)
+            }
+        }
+    }
+
+    private fun systemSummary(system: SystemCapability) = Summary(
+        tr(R.string.speech_system),
+        tr(if (system.onDevice) R.string.speech_system_offline else R.string.speech_system_online),
+        subOk = system.onDevice,
+    )
+}

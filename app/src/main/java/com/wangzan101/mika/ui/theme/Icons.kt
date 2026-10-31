@@ -44,6 +44,8 @@ object MikaIcons {
     /** 刷新:差一点闭合的圆,右上角一个箭头。 */
     val Refresh = stroke("refresh", "M19.5 12 a7.5 7.5 0 1 1 -2.2 -5.3", "M19.5 4.5 v4 h-4")
     val Trash = stroke("trash", "M4 7 h16 M9 7 V4.5 h6 V7", "M6.5 7 l1 13 h9 l1 -13")
+    /** 语音转文字:一支话筒。 */
+    val Mic = stroke("mic", "M9 6 a3 3 0 0 1 6 0 v5 a3 3 0 0 1 -6 0 z", "M5 11 a7 7 0 0 0 14 0", "M12 18 v3")
     /** 轻量模型:一片叶子。 */
     val Leaf = stroke("leaf", "M5 19 c0 -8 5 -13 14 -14 c0 9 -5 14 -13 14", "M5 19 l7 -7")
     val Apps = stroke(

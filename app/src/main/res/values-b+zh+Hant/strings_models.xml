@@ -151,4 +151,23 @@
     <string name="signin_sign_out_note">只清這臺手機上的登入資訊</string>
     <string name="signin_busy">另一個登入還沒結束，先完成或取消它。</string>
     <string name="signin_openrouter_name">%1$s（帳號登入）</string>
+
+    <!-- 設定 › 模型：語音轉文字這個用途和它的選擇頁 -->
+    <string name="role_speech">語音轉文字</string>
+    <string name="role_speech_what">按住說話時用</string>
+    <string name="speech_hint">手機自帶的不花錢、邊說邊出字。手機沒有，或者辨識不準時，選一個服務商的模型：說完再轉，用你的額度。</string>
+    <string name="speech_system">手機自帶</string>
+    <string name="speech_system_offline">可離線</string>
+    <string name="speech_system_online">需連網</string>
+    <string name="speech_system_note">邊說邊出字，中文可離線</string>
+    <string name="speech_system_note_online">邊說邊出字，需要連網</string>
+    <string name="speech_system_none_note">這臺手機沒有可用的語音辨識</string>
+    <string name="speech_system_gone">這臺手機沒有</string>
+    <string name="speech_tag_ok">可用</string>
+    <string name="speech_tag_none">沒有</string>
+    <string name="speech_tag_speech">語音</string>
+    <string name="speech_off_note">輸入框和膠囊不能按住說話</string>
+    <string name="speech_footer">只列像語音模型的；不提供列表的服務商可以手填模型名稱，選的時候先試轉一小段。</string>
+    <string name="speech_pick_failed">這個模型沒能轉寫：%1$s</string>
+    <string name="speech_pick_timeout">%1$s 試轉一小段，%2$d 秒沒有回應</string>
 </resources>

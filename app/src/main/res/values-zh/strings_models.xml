@@ -152,4 +152,23 @@
     <string name="signin_sign_out_note">只清这台手机上的登录信息</string>
     <string name="signin_busy">另一个登录还没结束，先完成或取消它。</string>
     <string name="signin_openrouter_name">%1$s（账号登录）</string>
+
+    <!-- 设置 › 模型:语音转文字这个用途和它的选择页 -->
+    <string name="role_speech">语音转文字</string>
+    <string name="role_speech_what">按住说话时用</string>
+    <string name="speech_hint">手机自带的不花钱、边说边出字。手机没有，或者认得不准时，选一个服务商的模型：说完再转，用你的额度。</string>
+    <string name="speech_system">手机自带</string>
+    <string name="speech_system_offline">可离线</string>
+    <string name="speech_system_online">需联网</string>
+    <string name="speech_system_note">边说边出字，中文可离线</string>
+    <string name="speech_system_note_online">边说边出字，需要联网</string>
+    <string name="speech_system_none_note">这台手机没有可用的语音识别</string>
+    <string name="speech_system_gone">这台手机没有</string>
+    <string name="speech_tag_ok">可用</string>
+    <string name="speech_tag_none">没有</string>
+    <string name="speech_tag_speech">语音</string>
+    <string name="speech_off_note">输入框和胶囊不能按住说话</string>
+    <string name="speech_footer">只列像语音模型的；不提供列表的服务商可以手填模型名，选的时候先试转一小段。</string>
+    <string name="speech_pick_failed">这个模型没能转写：%1$s</string>
+    <string name="speech_pick_timeout">%1$s 试转一小段，%2$d 秒没有回应</string>
 </resources>
