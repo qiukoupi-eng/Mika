@@ -619,11 +619,12 @@ fun PagePanel(chat: PageChat, site: String, pageTitle: String, modifier: Modifie
             ) { Icon(MikaIcons.Close, null, Modifier.size(17.dp), tint = c.ink3) }
         }
         Box(Modifier.fillMaxWidth().height(0.5.dp).background(c.hair))
+        // 步骤紧接在对话来回的最后一条(「网站 · 在干活」那一行)下面,和对话页一样跟着往下长,不压到面板底部
+        val steps: (@Composable () -> Unit)? = if (content is CardContent.Working && content.steps.isNotEmpty()) {
+            { Box(Modifier.padding(bottom = 6.dp)) { Steps(content.steps, StepsMax, chat.stepTags) } }
+        } else null
         Box(Modifier.weight(1f).fillMaxWidth().padding(top = 6.dp)) {
-            chat.thread?.let { t -> androidx.compose.runtime.key(chat.conversationId) { ThreadList(t, chat.conversationId, chat.actions) } }
-        }
-        if (content is CardContent.Working && content.steps.isNotEmpty()) {
-            Box(Modifier.padding(top = 4.dp)) { Steps(content.steps, StepsMax, chat.stepTags) }
+            chat.thread?.let { t -> androidx.compose.runtime.key(chat.conversationId) { ThreadList(t, chat.conversationId, chat.actions, footer = steps) } }
         }
         if (card != null && card.run.stage == Takeover.Stage.HandedOver) {
             Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

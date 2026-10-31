@@ -8,6 +8,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -107,5 +109,23 @@ class PageAskTest {
             chat.open = false
         }
         compose.onNodeWithTag("page-ask-bar").assertIsDisplayed()
+    }
+
+    /** 侧栏里从一页开始的对话:标题后面「网页」小标签,下面一行是网站;别的对话没有。 */
+    @Test
+    fun drawerRowShowsTheWebTagAndSite() {
+        compose.setContent {
+            MikaTheme {
+                Column {
+                    ConversationRowContent(DrawerConversation("a", "挑一个降噪耳机", "", false, false, true, site = "shop.example.com"))
+                    ConversationRowContent(DrawerConversation("b", "明早的闹钟", "", false, false, true))
+                }
+            }
+        }
+        compose.onNodeWithTag("conversation-web").assertIsDisplayed()
+        compose.onNodeWithText(PageAskCopy.WEB).assertIsDisplayed()
+        compose.onNodeWithText("shop.example.com").assertIsDisplayed()
+        compose.onNodeWithText("明早的闹钟").assertIsDisplayed()
+        compose.onAllNodesWithTag("conversation-web").assertCountEquals(1)
     }
 }

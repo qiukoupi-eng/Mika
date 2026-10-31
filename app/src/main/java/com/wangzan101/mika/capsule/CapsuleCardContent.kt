@@ -581,10 +581,10 @@ private fun ChatCard(
 
 /**
  * 对话的来回(旧的在上):打开时最新那句你说的话停在顶上;滚到顶往前多加载几轮,列表按每条的 key 停在原处;
- * 往下长的字只在你本来就在底部时跟着往下(同对话页);来了新的一问时滚到它。
+ * 往下长的字只在你本来就在底部时跟着往下(同对话页);来了新的一问时滚到它。[footer] 排在最后一条后面。
  */
 @Composable
-internal fun ThreadList(thread: ChatThread, conversationId: String?, actions: CardActions) {
+internal fun ThreadList(thread: ChatThread, conversationId: String?, actions: CardActions, footer: (@Composable () -> Unit)? = null) {
     val c = MikaTheme.colors
     val state = rememberLazyListState(initialFirstVisibleItemIndex = thread.anchor)
     var following by remember { mutableStateOf(false) }
@@ -649,8 +649,12 @@ internal fun ThreadList(thread: ChatThread, conversationId: String?, actions: Ca
                 }
             }
         }
+        // 接在来回后面的一段(浏览器页面板里此刻的步骤):紧跟着最后一条,跟到底部时一起往下
+        footer?.let { f -> item(FOOTER_KEY) { f() } }
     }
 }
+
+private const val FOOTER_KEY = "thread-footer"
 
 /** 卡片来回里截图缩略图的宽。 */
 private val ThreadThumbWidth = 78.dp

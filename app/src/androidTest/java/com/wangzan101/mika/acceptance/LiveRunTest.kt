@@ -13,6 +13,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.wangzan101.mika.MikaApp
 import com.wangzan101.mika.memory.MemoryRuntime
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport
 import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.sh
 import com.wangzan101.mika.core.agent.TaskState
@@ -332,15 +333,20 @@ class LiveRunTest {
         var pausedByTouch = false
         var resumed = false
         var end: TaskState? = null
+        // 暂停按状态流里出现过的每一个算(轮询会漏掉短暂的暂停,也会漏掉触摸后到恢复前测试自己等着的那段)
+        val seen = java.util.Collections.synchronizedList(mutableListOf<TaskState>())
+        val watch = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch {
+            var prev: TaskState? = null
+            task.state.collect { st ->
+                if (st is TaskState.Held && prev !is TaskState.Held) seen += st
+                prev = st
+            }
+        }
         while (System.currentTimeMillis() - t0 < timeoutMs) {
             val s = task.state.value
             if (browser.loans.lentTo.value == conversationId) borrowed = true
             if (s != last) {
                 note("state $s")
-                if (s is TaskState.Held && last !is TaskState.Held) {
-                    pauses++
-                    if (PageAskModel.pausedForUser(s)) userPauses++
-                }
                 if (s is TaskState.WaitingInput) asked = true
                 last = s
             }
@@ -387,6 +393,12 @@ class LiveRunTest {
             TaskService.cancel(context, task.key)
         }
         Thread.sleep(1500)
+        watch.cancel()
+        synchronized(seen) {
+            pauses = seen.size
+            userPauses = seen.count(PageAskModel::pausedForUser)
+            note("pauses: ${seen.joinToString { (it as TaskState.Held).reason.why }}")
+        }
         compose.mainClock.advanceTimeBy(500)
         compose.waitForIdle()
         mainShot(dir, "end")
@@ -394,19 +406,35 @@ class LiveRunTest {
         val origin = app.conversations.pageOrigin(conversationId)
         val urls = recorder.toolCalls.filter { it.first == "web_navigate" }.mapNotNull { Regex("\"url\"\\s*:\\s*\"([^\"]+)\"").find(it.second)?.groupValues?.get(1) }
         val reopened = urls.any { PageConversations.pageKey(it) == PageConversations.pageKey(url!!) }
-        // 回到对话页、打开侧栏:这条对话带「网页」小标签
-        repeat(8) {
-            if (compose.onAllNodesWithContentDescription(appString(R.string.chat_menu)).fetchSemanticsNodes().isNotEmpty()) return@repeat
+        // 回到对话页、打开侧栏:这条对话带「网页」小标签。先收起通知栏和悬浮通知(盖在上面截不到侧栏);
+        // 界面测试的时钟要推着走,侧栏滑出来的动画才会走完
+        fun menuShown() = compose.onAllNodesWithContentDescription(appString(R.string.chat_menu)).fetchSemanticsNodes().isNotEmpty()
+        for (i in 0 until 8) {
+            if (menuShown()) break
             compose.runOnUiThread { compose.activity.onBackPressedDispatcher.onBackPressed() }
+            compose.mainClock.advanceTimeBy(600)
             compose.waitForIdle()
         }
-        val listedAsWeb = runCatching {
-            compose.onNodeWithContentDescription(appString(R.string.chat_menu)).performClick()
+        var listedAsWeb = false
+        for (attempt in 1..3) {
+            sh("cmd statusbar collapse")
+            Thread.sleep(1500)
+            runCatching { compose.onNodeWithContentDescription(appString(R.string.chat_menu)).performSemanticsAction(SemanticsActions.OnClick) }
+                .onFailure { note("menu not clickable: $it") }
+            repeat(8) {
+                compose.mainClock.advanceTimeBy(250)
+                Thread.sleep(150)
+            }
             compose.waitForIdle()
-            Thread.sleep(800)
-            mainShot(dir, "drawer")
-            compose.onAllNodesWithTag("conversation-web", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
-        }.getOrDefault(false)
+            listedAsWeb = DeviceSupport.pollUntil(5_000) {
+                compose.mainClock.advanceTimeBy(250)
+                true.takeIf { compose.onAllNodesWithTag("conversation-web", useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty() }
+            } != null
+            val drawerOpen = compose.onAllNodesWithTag("drawer").fetchSemanticsNodes().isNotEmpty()
+            note("drawer attempt $attempt: open=$drawerOpen webTag=$listedAsWeb")
+            if (drawerOpen) break
+        }
+        mainShot(dir, "drawer")
         val outcome = when (end) {
             is TaskState.Succeeded -> "succeeded"
             is TaskState.Failed -> "failed"
