@@ -5,6 +5,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.filter
@@ -50,6 +51,18 @@ class ProviderSpeechTest {
         assertEquals(SpeechEvent.Converting, out[0])
         assertEquals(SpeechEvent.Failed(SpeechFailure.Provider(err)), out[1])
         assertEquals(2, out.size)
+    }
+
+    @Test
+    fun stalledTranscriptionTimesOutAsNetwork() {
+        val s = ProviderSpeech(FakeRecorder(1_000), { awaitCancellation() }, scope, timeoutMs = 100)
+        s.release()
+        assertEquals(listOf(SpeechEvent.Converting, SpeechEvent.Failed(SpeechFailure.Network)), events(s))
+    }
+
+    @Test
+    fun defaultTimeoutIsThirtySeconds() {
+        assertEquals(30_000L, ProviderSpeech.TRANSCRIBE_TIMEOUT_MS)
     }
 
     @Test
