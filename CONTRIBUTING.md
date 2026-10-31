@@ -6,7 +6,7 @@
 
 ## 补充 App / 网站知识（不用写代码）
 
-最简单的贡献：给某个 App 写一份 `APP.md`、给某个网站写一份 `SITE.md`，或者改进已有的。它们是带头部的 Markdown 纯文本，放在 [`core/src/main/resources/knowledge/`](core/src/main/resources/knowledge/) 下；几类事情的通用做法（技能）在 [`core/src/main/resources/skills/`](core/src/main/resources/skills/) 下。格式见 [`docs/knowledge-format.md`](docs/knowledge-format.md)。
+最简单的贡献：给某个 App 写一份 `APP.md`、给某个网站写一份 `SITE.md`，或者改进已有的。它们是带头部的 Markdown 纯文本，放在 [`core/src/main/resources/knowledge/`](core/src/main/resources/knowledge/) 下；几类事情的通用做法（技能）在 [`core/src/main/resources/skills/`](core/src/main/resources/skills/) 下。格式见 [`docs/dev/knowledge-format.md`](docs/dev/knowledge-format.md)。
 
 没有任何说明，Mika 也能看着屏幕把事办成；写了使用知识（入口在哪、常见做法、要注意什么）的 App 和网站，Mika 用到时自动查阅，少走弯路。现有清单见 [README](README.md) 里「能做什么」下面的折叠段。
 
@@ -16,7 +16,7 @@
 
 ## 贡献代码
 
-欢迎 PR。先读 [`docs/architecture.md`](docs/architecture.md)（按代码现状写，带类名和文件路径）和 [`docs/roadmap.md`](docs/roadmap.md)（已完成、接下来、已知问题）。改动请带单元测试。
+欢迎 PR。先读 [`docs/dev/architecture.md`](docs/dev/architecture.md)（按代码现状写，带类名和文件路径）和 [`docs/dev/roadmap.md`](docs/dev/roadmap.md)（已完成、接下来、已知问题）。改动请带单元测试。
 
 ### 构建与测试
 
@@ -45,10 +45,10 @@
 
 ### 文档
 
-- [`docs/architecture.md`](docs/architecture.md)：整体结构。
-- [`docs/roadmap.md`](docs/roadmap.md)：已完成、接下来、已知问题与暂缓。
-- [`docs/knowledge-format.md`](docs/knowledge-format.md)：App、网站知识与技能的格式。
-- [`docs/sandbox/skill-scripts.md`](docs/sandbox/skill-scripts.md)：知识与技能自带的沙箱脚本。
+- [`docs/dev/architecture.md`](docs/dev/architecture.md)：整体结构。
+- [`docs/dev/roadmap.md`](docs/dev/roadmap.md)：已完成、接下来、已知问题与暂缓。
+- [`docs/dev/knowledge-format.md`](docs/dev/knowledge-format.md)：App、网站知识与技能的格式。
+- [`docs/dev/skill-scripts.md`](docs/dev/skill-scripts.md)：知识与技能自带的沙箱脚本。
 - 面向用户的说明：[功能详细说明](docs/features.md)、[模型与登录](docs/models.md)、[询问与自主](docs/modes.md)、[手机操作设置指南](docs/setup-guide.md)、[电脑端 CLI / Skill](docs/computer-install.md)、[电脑连接（MCP）](docs/mcp.md)、[免责声明与数据隐私](docs/disclaimer.md)。
 
 ### 发布与更新（维护者）

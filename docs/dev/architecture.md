@@ -186,7 +186,7 @@
   - **界面**:对话页在留页的那一轮下面一行绿色「这一页保持在后台运行 · 站点 · 还剩多久后自动关 · 关闭」,关了换成一句灰字「后台网页已关闭（原因）」;没有任务在跑时顶栏写「后台保持着 1 个网页」(`app/ui/KeptPageRow.kt`、`KeptPageCopy.kt`)。悬浮胶囊:没有任务、结果也停完了时展开成「后台网页运行中」(绿点);开关是「从不显示」时照样不显示,只靠通知。点开是它的卡片(`CardView.Kept`):实时画面(它那块显示的最新一帧,和画中画同一个来源)、还剩多久、来自哪个对话,「打开对话」「关闭网页」。
 - 任务结束时虚拟屏上的 App:手机这一侧的虚拟屏(`AgentDisplay`)在任务收尾时随 `ResourceScope` 放掉(`AgentDisplay.release` → 内置助手 `releaseDisplay` → `VirtualDisplay.release`);这块屏建的时候带着「移除时销毁内容」的标志,上面的 App 窗口随屏一起结束(进程留不留由系统定),静音照原样恢复。留页只管网页,不管这块屏上的 App。
 - 一页一页看的节奏(`core/cap/web/PagePacing.kt` 纯逻辑,`PageDwell.kt` 接到任务上):每个动作本身的鼠标键盘节奏之外,同一网站(按可注册域名)连着换页也不秒开。读屏或打开网页时地址变了(不计 `#` 后面)、往下滚时页面自己又收到成批的 JSON 或文本响应(加载更多),都算来了一页;这个网站在最近 10 分钟里的第一页不停留,第二页起停留 4–7 秒,之后每多一页上下限各加 0.6 / 1 秒,最长 12 秒。可能换页的动作(打开同站网址、点击、后退、按键、往下滚、滑动,`web_interact` 的按键)之前补足这一页还没停够的部分,模型思考、读页面花掉的时间都算在内;打字、清空、往上滚、读不等,去别的网站不等。停了多久记进这次调用(`ToolExecution.waitMs` → 运行记录 `tool_result.waitMs`,小结里算等待,`do_steps` 子步的也算进那一批),不另告诉模型;只由 App 的任务装上(`toolDispatcher(webPacing = …)`),核心测试默认不等。
-  - 站点知识的 `pace: careful`(这个网站限制浏览快慢,见 `docs/knowledge-format.md`)让这个网站的页停得更久:第二页起 10–16 秒,之后每多一页上下限各加 0.6 / 1 秒,最长 30 秒。按当前主机名查站点知识(`GuideCatalog.sitePace`,认站点的规则和注入站点知识同一个 `SiteMatch`),经 `toolDispatcher(webSitePace = …)` 交给 `PageDwell`。
+  - 站点知识的 `pace: careful`(这个网站限制浏览快慢,见 `docs/dev/knowledge-format.md`)让这个网站的页停得更久:第二页起 10–16 秒,之后每多一页上下限各加 0.6 / 1 秒,最长 30 秒。按当前主机名查站点知识(`GuideCatalog.sitePace`,认站点的规则和注入站点知识同一个 `SiteMatch`),经 `toolDispatcher(webSitePace = …)` 交给 `PageDwell`。
   - 一个任务里同一个网站来的页有上限(普通 20 页,`careful` 12 页;过了 10 分钟的时间窗也照算)。到了之后,换页的动作(打开同站网址、点击、后退、按键)不做,报 `page_limit`,说明里让模型先拿已读到的回答、用户要接着看就用 `ask_user` 问;往下滚、读页面照常。用户答过话(回答了追问、交回了接管,经 `Capability.onUserAnswered`)后各网站重新计数——不另给模型提高上限的参数,要多看只能经用户点头。被拒的那次调用照常记成运行记录里的 `tool_result`(`error: page_limit`)。上限只管浏览,不打断成批联系、投递:不可逆判定认出的对外动作(发送、提交)本身不受上限拦(`ActionExecutor` 做之前经 `Capability.onOutwardStart` 告诉网页能力,做完经 `onOutwardEnd`),做成过一次之后这个网站(按可注册域名)在本任务余下的时间里不再设上限、用户答话也不恢复,批量做到网站自己报上限(`limitReached`)、风控或用户叫停为止;停留和对外动作之间的间隔照旧。不设节奏(`PagePacing.Off`)时也不设上限。
   - 停留里的小动作(`core/uistate/IdleScroll.kt` 纯逻辑,App 里的停留也用它):停留至少 3 秒、且动作不按屏幕坐标做(按编号点、后退、按键、往下滚、打开网址)时,停留里轻轻滚 1–3 下整页,每下 0.06–0.16 个视口,大多往下、偶尔往回拨一点(不超过之前往下滚的),几下加起来不超过 0.45 个视口、净移动不超过 0.3 个视口;总停留时长不变。按坐标点、滑动的停留里不滚(坐标会对不上)。走端口的 `WebPort.idleScroll`:桌面版用滚轮且指针不动,否则一下慢慢的原生滑动;不移动鼠标、不悬停、不点;有页面弹框、输入法开着、输入框拿着焦点、标签不在显示时不滚。滚了几下只记进运行记录(`tool_result` 结果里的 `idleScrolls`),不告诉模型;滚完、动作之前重看一眼当作「动作前」(`ScreenSession.reprobe`),这点滚动不算成动作的效果,模型手里那一屏标成过时(`interfaceStale`);下一次读屏照实看到滚动后的位置。只由 App 的任务装上(`toolDispatcher(webIdleScroll = …)`),核心默认不滚。
 - 风控:网页障碍判定(`WebBarrier`)除了限流状态码、人机验证框架,也认字不多的风控拦截页(访问异常、环境异常、操作过于频繁、unusual traffic,或「安全提示」「Security check」这类标题加上异常、验证一类的字),判成要用户处理(access_blocked),`web_diagnose` 提示交给用户、别马上重试;`web_capture` 取回的响应顶层报信息的字段(message、msg、error…)在说被风控拦下时,结果带上 `riskControl` 和同样的提示。
@@ -197,7 +197,7 @@
 - 基于 PRoot 和 Alpine 3.22 的运行环境,随 APK 自带,App 启动时在后台离线解包(`app/cap/sandbox/RuntimePreparer.kt`、`RootfsInstaller.kt`);Mika 升级后自动重新解包。沙箱程序只有 arm64 版本,其他设备显示「此设备不支持(需要 arm64)」,模型也被告知不用这组工具。来源与构建见 `tools/sandbox/README.md`。
 - 每个对话一个工作区,沙箱里是 `/workspace`,跨消息保留;聊天里附加的文件放进 `/workspace/inbox/`;`share_file` 把文件存到手机的「下载/Mika」并在对话里显示为文件卡片;点卡片时网页、Markdown、PDF、图片和文本类文件在 App 里的查看页打开(`FileViewerActivity`,见第 15 节),其余交给系统里能打开它的 App。
 - 默认断网,设置 → 高级 → 文件与计算环境里「允许脚本联网」打开后才联网;设备无法隔离网络时,只有打开「允许脚本联网」才能运行(`AndroidSandbox`、`AdvancedSection` 的提示)。每个任务有累计运行时间预算,同一条命令反复失败会被叫停(`core/cap/sandbox/SandboxGuard.kt`)。
-- 工具:`run_command`、`run_bundled_script`(运行知识、技能自带的脚本,见 `docs/sandbox/skill-scripts.md`)、`read_file`、`write_file`、`search_files`、`share_file`。
+- 工具:`run_command`、`run_bundled_script`(运行知识、技能自带的脚本,见 `docs/dev/skill-scripts.md`)、`read_file`、`write_file`、`search_files`、`share_file`。
 - 沙箱里的命令可以用 `mika phone <操作> '<json 参数>'` 调当前任务的手机工具(`app/cap/sandbox/SandboxBridge.kt`、`BridgeProtocol.kt`):每次命令运行一个随机名字的本地套接字和一次性令牌,开放哪些由工具自己声明(`ToolInfo.sandboxCallable`:手机能力的工具默认开放,看图类不开放;新增手机工具不用改名单),`<操作>` 是工具名去掉 `phone_`(`type`、`clear`、`key`、`launch`、`dump` 是 `phone_type_text`、`phone_clear_text`、`phone_press_key`、`phone_launch_app`、`phone_list_elements` 的简写)。每次操作仍经 `SubActions` 回到唯一入口并写进运行记录,超时与上限和直接调用相同(`phone_wait` / `phone_event` 最长 30 秒,`phone_system_command` 10 秒)。另有 `mika share`、`mika progress`。
 
 ### 看图
@@ -210,14 +210,14 @@
 
 ### 电脑连接:CLI 与 MCP
 
-两个方向。**Mika 作为 MCP 服务器**(电脑连接)已经接上,两种连法:经 USB(电脑用 adb 打开,只听回环)和经局域网(用户在设置里打开,默认关);**Mika 作为 MCP 客户端**去用别的服务器(`core/cap/mcp/McpClient.kt`,按注解定风险、工具列表开局冻结)和低层工具会话(`core/mcp/McpServer.kt`)还只有骨架和测试。用户文档见 [mcp.md](mcp.md) 与 [cli.md](cli.md)。电脑 CLI 使用普通 HTTP 任务 API,与 MCP 适配器并列,共用一份任务服务。
+两个方向。**Mika 作为 MCP 服务器**(电脑连接)已经接上,两种连法:经 USB(电脑用 adb 打开,只听回环)和经局域网(用户在设置里打开,默认关);**Mika 作为 MCP 客户端**去用别的服务器(`core/cap/mcp/McpClient.kt`,按注解定风险、工具列表开局冻结)和低层工具会话(`core/mcp/McpServer.kt`)还只有骨架和测试。用户文档见 [mcp.md](../mcp.md) 与 [cli.md](../cli.md)。电脑 CLI 使用普通 HTTP 任务 API,与 MCP 适配器并列,共用一份任务服务。
 
 **服务器**的分层都在 `:core`,可以在电脑上整套测:
 
 - `MiniHttpServer`(`core/remote/HttpServer.kt`):共用的极简 HTTP/1.1 监听。每个连接一个线程,连接数、请求头、正文都有上限,认 Content-Length 和 chunked,连接可以复用。保留路径和查询参数供入口校验;不做 TLS,靠只收私有地址和访问令牌把关。
 - `RemoteAccess`(`core/remote/RemoteAccess.kt`):两个入口共用的门口,顺序固定:带 `Origin` 头的 403;同一地址一分钟内认证失败 5 次封一分钟(429,带 `Retry-After`);`Authorization: Bearer` 令牌按常量时间比较,不对 401。路由与错误格式由适配器决定,未知路径也先过认证。`privateAddress` 判定回环、局域网、私有组网和链路本地地址;连接两端有一端不是私有地址就当场断开。局域网令牌认所有允许的连接,USB 令牌只认回环,两个都比、不短路。认证失败计数跨 API 和 MCP 共用。
 - `RemoteTaskService`(`core/remote/RemoteTaskService.kt`):协议无关的启动、查询、列表、等待、回答与取消用例,集中校验输入和任务状态,返回类型化结果与业务错误;不包含 HTTP、MCP 工具名或 JSON-RPC 信封。`RemoteTasks` / `RemoteTask` / `RemoteStatus` 在 `core/remote/RemoteTasks.kt`;状态只从已有的 `TaskState` 映射,两种入口共用字段和同一个任务索引。等待按状态变化返回(进度说明变了不算),最多 50 秒;索引中的任务消失就报不存在。保留 mcp- 前缀以兼容已有远程对话 ID,与手机本地对话隔离。
-- `RemoteTaskApi`(`core/remote/RemoteTaskApi.kt`):普通 HTTP/JSON 入口 `/api/v1`,提供版本、任务生命周期和只读设备状态,无需 MCP 握手或工具发现。业务错误映射为 HTTP 状态和 code/message;未知字段会被拒绝。详细契约见 [CLI 文档](cli.md#http-契约)。
+- `RemoteTaskApi`(`core/remote/RemoteTaskApi.kt`):普通 HTTP/JSON 入口 `/api/v1`,提供版本、任务生命周期和只读设备状态,无需 MCP 握手或工具发现。业务错误映射为 HTTP 状态和 code/message;未知字段会被拒绝。详细契约见 [CLI 文档](../cli.md#http-契约)。
 - `McpRpc`(`core/mcp/McpRpc.kt`):Streamable HTTP 上的 JSON-RPC,只回单个 JSON、不开 SSE 流(规范允许),GET / DELETE 回 405,不发会话编号,服务端不发请求。两代协议都认:新一代(2026-07-28)每个请求在 `_meta` 里带版本和客户端能力,HTTP 头里的 `MCP-Protocol-Version`、`Mcp-Method`、`Mcp-Name` 要和正文一致(不一致 -32020),不认的版本回 -32022 并列出认的版本,支持 `server/discover`;老一代(2025-03-26 到 2025-11-25)先 `initialize` 握手,选双方都认的版本。工具参数不对、任务找不到是工具执行出错(`isError`),交回给对面的模型看;工具名不认得是协议错误。
 - `McpTaskTools`(`core/mcp/McpTaskTools.kt`):保留原有工具名、schema、MCP 提示文案与返回格式,把参数转为共用服务调用。`mika_run_task` / `mika_task_status` / `mika_wait_task` / `mika_answer` / `mika_cancel_task` / `mika_list_tasks` 均不另存任务状态。付款、确认和手机接管不能被普通回答放行。
 - `RemoteHost`(`core/remote/RemoteHost.kt`):组合入口,创建一份共用服务、一个认证实例和一个监听,把 `/api/v1` 交给普通 API、`/mcp` 交给 MCP。记最近客户端(地址加自报名字,十分钟内)和最后请求时间供设置页显示。`bindAddress` 选择所有网卡或 IPv4 回环 127.0.0.1,与 ADB 转发一致。

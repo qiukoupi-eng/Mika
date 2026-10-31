@@ -1,6 +1,6 @@
 # 内置知识与技能的格式
 
-知识与技能随 App 发布,放在 `core/src/main/resources/` 下的 `knowledge/apps/`、`knowledge/sites/`、`skills/`;用户自己的个人技能由 Mika 在手机上自学起草;App 知识也会在手机上自学补充,补充是一份只写事实的清单(每条「- 」开头),同样只写事实、不写做法和规定,附在内置 APP.md 后面(见 `docs/architecture.md`「知识与技能」)。
+知识与技能随 App 发布,放在 `core/src/main/resources/` 下的 `knowledge/apps/`、`knowledge/sites/`、`skills/`;用户自己的个人技能由 Mika 在手机上自学起草;App 知识也会在手机上自学补充,补充是一份只写事实的清单(每条「- 」开头),同样只写事实、不写做法和规定,附在内置 APP.md 后面(见 `docs/dev/architecture.md`「知识与技能」)。
 
 三种文件,各管一件事:
 
@@ -123,7 +123,7 @@ sites: []                          # 可选:用到的网站知识名
 | `skill_read` | 读一份技能全文,或它的附件 | `name`(可写成 `skill:<id>`、个人技能 `personal:<id>`);可选 `file_path` |
 
 - 进入某个 App 或网站时,它的知识正文已经自动给了模型,`knowledge_read` 主要用来读附件,或读还没进入的 App/网站。
-- `knowledge_read`、`skill_read` 的结果会列出可运行的脚本和它们的 `scriptSource`;用 `run_bundled_script`(`source`、`script`、`args`)在沙箱里运行,见 `docs/sandbox/skill-scripts.md`。
+- `knowledge_read`、`skill_read` 的结果会列出可运行的脚本和它们的 `scriptSource`;用 `run_bundled_script`(`source`、`script`、`args`)在沙箱里运行,见 `docs/dev/skill-scripts.md`。
 - 网站的站点命令用 `web_run_site_command` 按名字运行,和 `web_evaluate_js` 一样只读。
 - 知识、技能、提示词里出现的工具名必须是现在登记的工具,由测试检查。
 
