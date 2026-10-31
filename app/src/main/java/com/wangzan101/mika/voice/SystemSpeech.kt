@@ -65,9 +65,16 @@ object SystemSpeech {
     fun speechTag(language: AppLanguage, system: Locale = Locale.getDefault()): String = when (language) {
         AppLanguage.SimplifiedChinese -> "zh-CN"
         AppLanguage.TraditionalChinese -> "zh-TW"
-        AppLanguage.English -> if (system.language == "en") system.toLanguageTag() else "en-US"
-        AppLanguage.System -> system.toLanguageTag()
+        AppLanguage.English -> if (system.language == "en") languageRegion(system) else "en-US"
+        AppLanguage.System -> languageRegion(system)
     }
+
+    /**
+     * 只留「语言-地区」:系统语言常带文字子标签(zh-Hans-CN),识别服务普遍只认 zh-CN 这样的写法,
+     * 多一段就可能当成不支持的语言。扩展、变体也一并去掉。
+     */
+    private fun languageRegion(locale: Locale): String =
+        Locale.Builder().setLanguage(locale.language).setRegion(locale.country).build().toLanguageTag()
 
     /** 转写接口要的 ISO-639-1 语言代码。 */
     fun isoCode(tag: String): String = Locale.forLanguageTag(tag).language
