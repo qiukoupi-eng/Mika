@@ -1,6 +1,6 @@
 # 内置知识与技能的格式
 
-知识与技能随 App 发布,放在 `core/src/main/resources/` 下的 `knowledge/apps/`、`knowledge/sites/`、`skills/`;用户自己的个人技能由 Mika 在手机上自学起草(见 `docs/architecture.md`「知识与技能」)。
+知识与技能随 App 发布,放在 `core/src/main/resources/` 下的 `knowledge/apps/`、`knowledge/sites/`、`skills/`;用户自己的个人技能由 Mika 在手机上自学起草;App 知识也会在手机上自学补充,补充是一份只写事实的清单(每条「- 」开头),同样只写事实、不写做法和规定,附在内置 APP.md 后面(见 `docs/architecture.md`「知识与技能」)。
 
 三种文件,各管一件事:
 

@@ -107,8 +107,8 @@
 - **`end_not_done`**(`core/general/OutcomeTools.kt`):做不成或只能做一部分时用它结束,`message` 写清已确认做了什么、卡在哪、现在界面上是什么;`subtype` 是 `blocked`、`login_incomplete`、`captcha_incomplete`、`route_failed`、`device_unavailable`、`interaction_failed` 之一。
 - **交回答之前**:空回复或被截断提醒一次;有的推理服务偶尔没把模型的工具调用解析出来,调用原样成了正文(`LeakedToolCall`,`core/agent/LeakedToolCall.kt`:常见的调用标记后面跟着 Mika 的工具名),这不是回答:退回一次让模型经工具接口重新调用,运行记录里记 `tool_call_as_text`;紧接着又漏就以模型出错结束(`StopRules.toolCallAsText`),不把原样的标记交给用户,正常调过工具后重新算;用户刚回答了什么而 Agent 什么也没做,提醒一次;最后一次改变界面的动作没读回结果,提醒一次。回答的正文明显不是用户最近那句话的语言(`ReplyLanguage` 按字母所属的文字数,汉字按字、其余按词,引号括号里的原文和只列名字的行不算),退回一次让模型整段改写成用户的语言,改写后还不对照样交出。
 - **来源由系统生成**:`AnswerSources`(`core/verify/AnswerSources.kt`)从证据账本 `EvidenceLedger` 里挑出支持回答的观察(最多 6 条),作为回答下面的「来源」;不由模型自己写。
-- **后台结果分类**:回答送达后,`TaskRun.settleOutcome` 在后台用 `OutcomeJudge`(`core/agent/OutcomeJudge.kt`,优先用轻量模型,30 秒超时)把这次运行分成 `RunOutcome` 的 Done / Partial / NotPossible / Unknown。它不改回答,结果写进运行记录和对话记录;定时任务据此标记这一次是否失败。学习与回放只认 Done(见 §9)。
-- **独立核查**:`Grounding`(回答里的数字、编号、引文在读过的内容里有没有,算式对不对)和 `Verifier`(独立的核查模型)都在 `core/verify/`,由 `reviewFinalAnswer` 开关控制。产品目前关着(`TaskRun` 里 `reviewFinalAnswer = false`),所以回答都记为「未核实」,见 roadmap「已知问题」。
+- **后台结果分类**:回答送达后,`TaskRun.settleOutcome` 在后台用 `OutcomeJudge`(`core/agent/OutcomeJudge.kt`,优先用轻量模型,30 秒超时)把这次运行分成 `RunOutcome` 的 Done / Partial / NotPossible / Unknown。它不改回答,结果写进运行记录和对话记录;定时任务据此标记这一次是否失败。学习与回放只认 Done:准入只有一处判断 `LearnGate.done`(`core/agent/LearnGate.kt`):交出了回答、判下来是 Done、没有退回一次后仍没对上的值;核查跑过的还要核实通过(跑过没通过照样挡住,没跑不挡)。个人技能和 App 知识的起草、试用转正式、经验路线的记录和成功计数都只问它(见 §9、§11)。
+- **独立核查**:`Grounding`(回答里的数字、编号、引文在读过的内容里有没有,算式对不对)和 `Verifier`(独立的核查模型)都在 `core/verify/`,由 `reviewFinalAnswer` 开关控制。产品目前关着(`TaskRun` 里 `reviewFinalAnswer = false`),所以回答都记为「未核实」,见 roadmap「已知问题」;学习看的是结局判定,不受它影响。
 
 ## 4. 唯一执行入口与工具
 
@@ -230,7 +230,7 @@
 
 ## 9. 经验回放
 
-成功路线可记录下来,同类任务直接回放、每步轻量核对、不调模型,对不上就交还模型(`core/replay/`,回放的动作以 `Origin.Replay` 经唯一入口执行)。路线只从办成且核实过的运行里记录(核查目前关着,见 roadmap「已知问题」第 1 条,所以现在记不下路线)。速度开关「照着上次的做法做」默认关。
+成功路线可记录下来,同类任务直接回放、每步轻量核对、不调模型,对不上就交还模型(`core/replay/`,回放的动作以 `Origin.Replay` 经唯一入口执行)。路线只从办成的运行里记录(`LearnGate`,`TaskRun.settleOutcome` 判过结局后从落盘的运行事件里取,`RouteRecorder` 只管路线本身记不记得下);回放走完、这次又算办成的,路线成功计数加一(`RouteReplay.noteResult`)。速度开关「照着上次的做法做」默认开:旧设置由 `FeatureFlags` 升级一次(`speed_defaults_applied_v3`),之后用户关掉就保持关闭。
 
 ## 10. 定时与条件触发
 
@@ -247,7 +247,8 @@
 - **内置**(`core/src/main/resources/`):App 知识(`knowledge/apps/<id>/APP.md`)、网站知识(`knowledge/sites/<域名>/SITE.md`)、技能(`skills/<id>/SKILL.md`),一个目录一份,加一份就是加一个目录;现有哪些看这几个目录或构建生成的索引 `knowledge/index.json`,README 里的清单由 `./gradlew updateReadme` 从同一份索引生成。格式见 [`knowledge-format.md`](knowledge-format.md)。构建时 `KnowledgeIndex` 扫描头部、校验并生成索引,校验不过构建失败。
 - **自动补给**:开局按任务文字匹配;进入某个 App(读过它的界面)或某个网站(第一次成功打开或读取)时补上它的知识正文。每份只给一次,每个任务最多 3 份,关联的技能加进技能索引(`KnowledgeStore`、`NoticePolicy`)。
 - **查阅工具**(`core/general/LookupTools.kt`):`knowledge_search` / `knowledge_read` 查 App 与网站知识,`skill_search` / `skill_read` 查技能(内置的和个人的一起)。
-- **个人技能自学**(`core/skills/`、`app/task/RunLearning.kt`):任务办成后,按条件起草一份个人技能(动作够多、办成并核实、没有跳过的接管、不是回放出来的)。起草要求运行「核实过」(`RunLearning`),而 `reviewFinalAnswer = false`,所以现在不会发生,见 roadmap「已知问题」第 1 条;草稿要用户在「记忆与技能」里收下才试用,试用时核实成功转为正式,失败就停用;正式技能近 3 次里有 2 次不好也停用(`SkillOutcomes`)。同样的流程也用来起草 App 知识草稿(`core/knowledge/AppKnowledgeLearning.kt`),试用期注入时标「未核实」。开关「从办成的任务里学技能」默认关。
+- **个人技能自学**(`core/skills/`、`app/task/RunLearning.kt`):任务办成后(`LearnGate`,不要求跑过最终核查),按条件起草一份个人技能(动作够多、没有跳过的接管、用户没自己办完、没有不同意的确认、不是回放出来的,见 `Eligibility`);草稿要用户在「记忆与技能」里收下才试用,试用时办成转为正式,失败就停用;正式技能近 3 次里有 2 次不好也停用(`SkillOutcomes`,结局没判成的不算)。开关「从办成的任务里学技能」默认开(旧设置在 `MemorySettings` 读时升级一次,之后用户关掉就保持关闭)。
+- **App 知识自学**(`core/knowledge/AppKnowledgeLearning.kt`、`app/knowledge/AppKnowledgeFiles.kt`):同一个开关下,对话界面发起、在手机 App 里动过手的运行,每个动过手、有内置知识条目的 App 各判一次(没有条目的 App 没处附补充,不学)。值得学的有三种(`AppKnowledgeDrafter.kind`):办成了、这个 App 里生效的动作够数;办成了但磕绊(出错或界面没变的动作两次以上,或返回两次以上);没办成或只办成一部分(判下来 Partial / NotPossible,或放弃、步数用完),且在这个 App 里动过至少 3 步。取消的、跳过接管的、用户自己办完的、回放出来的不学。请一次模型(角色 `prompts/roles/app_knowledge.md`),交给它这个 App 的内置说明、在用的补充、结局和精简动作清单(带出错码、界面变没变,不带屏幕原文和输入的字),要回补充改完以后的全文:只有「- 」开头的事实行,至多 12 条;没有值得补的回 NONE,什么也不出。每个 App 至多一份待确认的修订;收下后进试用、替换在用的那份(旧的归档,文件留在 archive 里)。注入时附在 App 说明后面,试用中的标明还没被办成的任务用过(`feedback/loop.md` 的 `knowledge.learned_trial`,已核实的是 `knowledge.learned`)。用过试用稿的运行办成就转正式;从教训学来的连着两次不好才归档,别的一次不好就归档(`AppKnowledgeTrial`)。「待确认」里写明是补充还是修订,列出加了、去掉的行。
 
 ## 12. 记忆与模型
 
