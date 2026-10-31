@@ -259,23 +259,38 @@ class ShellService(
         val list = (runCatching { um.javaClass.getMethod("getAliveUsers").invoke(um) }.getOrNull()
             ?: runCatching { um.javaClass.getMethod("getUsers").invoke(um) }.getOrNull()) as? List<*> ?: return null
         val info = Class.forName("android.content.pm.UserInfo")
+        // 系统自己给标记起的名字(dumpsys user 用的同一个 UserInfo.flagsToString,含系统自定义的标记);反射不行时读 dumpsys user
+        val flagsToString = runCatching { info.getMethod("flagsToString", Int::class.javaPrimitiveType) }.getOrNull()
+        val dumped by lazy { sh("dumpsys", "user").takeIf { it.first == 0 }?.second?.let(AppCopies::parseDumpsys).orEmpty() }
         return list.filterNotNull().map { u ->
             val id = info.getField("id").getInt(u)
+            val flags = info.getField("flags").getInt(u)
             val handle = UserHandle.getUserHandleForUid(id * PER_USER_RANGE)
             val props = runCatching { um.javaClass.getMethod("getUserProperties", UserHandle::class.java).invoke(um, handle) }.getOrNull()
             fun prop(name: String): Any? = props?.let { p -> runCatching { p.javaClass.getMethod(name).invoke(p) }.getOrNull() }
+            val names = flagsToString?.let { m -> runCatching { (m.invoke(null, flags) as? String)?.let(::flagNames) }.getOrNull() }
+                ?: dumped[id]?.flagNames
+            val group = runCatching { info.getField("profileGroupId").getInt(u) }.getOrDefault(AppCopies.NO_PROFILE_GROUP)
+            val running = runCatching { um.isUserRunning(handle) }.getOrDefault(false)
             AppCopies.User(
                 id = id,
-                flags = info.getField("flags").getInt(u),
+                flags = flags,
                 type = runCatching { info.getField("userType").get(u) as? String }.getOrNull(),
-                profileGroupId = runCatching { info.getField("profileGroupId").getInt(u) }.getOrDefault(AppCopies.NO_PROFILE_GROUP),
-                running = runCatching { um.isUserRunning(handle) }.getOrDefault(false),
+                profileGroupId = group,
+                running = running,
+                unlocked = running && runCatching { um.isUserUnlocked(handle) }.getOrDefault(false),
                 quiet = runCatching { um.isQuietModeEnabled(handle) }.getOrDefault(false),
                 mediaShared = prop("isMediaSharedWithParent") as? Boolean,
                 hidden = (prop("getProfileApiVisibility") as? Int)?.let { it == PROFILE_API_VISIBILITY_HIDDEN },
+                flagNames = names,
+                // dumpsys 里的 parentId 就是资料组(不是自己、也不是「不在组里」时才写);读到了一并带上
+                parentId = group.takeIf { it != id && it != AppCopies.NO_PROFILE_GROUP } ?: if (flagsToString == null) dumped[id]?.parentId else null,
             )
         }
     }
+
+    /** flagsToString 的结果(如 "CLONED_PROFILE|FULL|INITIALIZED",有的版本带花括号)拆成名字。 */
+    private fun flagNames(s: String): List<String> = s.trim('{', '}', ' ').split('|', ' ', ',').map(String::trim).filter(String::isNotEmpty)
 
     /**
      * 打开链接或设置页。外壳这边再按 [ShellLinks] 查一次链接;解析不到返回 [START_UNRESOLVED]。

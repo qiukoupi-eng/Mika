@@ -17,53 +17,86 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppCopiesTest {
-    private val clone = "android.os.usertype.profile.CLONE"
-    private val private = "android.os.usertype.profile.PRIVATE"
-    private val owner = User(0, 0x4c13, "android.os.usertype.full.SYSTEM", profileGroupId = 0, running = true)
+    private val secondary = "android.os.usertype.full.SECONDARY"
 
-    // 一台真机上 `pm list users` 的三份用户:机主 0(4c13)、私密空间 10(2000410,没运行)、分身 128(4000410,运行中,装着同一个 App)
-    private val appClones = User(128, 0x4000410, clone, profileGroupId = 0, running = true, mediaShared = true)
-    private val privateSpace = User(10, 0x2000410, private, profileGroupId = 0, running = false, hidden = true)
+    // 一台安卓 14 真机 `dumpsys user` 里的三份用户(名字略去)
+    private val dump = """
+        Users:
+          UserInfo{0:Owner:4c13} isPrimary=true
+            Type: android.os.usertype.full.SYSTEM
+            Flags: 19475 (ADMIN|FULL|INITIALIZED|MAIN|PRIMARY|SYSTEM)
+            State: RUNNING_UNLOCKED
+          UserInfo{10:Space:2000410}
+            Type: android.os.usertype.full.SECONDARY
+            Flags: 33555472 (FULL|HW_HIDDENSPACE|INITIALIZED)
+            State: -1
+          UserInfo{128:Clones:4000410} parentId=0
+            Type: android.os.usertype.full.SECONDARY
+            Flags: 67109904 (CLONED_PROFILE|FULL|INITIALIZED)
+            State: RUNNING_UNLOCKED
+    """.trimIndent()
+
+    private val owner = User(0, 0x4c13, "android.os.usertype.full.SYSTEM", AppCopies.NO_PROFILE_GROUP, running = true,
+        flagNames = listOf("ADMIN", "FULL", "INITIALIZED", "MAIN", "PRIMARY", "SYSTEM"))
+    private val privateSpace = User(10, 0x2000410, secondary, AppCopies.NO_PROFILE_GROUP, running = false,
+        flagNames = listOf("FULL", "HW_HIDDENSPACE", "INITIALIZED"))
+    private val appClones = User(128, 0x4000410, secondary, profileGroupId = 0, running = true, parentId = 0,
+        flagNames = listOf("CLONED_PROFILE", "FULL", "INITIALIZED"))
+
+    @Test fun parsesFlagNamesAndParentFromDumpsys() {
+        val d = AppCopies.parseDumpsys(dump)
+        assertEquals(listOf("ADMIN", "FULL", "INITIALIZED", "MAIN", "PRIMARY", "SYSTEM"), d[0]?.flagNames)
+        assertEquals(null, d[0]?.parentId)
+        assertEquals(AppCopies.Dumped(listOf("FULL", "HW_HIDDENSPACE", "INITIALIZED"), null), d[10])
+        assertEquals(AppCopies.Dumped(listOf("CLONED_PROFILE", "FULL", "INITIALIZED"), 0), d[128])
+    }
 
     @Test fun theCloneProfileIsUsableAndThePrivateSpaceNeverIs() {
         assertEquals(listOf(128), AppCopies.usable(0, listOf(owner, privateSpace, appClones)))
-        // 私密空间就算解锁了(在运行、不安静)、和机主同一组,也不列
-        val unlocked = privateSpace.copy(running = true)
-        assertEquals(listOf(128), AppCopies.usable(0, listOf(owner, unlocked, appClones)))
+        assertEquals(Verdict.Copy, AppCopies.verdict(appClones, 0, 0))
+        // 只靠上级用户也算连在一起(资料组读不到时)
+        assertEquals(Verdict.Copy, AppCopies.verdict(appClones.copy(profileGroupId = AppCopies.NO_PROFILE_GROUP), 0, 0))
+        // 私密空间就算解锁了、在运行、和机主连在一起、还标着分身一类的特征,也不列
+        val unlocked = privateSpace.copy(running = true, profileGroupId = 0, parentId = 0, mediaShared = true)
         assertEquals(Verdict.Private, AppCopies.verdict(unlocked, 0, 0))
-        // 类型看不出是私密的、但系统标明对别的 App 隐藏的,也不列
-        assertEquals(Verdict.Private, AppCopies.verdict(unlocked.copy(type = "x.vendor.SPACE", mediaShared = true), 0, 0))
-        // 类型里带 private 的,系统没标隐藏也不列
-        assertEquals(Verdict.Private, AppCopies.verdict(unlocked.copy(hidden = null, mediaShared = true), 0, 0))
+        assertEquals(listOf(128), AppCopies.usable(0, listOf(owner, unlocked, appClones)))
+        // 标记名带 PRIVATE、类型带 private、系统标明对别的 App 隐藏:都不列
+        val linkedClone = appClones.copy(id = 20)
+        assertEquals(Verdict.Private, AppCopies.verdict(linkedClone.copy(flagNames = listOf("CLONED_PROFILE", "PRIVATE_SPACE")), 0, 0))
+        assertEquals(Verdict.Private, AppCopies.verdict(linkedClone.copy(type = "android.os.usertype.profile.PRIVATE"), 0, 0))
+        assertEquals(Verdict.Private, AppCopies.verdict(linkedClone.copy(hidden = true), 0, 0))
     }
 
-    @Test fun onlyRunningUnpausedProfilesOfTheCurrentUserCount() {
+    @Test fun onlyRunningUnlockedUnpausedLinkedProfilesCount() {
         assertEquals(Verdict.Self, AppCopies.verdict(owner, 0, 0))
         assertEquals(Verdict.Stopped, AppCopies.verdict(appClones.copy(running = false), 0, 0))
-        // 暂停的工作资料(安静模式):按标记或按接口读到的都不算
+        assertEquals(Verdict.Locked, AppCopies.verdict(appClones.copy(unlocked = false), 0, 0))
+        // 原版的分身类型、工作资料类型;暂停的工作资料(安静模式)不算
+        assertEquals(Verdict.Copy, AppCopies.verdict(User(30, 0x1030, "android.os.usertype.profile.CLONE", 0, running = true), 0, 0))
         val work = User(11, 0x1030, AppCopies.TYPE_MANAGED, profileGroupId = 0, running = true)
         assertEquals(Verdict.Copy, AppCopies.verdict(work, 0, 0))
         assertEquals(Verdict.Quiet, AppCopies.verdict(work.copy(quiet = true), 0, 0))
         assertEquals(Verdict.Quiet, AppCopies.verdict(work.copy(flags = work.flags or AppCopies.FLAG_QUIET_MODE), 0, 0))
-        // 访客、另一个完整用户(不在机主那一组):不列
-        val guest = User(12, 0x414 or AppCopies.FLAG_GUEST, "android.os.usertype.full.GUEST", AppCopies.NO_PROFILE_GROUP, running = true)
+        // 访客(按标记名,读不到标记名时按标记位)、另一个完整用户(不和机主连在一起):不列
+        val guest = User(12, 0x414 or AppCopies.FLAG_GUEST, "android.os.usertype.full.GUEST", 0, running = true, mediaShared = true)
         assertEquals(Verdict.Flags, AppCopies.verdict(guest, 0, 0))
-        val secondary = User(13, 0x410, "android.os.usertype.full.SECONDARY", AppCopies.NO_PROFILE_GROUP, running = true, mediaShared = true)
-        assertEquals(Verdict.NotLinked, AppCopies.verdict(secondary, 0, 0))
-        // 另一个用户自己的分身(不在机主那一组)
-        assertEquals(Verdict.NotLinked, AppCopies.verdict(appClones.copy(profileGroupId = 13), 0, 0))
-        // 在机主那一组里,但看不出是分身或工作资料
-        assertEquals(Verdict.NotCopy, AppCopies.verdict(User(14, 0x1010, "x.vendor.PROFILE", 0, running = true), 0, 0))
-        // 看不出类型、但和机主共用媒体(原版分身的特征)的算
+        assertEquals(Verdict.Flags, AppCopies.verdict(guest.copy(flags = 0x410, flagNames = listOf("FULL", "GUEST")), 0, 0))
+        val other = User(13, 0x410, secondary, AppCopies.NO_PROFILE_GROUP, running = true, mediaShared = true)
+        assertEquals(Verdict.NotLinked, AppCopies.verdict(other, 0, 0))
+        // 另一个用户自己的分身
+        assertEquals(Verdict.NotLinked, AppCopies.verdict(appClones.copy(profileGroupId = 13, parentId = 13), 0, 0))
+        // 连在一起,但看不出是分身或工作资料
+        assertEquals(Verdict.NotCopy, AppCopies.verdict(appClones.copy(flagNames = listOf("FULL", "INITIALIZED")), 0, 0))
+        // 看不出类型和标记名、但和上级共用媒体的算
         assertEquals(Verdict.Copy, AppCopies.verdict(User(15, 0x1010, null, 0, running = true, mediaShared = true), 0, 0))
-        assertEquals(emptyList<Int>(), AppCopies.usable(0, listOf(owner, guest, secondary)))
+        assertEquals(emptyList<Int>(), AppCopies.usable(0, listOf(owner, guest, other)))
     }
 
-    @Test fun summaryHasIdsFlagsAndVerdictsButNoNames() {
+    @Test fun summaryHasIdsFlagNamesAndVerdictsButNoNames() {
         val s = AppCopies.summary(0, listOf(owner, privateSpace, appClones))
         assertEquals(
-            "2 other, 1 usable: 10 flags=0x2000410 type=$private group=0 stopped -> stopped; " +
-                "128 flags=0x4000410 type=$clone group=0 running -> copy",
+            "2 other, 1 usable: 10 flags=0x2000410 (FULL|HW_HIDDENSPACE|INITIALIZED) type=$secondary group=-10000 stopped -> private; " +
+                "128 flags=0x4000410 (CLONED_PROFILE|FULL|INITIALIZED) type=$secondary group=0 parent=0 unlocked -> copy",
             s,
         )
         assertEquals("no other users", AppCopies.summary(0, listOf(owner)))
