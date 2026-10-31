@@ -194,6 +194,18 @@ fun SettingsScreen(
             grounding = visionConfig?.let { GroundingSetting(it.model, it.capabilities.groundingVerified) },
             onGrounding = { verified -> scope.launch { withContext(Dispatchers.IO) { store.setVisionGroundingVerified(verified) } } },
             onOpenRunStats = { page = SettingsPage.RunStats },
+            mcpHttpUrl = (context.applicationContext as? com.wangzan101.mika.MikaApp)?.mcpHttp?.status()?.let { s ->
+                if (s.enabled) "${s.host}:${s.port}" + if (s.listening) "" else " (未监听)" else null
+            },
+            onCopyMcpToken = {
+                val token = flags.ensureMcpHttpToken()
+                val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                val clip = android.content.ClipData.newPlainText("Mika MCP token", token)
+                // 标成敏感内容,剪贴板预览不显示
+                clip.description.extras = android.os.PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+                cm.setPrimaryClip(clip)
+                android.widget.Toast.makeText(context, "令牌已复制", android.widget.Toast.LENGTH_SHORT).show()
+            },
         )
         SettingsPage.RunStats -> RunStatsScreen(remember { RunStore(context).metrics }, onBack = back)
     }

@@ -17,11 +17,14 @@ data class HttpMcpConfig(
         require(host.isNotBlank()) { "host blank" }
         require(path.startsWith("/")) { "path must start with /" }
         require(token == null || token.isNotBlank()) { "token blank" }
+        require(token != null || isLoopback(host)) { "non-loopback bind requires token" }
     }
 
     companion object {
         const val DEFAULT_HOST = "127.0.0.1"
         const val DEFAULT_PORT = 18765
         const val DEFAULT_PATH = "/mcp"
+
+        fun isLoopback(host: String) = host == "localhost" || host == "::1" || host.startsWith("127.")
     }
 }

@@ -103,7 +103,10 @@ class FeatureFlags(private val prefs: SharedPreferences) {
     }
 
     /** 监听地址,默认 127.0.0.1;改成非回环前务必设令牌。 */
-    fun mcpHttpHost(): String = prefs.getString(MCP_HTTP_HOST, null)?.takeIf { it.isNotBlank() } ?: "127.0.0.1"
+    fun mcpHttpHost(): String = prefs.getString(MCP_HTTP_HOST, null)?.takeIf { it.isNotBlank() } ?: defaultMcpHttpHost()
+
+    /** 调试包默认听所有网卡(经 Tailscale 让中继连进来,令牌必填);正式包只听回环。 */
+    private fun defaultMcpHttpHost() = if (com.wangzan101.mika.BuildConfig.DEBUG) "0.0.0.0" else "127.0.0.1"
 
     fun setMcpHttpHost(host: String) {
         prefs.edit().putString(MCP_HTTP_HOST, host.trim().ifBlank { "127.0.0.1" }).commit()

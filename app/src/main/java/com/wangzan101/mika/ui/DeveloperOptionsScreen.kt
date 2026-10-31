@@ -69,6 +69,9 @@ fun DeveloperOptionsScreen(
     grounding: GroundingSetting? = null,
     onGrounding: (Boolean) -> Unit = {},
     onOpenRunStats: (() -> Unit)? = null,
+    /** MCP HTTP 地址;非 null 时显示一行,点一下把令牌复制到剪贴板(界面上不显示令牌)。 */
+    mcpHttpUrl: String? = null,
+    onCopyMcpToken: () -> Unit = {},
 ) {
     PageScaffold(tr(R.string.settings_developer), onBack) {
         GroupLabel(AutonomyCopy.GROUP)
@@ -93,6 +96,12 @@ fun DeveloperOptionsScreen(
             GroupLabel(tr(R.string.dev_run_log))
             GroupCard {
                 ListRow(null, RunMetricsCopy.STATS_TITLE, RunMetricsCopy.STATS_SUBTITLE, first = true, onClick = onOpenRunStats) { RowChevron() }
+            }
+        }
+        if (mcpHttpUrl != null) {
+            GroupLabel("MCP HTTP")
+            GroupCard {
+                ListRow(null, "复制 MCP 令牌", mcpHttpUrl, first = true, onClick = onCopyMcpToken) { RowChevron() }
             }
         }
         FooterNote(DEVELOPER_NOTE)

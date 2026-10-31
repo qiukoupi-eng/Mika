@@ -14,11 +14,11 @@
 | 键 | 含义 | 默认 |
 | --- | --- | --- |
 | `mcp_http_enabled` | 是否监听 | `true` |
-| `mcp_http_host` | 绑定地址 | `127.0.0.1` |
+| `mcp_http_host` | 绑定地址 | 正式包 `127.0.0.1`,调试包 `0.0.0.0` |
 | `mcp_http_port` | 端口 | `18765` |
 | `mcp_http_token` | Bearer 共享令牌 | 首次启动自动生成 |
 
-非回环绑定前务必设令牌。App 启动时 `MikaApp` 调 `McpHttpRuntime.apply()`;改 prefs 后需再调 `apply()`(重启 App 即可)。
+非回环绑定必须有令牌(`HttpMcpConfig` 没令牌时拒绝启动;App 会自动生成)。调试包可在 设置 › 开发者选项 › MCP HTTP 点「复制 MCP 令牌」,界面不显示令牌。App 启动时 `MikaApp` 调 `McpHttpRuntime.apply()`;改 prefs 后需再调 `apply()`(重启 App 即可)。
 
 调试包 applicationId 为 `com.wangzan101.mika.debug`(正式版仍是 `com.wangzan101.mika`),可并存。端点说明(含令牌)写在 App 私有文件 `files/mcp-http.json`,可用:
 
