@@ -9,7 +9,6 @@ import com.wangzan101.mika.cap.phone.a11y.DeviceSupport.sh
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlin.system.exitProcess
 
 /** 在真实 shell uid 下调用生产代码;不依赖已运行的助手是否还是旧版本。 */
 @RunWith(AndroidJUnit4::class)
@@ -20,7 +19,8 @@ class ShellClipboardDeviceTest {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val classpath = listOf(instrumentation.targetContext, instrumentation.context)
             .joinToString(":") { it.applicationInfo.sourceDir }
-        val output = sh("CLASSPATH=$classpath app_process / ${ShellClipboardProbe::class.java.name} 2>&1")
+        // executeShellCommand 不经过 shell:环境变量用 env 传,不能写 VAR=… 和重定向
+        val output = sh("env CLASSPATH=$classpath app_process / ${ShellClipboardProbe::class.java.name}")
         assertTrue(output, output.lineSequence().any { it == ShellClipboardProbe.PASSED })
     }
 }
@@ -48,10 +48,13 @@ object ShellClipboardProbe {
             }
             check(clipboard.primaryClip?.getItemAt(0)?.text?.toString() == originalText)
             println(PASSED)
-            exitProcess(0)
+            System.out.flush()
+            // 不走 System.exit:剪贴板服务留下的线程会让它卡住不退,测试就一直等着
+            Runtime.getRuntime().halt(0)
         } catch (t: Throwable) {
             t.printStackTrace()
-            exitProcess(1)
+            System.err.flush()
+            Runtime.getRuntime().halt(1)
         }
     }
 }
