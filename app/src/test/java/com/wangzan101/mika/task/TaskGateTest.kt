@@ -33,17 +33,17 @@ class TaskGateTest {
 
     @Test
     fun nonInteractiveWaitsForUnlockThenResumesByItself() = runTest {
-        locked.value = DeviceStateWatcher.isLocked(interactive = false, keyguardLocked = false)
+        locked.value = LockState.Reading(interactive = false, keyguardLocked = false).locked
         var passed = false
         launch { gate.pass { reported += it }; passed = true }
         runCurrent()
         assertFalse(passed)
         assertEquals(TaskState.Held(TaskGate.LOCKED), reported.last())
 
-        locked.value = DeviceStateWatcher.isLocked(interactive = true, keyguardLocked = true) // 亮屏但还在锁屏界面
+        locked.value = LockState.Reading(interactive = true, keyguardLocked = true).locked // 亮屏但还在锁屏界面
         runCurrent()
         assertFalse(passed)
-        locked.value = DeviceStateWatcher.isLocked(interactive = true, keyguardLocked = false)
+        locked.value = LockState.Reading(interactive = true, keyguardLocked = false).locked
         runCurrent()
         assertTrue(passed)
         assertEquals(null, reported.last())
