@@ -57,7 +57,7 @@ object SelfCheckReport {
     private fun gb(bytes: Long): String =
         if (bytes <= 0) "unknown" else String.format(Locale.ROOT, "%.1f GB", bytes / (1024.0 * 1024 * 1024))
 
-    /** 反馈问题的标题,如 `[兼容性] Android 14 Pixel 8`;型号里已带厂商名时只写型号。 */
+    /** 反馈问题的标题:`[兼容性] Android <版本> <型号>`,型号就是系统给的那个(不另加厂商名)。 */
     fun issueTitle(f: DeviceFacts?): String =
         if (f == null) "[兼容性]" else "[兼容性] Android ${f.androidRelease} ${f.model.trim()}".trim()
 
