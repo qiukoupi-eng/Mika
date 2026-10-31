@@ -20,10 +20,10 @@
 
 非回环绑定前务必设令牌。App 启动时 `MikaApp` 调 `McpHttpRuntime.apply()`;改 prefs 后需再调 `apply()`(重启 App 即可)。
 
-端点说明(含令牌)写在 App 私有文件 `files/mcp-http.json`,可用:
+调试包 applicationId 为 `com.wangzan101.mika.debug`(正式版仍是 `com.wangzan101.mika`),可并存。端点说明(含令牌)写在 App 私有文件 `files/mcp-http.json`,可用:
 
 ```bash
-adb shell run-as com.wangzan101.mika cat files/mcp-http.json
+adb shell run-as com.wangzan101.mika.debug cat files/mcp-http.json
 ```
 
 日志只打 URL,不打令牌。
@@ -54,7 +54,7 @@ adb shell run-as com.wangzan101.mika cat files/mcp-http.json
 示例:
 
 ```bash
-TOKEN=$(adb shell run-as com.wangzan101.mika cat files/mcp-http.json | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
+TOKEN=$(adb shell run-as com.wangzan101.mika.debug cat files/mcp-http.json | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
 curl -s http://127.0.0.1:18765/mcp \
   -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \

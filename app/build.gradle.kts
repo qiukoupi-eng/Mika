@@ -40,6 +40,10 @@ android {
     sourceSets.getByName("androidTest").assets.srcDir(rootProject.file("eval/tasks"))
 
     buildTypes {
+        // 调试包与正式版并存:包名加 .debug,签名仍是本机 debug 密钥
+        getByName("debug") {
+            applicationIdSuffix = ".debug"
+        }
         // 看流畅度用的包:和发布版一样不可调试(调试包不做预先编译,界面慢好几倍,手感不作数),
         // 用本机调试签名,能直接覆盖调试包、保留数据;可被性能工具采样。./gradlew :app:assemblePerf
         create("perf") {
