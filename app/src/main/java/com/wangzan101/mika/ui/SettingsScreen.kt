@@ -194,6 +194,9 @@ fun SettingsScreen(
             grounding = visionConfig?.let { GroundingSetting(it.model, it.capabilities.groundingVerified) },
             onGrounding = { verified -> scope.launch { withContext(Dispatchers.IO) { store.setVisionGroundingVerified(verified) } } },
             onOpenRunStats = { page = SettingsPage.RunStats },
+            onCheckUpdate = if (com.wangzan101.mika.update.DebugUpdater.enabled) {
+                { (context as? android.app.Activity)?.let { com.wangzan101.mika.update.DebugUpdater.check(it, manual = true) } }
+            } else null,
             mcpHttpUrl = (context.applicationContext as? com.wangzan101.mika.MikaApp)?.mcpHttp?.status()?.let { s ->
                 if (s.enabled) "${s.host}:${s.port}" + if (s.listening) "" else " (未监听)" else null
             },

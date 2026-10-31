@@ -79,6 +79,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        com.wangzan101.mika.update.DebugUpdater.checkOnStart(this)
         requestedConversation = intent.getStringExtra(EXTRA_OPEN_CONVERSATION)
         monitor = SystemStatusMonitor(this, PhoneServices.of(this).shellControl)
         val store = ProviderStore.get(this)

@@ -72,6 +72,8 @@ fun DeveloperOptionsScreen(
     /** MCP HTTP 地址;非 null 时显示一行,点一下把令牌复制到剪贴板(界面上不显示令牌)。 */
     mcpHttpUrl: String? = null,
     onCopyMcpToken: () -> Unit = {},
+    /** 非 null 时显示「检查更新」(仅 debug)。 */
+    onCheckUpdate: (() -> Unit)? = null,
 ) {
     PageScaffold(tr(R.string.settings_developer), onBack) {
         GroupLabel(AutonomyCopy.GROUP)
@@ -102,6 +104,12 @@ fun DeveloperOptionsScreen(
             GroupLabel("MCP HTTP")
             GroupCard {
                 ListRow(null, "复制 MCP 令牌", mcpHttpUrl, first = true, onClick = onCopyMcpToken) { RowChevron() }
+            }
+        }
+        if (onCheckUpdate != null) {
+            GroupLabel("更新")
+            GroupCard {
+                ListRow(null, "检查更新", "当前 ${com.wangzan101.mika.BuildConfig.VERSION_NAME}", first = true, onClick = onCheckUpdate) { RowChevron() }
             }
         }
         FooterNote(DEVELOPER_NOTE)
