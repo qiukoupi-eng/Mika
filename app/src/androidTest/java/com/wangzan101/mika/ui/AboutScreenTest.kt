@@ -142,7 +142,7 @@ class AboutScreenTest {
         val calls = about()
         compose.onNodeWithText("反馈问题").performClick()
         compose.awaitOne("在微信或 X 群聊里说").performClick()
-        compose.awaitOne(AboutCopy.GROUP_SHEET_TITLE)
+        compose.awaitOne(AboutCopy.GROUP_SHEET_SUB)
         compose.onNodeWithTag("wechat-qr").assertExists()
         compose.onNodeWithText(AboutCopy.SAVE_QR).performClick()
         assertEquals(1, calls.saves)
