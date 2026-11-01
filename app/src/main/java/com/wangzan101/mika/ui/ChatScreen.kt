@@ -73,6 +73,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
@@ -95,7 +96,9 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -134,6 +137,8 @@ import com.wangzan101.mika.ui.theme.MikaSize
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.viewer.FileViewer
 import com.wangzan101.mika.ui.theme.MikaType
+import com.wangzan101.mika.voice.HoldToTalk
+import com.wangzan101.mika.voice.VoiceSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -164,6 +169,10 @@ fun ChatScreen(
     /** 按运行记录取依据的来处(「来源」胶囊和点开后的截图);读盘的活由调用方放到后台线程。 */
     loadSource: suspend (runId: String) -> EvidenceSource? = { null },
     openSource: (runId: String?, legacyText: String?) -> Unit = { _, _ -> },
+    /** 输入栏按住说话从这里开会话;null 时只能打字。 */
+    voice: VoiceSource? = null,
+    /** 「还不能语音输入」里的「去选」。 */
+    openSpeechModel: () -> Unit = {},
 ) {
     val ui by vm.ui.collectAsState()
     val others by vm.otherRunning.collectAsState()
@@ -185,6 +194,7 @@ fun ChatScreen(
     val frame = live ?: lastFrame.takeIf { ui.pip.visible && ui.pip.mode == PipMode.Done }
     val webContent = if (ui.pip.mode == PipMode.Done) lastFrameWasWeb else webLive
     var input by rememberSaveable { mutableStateOf("") }
+    var voiceHolding by remember { mutableStateOf(false) }
     var editRequest by remember { mutableIntStateOf(0) }
     var composerHeight by rememberSaveable { mutableIntStateOf(0) }
     var topHeight by rememberSaveable { mutableIntStateOf(0) }
@@ -271,7 +281,7 @@ fun ChatScreen(
     PageBackground {
         CompositionLocalProvider(LocalMessageMenu provides menuHost) {
             LazyColumn(
-                Modifier.fillMaxSize().behindMenu(menuOpen) { lift.value }.glassSource(backdrop),
+                Modifier.fillMaxSize().behindMenu(menuOpen) { lift.value }.voiceDim(voiceHolding, reduceMotion).glassSource(backdrop),
                 state = listState,
                 contentPadding = with(density) {
                     PaddingValues(
@@ -341,6 +351,12 @@ fun ChatScreen(
             onDismissRejected = vm::dismissRejected,
             quote = ui.quote,
             onRemoveQuote = vm::clearQuote,
+            voice = voice,
+            // 说的话接在已有的字后面;任务在跑时发出去就是插话
+            onVoiceText = { input = HoldToTalk.join(input, it) },
+            onPickSpeech = openSpeechModel,
+            steerTarget = last?.goal?.let(ChatCopy::plainTitle),
+            onVoiceHolding = { voiceHolding = it },
             editRequest = editRequest,
         )
 
@@ -745,7 +761,7 @@ private fun StepDot(dot: Dot) {
 
 /** 转圈:淡色圆环,顶上一段实色。[spinning] 为假(关了动画、停下来等你)时停在原处。 */
 @Composable
-private fun Spinner(modifier: Modifier, spinning: Boolean, track: Color, head: Color) {
+internal fun Spinner(modifier: Modifier, spinning: Boolean, track: Color, head: Color) {
     val turn = if (!spinning) 0f else rememberInfiniteTransition(label = "spin").animateFloat(
         0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "spin",
     ).value
@@ -1034,8 +1050,23 @@ internal fun Composer(
     /** 输入栏后面那层内容的画面;为 null 时输入栏不做模糊、用不透明底。 */
     backdrop: GlassBackdrop? = null,
     reduceMotion: Boolean = false,
+    /** 按住说话从这里开会话;null 时输入框只能打字。 */
+    voice: VoiceSource? = null,
+    /** 说完的字;调用方把它接在已有的字后面,不自动发送。 */
+    onVoiceText: (String) -> Unit = {},
+    /** 「还不能语音输入」里的「去选」:到设置里选转文字。 */
+    onPickSpeech: () -> Unit = {},
+    /** 任务在跑时说的话交给谁:卡片顶上写「插话给『…』」。 */
+    steerTarget: String? = null,
+    /** 按着说话时为 true:对话内容跟着虚化。 */
+    onVoiceHolding: (Boolean) -> Unit = {},
 ) {
     val c = MikaTheme.colors
+    val vh = rememberVoiceHold(voice, onVoiceText)
+    val vState = voiceState(vh)
+    val voiceHolding = vh?.holding == true
+    LaunchedEffect(voiceHolding) { onVoiceHolding(voiceHolding) }
+    var fieldFocused by remember { mutableStateOf(false) }
     // 底部从页面底色淡出到透明,输入栏是浮在上面的玻璃
     val fade = remember(c) { Brush.verticalGradient(0f to c.bg.copy(alpha = 0f), 0.6f to c.bg, 1f to c.bg) }
     val busy = mode == ComposerMode.Busy
@@ -1058,6 +1089,20 @@ internal fun Composer(
     LaunchedEffect(ime, nav, density) {
         snapshotFlow { ime.getBottom(density) - nav.getBottom(density) }.collect { if (it > keyboardPx) keyboardPx = it }
     }
+    // 输入框聚焦时长按留给系统的选字、粘贴(悬浮、分体、实体键盘也一样);没聚焦时输入框上盖一层按住说话的手势
+    val voiceGesture = vh != null && (!fieldFocused || voiceHolding)
+    // 键盘从弹着到收起(返回键、键盘自己的收起键):输入框跟着失焦,又能按住说话。只看键盘的变化,实体键盘(从不弹出)不受影响
+    LaunchedEffect(ime, density, vh != null) {
+        if (vh == null) return@LaunchedEffect
+        var wasUp = false
+        snapshotFlow { ime.getBottom(density) > 0 }.collect { up ->
+            if (wasUp && !up && fieldFocused) focus.clearFocus()
+            wasUp = up
+        }
+    }
+    // 输入框外面的字一变(说完填进来、点了示例),光标放到末尾,接着说或接着打都在后面
+    var fieldValue by remember { mutableStateOf(TextFieldValue(text, TextRange(text.length))) }
+    val shownValue = if (fieldValue.text == text) fieldValue else TextFieldValue(text, TextRange(text.length))
     val panelPx = with(density) {
         if (keyboardPx > 0) keyboardPx.coerceIn(PanelMin.roundToPx(), PanelMax.roundToPx()) else PanelDefault.roundToPx()
     }
@@ -1107,6 +1152,12 @@ internal fun Composer(
                     }
                 }
             }
+            if (vh != null) {
+                val title = if (busy && !steerTarget.isNullOrBlank()) stringResource(R.string.voice_steer_to, steerTarget)
+                else stringResource(R.string.voice_listening)
+                VoiceFloat(vh, vState, title, backdrop, reduceMotion)
+            }
+            Box(Modifier.fillMaxWidth()) {
             GlassBar(Modifier.fillMaxWidth().keepsKeyboard(), backdrop) {
                 if (attachPanel != null) {
                     val label = if (panel == Panel.Open) AttachCopy.CLOSE else AttachCopy.ADD
@@ -1119,16 +1170,30 @@ internal fun Composer(
                     }
                 }
                 Box(Modifier.weight(1f).padding(start = if (attachPanel != null) 2.dp else 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp)) {
-                    if (text.isEmpty()) Text(ChatCopy.placeholder(mode, hasHistory), style = MikaType.Body, color = c.ink3, maxLines = 1)
+                    val converting = vState is HoldToTalk.State.Converting
+                    if (text.isEmpty() && !converting) {
+                        if (vh != null) VoicePlaceholder(mode)
+                        else Text(ChatCopy.placeholder(mode, hasHistory), style = MikaType.Body, color = c.ink3, maxLines = 1)
+                    }
                     BasicTextField(
-                        text, onText,
+                        shownValue,
+                        { v -> fieldValue = v; if (v.text != text) onText(v.text) },
                         Modifier.fillMaxWidth().testTag("composer-field").focusRequester(field)
+                            .alpha(if (converting) 0f else 1f)
                             // 面板开着时点输入框:面板让给键盘
-                            .onFocusChanged { if (it.isFocused && panel == Panel.Open) panel = Panel.Yielding },
+                            .onFocusChanged {
+                                fieldFocused = it.isFocused
+                                if (it.isFocused && panel == Panel.Open) panel = Panel.Yielding
+                            },
                         textStyle = MikaType.Body.copy(color = c.ink),
                         cursorBrush = SolidColor(c.accent),
                         maxLines = 5,
                     )
+                    // 服务商松开后在转:输入框里转圈,转好的字填进来
+                    if (converting) VoiceConverting(Modifier.align(Alignment.CenterStart))
+                    if (voiceGesture && vh != null) {
+                        Box(Modifier.matchParentSize().holdToTalk(vh) { field.requestFocus(); keyboard?.show() })
+                    }
                 }
                 val canSend = AttachTray.canSend(text, attachments, importing)
                 // 任务在跑时停止一直在;写了字再多一个发送,发出去的话交给当前任务
@@ -1153,6 +1218,9 @@ internal fun Composer(
                     }
                 }
             }
+            if (vh != null) VoiceBarCover(vh, vState, reduceMotion, Modifier.matchParentSize())
+            }
+            if (vh != null) VoiceSheetHost(vh, onPickSpeech)
             if (panel != Panel.Closed && attachPanel != null) {
                 // 键盘还在(刚开面板时正在收、让给键盘时正在升)的那一段从面板里扣掉:输入栏不跟着上下跳
                 Box(

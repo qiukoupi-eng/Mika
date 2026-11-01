@@ -155,4 +155,26 @@
     <string name="signin_sign_out_note">Only clears the sign-in on this phone</string>
     <string name="signin_busy">Another sign-in is in progress. Finish or cancel it first.</string>
     <string name="signin_openrouter_name">%1$s (signed in)</string>
+
+    <!-- Settings > Models: speech-to-text usage and its picker page -->
+    <string name="role_speech">Speech to text</string>
+    <string name="role_speech_what">Used while you hold to talk</string>
+    <string name="speech_hint">The phone’s built-in recognition is free and shows words as you speak. If the phone has none, or it mishears you, pick a provider’s model instead: it transcribes after you finish, using your quota.</string>
+    <string name="speech_system">Built into the phone</string>
+    <string name="speech_system_offline">Works offline</string>
+    <string name="speech_system_online">Needs internet</string>
+    <string name="speech_system_note">Shows words as you speak; can work offline</string>
+    <string name="speech_system_note_online">Shows words as you speak; needs internet</string>
+    <string name="speech_system_none_note">This phone has no usable speech recognition</string>
+    <string name="speech_system_gone">Not on this phone</string>
+    <string name="speech_tag_ok">Available</string>
+    <string name="speech_tag_none">None</string>
+    <string name="speech_system_silent">Not responding</string>
+    <string name="speech_system_silent_note">Didn’t respond on this phone last time. Pick it again to retry</string>
+    <string name="speech_tag_silent">No response</string>
+    <string name="speech_tag_speech">Speech</string>
+    <string name="speech_off_note">The text box and capsule can’t be held to talk</string>
+    <string name="speech_footer">Only models that look like speech models are listed. If yours is missing, type its name; a short clip is transcribed as a test when you pick it.</string>
+    <string name="speech_pick_failed">That model couldn’t transcribe: %1$s</string>
+    <string name="speech_pick_timeout">%1$s didn’t answer a test clip within %2$d seconds</string>
 </resources>

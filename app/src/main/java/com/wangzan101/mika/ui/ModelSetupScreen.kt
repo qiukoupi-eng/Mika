@@ -9,6 +9,7 @@ import com.wangzan101.mika.R
 import com.wangzan101.mika.core.chatgpt.ChatGptAuth
 import com.wangzan101.mika.core.oauth.OpenRouterAuth
 import com.wangzan101.mika.MikaApp
+import com.wangzan101.mika.voice.SystemSpeech
 import com.wangzan101.mika.settings.ChatGptSignIns
 import com.wangzan101.mika.i18n.tr
 import androidx.compose.ui.res.stringResource
@@ -84,12 +85,23 @@ import com.wangzan101.mika.ui.theme.MikaType
  * 选用途、服务商详情、服务商的全部模型是这一页里的子页面。上手时「下一步」选好主模型才可点,点了调 [onDone]。
  */
 @Composable
-fun ModelSetupScreen(store: ProviderStore, onboarding: Boolean, onBack: () -> Unit, onDone: () -> Unit) {
+fun ModelSetupScreen(
+    store: ProviderStore, onboarding: Boolean, onBack: () -> Unit, onDone: () -> Unit,
+    /** 设置里点「语音转文字」卡片去选择页;上手流程不传,卡片就不出现。 */
+    onOpenSpeech: (() -> Unit)? = null,
+) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val vm = remember {
         val signIns = (context.applicationContext as? MikaApp)?.chatGptSignIn ?: ChatGptSignIns(scope)
-        ModelSetupViewModel(store, scope, browser = AndroidSignInBrowser(context.applicationContext), signIns = signIns)
+        ModelSetupViewModel(
+            store, scope, browser = AndroidSignInBrowser(context.applicationContext), signIns = signIns,
+            speech = (context.applicationContext as? MikaApp)?.speech,
+            systemSpeech = {
+                val silent = (context.applicationContext as? MikaApp)?.speech?.systemSilent?.value ?: false
+                SystemSpeech.capability(context.applicationContext, silent)
+            },
+        )
     }
     val ui by vm.state.collectAsState()
     var picking by rememberSaveable { mutableStateOf<ModelRole?>(null) }
@@ -175,7 +187,7 @@ fun ModelSetupScreen(store: ProviderStore, onboarding: Boolean, onBack: () -> Un
                     selectPreset = vm::selectPreset, setKind = vm::setKind, setBaseUrl = vm::setBaseUrl, setApiKey = vm::setApiKey,
                     setModel = vm::setModel, setName = vm::setName,
                     testAndSave = vm::testAndSave, openForm = vm::openForm, closeForm = vm::closeForm,
-                    openProvider = { openProvider = it; allModels = false }, pickRole = { picking = it }, next = onDone,
+                    openProvider = { openProvider = it; allModels = false }, pickRole = { picking = it }, next = onDone, openSpeech = onOpenSpeech,
                     openSignIn = { signInSheet = it },
                     setReasoningEffort = vm::setReasoningEffort,
                 ),
@@ -220,6 +232,8 @@ class ModelSetupActions(
     val closeForm: () -> Unit = {},
     val openProvider: (String) -> Unit = {},
     val pickRole: (ModelRole) -> Unit = {},
+    /** 打开「语音转文字」的选择页;为 null 时不显示这张卡(上手流程)。 */
+    val openSpeech: (() -> Unit)? = null,
     val next: () -> Unit = {},
     /** 打开一家账号登录的说明面板。 */
     val openSignIn: (SignInKind) -> Unit = {},
@@ -248,10 +262,10 @@ fun ModelSetupContent(ui: ModelSetupUi, onboarding: Boolean, actions: ModelSetup
                 // 上手时先连服务商再选模型;设置里先看用途
                 if (onboarding) {
                     ProvidersSection(ui, actions)
-                    RolesSection(ui, onPick, actions.setReasoningEffort)
+                    RolesSection(ui, onPick, actions.setReasoningEffort, null)
                     FooterNote(ModelSetupCopy.ONBOARDING_NOTE)
                 } else {
-                    RolesSection(ui, onPick, actions.setReasoningEffort)
+                    RolesSection(ui, onPick, actions.setReasoningEffort, actions.openSpeech)
                     ProvidersSection(ui, actions)
                 }
                 Spacer(Modifier.height(16.dp))
@@ -453,7 +467,7 @@ internal object SignInPage {
 
 /** 用途:主模型、看图模型、轻量模型各一张卡,点开是选择页。 */
 @Composable
-private fun RolesSection(ui: ModelSetupUi, onPick: (ModelRole) -> Unit, onReasoning: (ModelRole, String?) -> Unit) {
+private fun RolesSection(ui: ModelSetupUi, onPick: (ModelRole) -> Unit, onReasoning: (ModelRole, String?) -> Unit, onSpeech: (() -> Unit)?) {
     GroupLabel(ModelsCopy.ROLES)
     GroupCard {
         ModelRole.entries.forEachIndexed { i, role ->
@@ -461,6 +475,10 @@ private fun RolesSection(ui: ModelSetupUi, onPick: (ModelRole) -> Unit, onReason
                 onPick(role)
             }
             ReasoningControl(ui, role) { onReasoning(role, it) }
+        }
+        // 第四个用途:语音转文字(不是对话模型,点开是单独的选择页)
+        if (onSpeech != null) {
+            RoleCard(ModelsCopy.SPEECH_ICON, ModelsCopy.SPEECH_LABEL, ModelsCopy.speechLine(ui), tag = "role-speech", onClick = onSpeech)
         }
     }
 }

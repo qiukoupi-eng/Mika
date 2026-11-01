@@ -1,4 +1,4 @@
-<!-- translated-from: README.md @ eb847483c1ab -->
+<!-- translated-from: README.md @ 28ff67918ea1 -->
 <div align="center">
 
 <img src="docs/media/logo.png" alt="Mika" width="88" />
@@ -89,6 +89,7 @@
 | **지금 보고 있는 화면** | 플로팅 캡슐을 두 번 탭하면 보고 있는 화면을 Mika에게 보냅니다: "이거 뭐라고 답하지?", "이거 기록해 둬" |
 | **예약과 조건** | "내일 아침 9시에 알려 줘", "매주 금요일에 이거 해 줘". 시간이 되면 원래 대화에서 실행합니다 |
 | **언제든 끼어들고, 언제든 멈추기** | 작업 중에도 계속 말해서 요구 사항을 더할 수 있고, 아직 반영되지 않은 말은 길게 눌러 취소하거나 수정할 수 있습니다. 멈추면 어디까지 했는지 알려 주고, "계속"이라고 하면 이어서 합니다 |
+| **눌러서 말하기** | 입력창을 누른 채 말하면 글자가 들어가고, 고친 뒤 보낼 수 있습니다. 플로팅 캡슐은 길게 눌러 말하고 손을 떼면 바로 보냅니다. 휴대폰의 음성 인식을 쓰고, 없으면 제공자의 음성 모델을 고를 수 있습니다 |
 | **파일과 계산** | 대화마다 Linux 샌드박스가 있어 Python, Node, 셸로 보내 준 파일을 처리합니다(arm64) |
 | **컴퓨터에서도 사용** | 컴퓨터의 AI 도구가 CLI + Skill 또는 MCP로 Mika에게 일을 맡길 수 있습니다([컴퓨터에서 Mika 쓰기](docs/computer.en.md)) |
 
@@ -150,7 +151,7 @@ API 키 없이 ChatGPT(Plus / Pro), xAI / Grok, OpenRouter 계정으로 로그�
 ## 커뮤니티와 기여
 
 - **문서**: 모든 문서와 추천 읽기 순서는 [문서 목록](docs/README.en.md)에 있습니다
-- **커뮤니티**: [X 그룹 채팅](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)에 참여하세요. WeChat 그룹 QR 코드는 앱의 About › Join the community에 있습니다
+- **커뮤니티**: [X 그룹 채팅](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)에 참여하세요. WeChat으로 작성자에게 연락하려면 앱의 About › Contact the author에 있는 QR 코드를 스캔하세요(친구 신청에 "Mika"라고 적어 주세요)
 - **작성자 팔로우**: X [@wangzan101](https://x.com/wangzan101)
 - **문제 신고**: [Issue 열기](https://github.com/wangzan101/Mika/issues/new/choose). 앱의 About › Send feedback에서 진단 정보를 첨부할 수 있습니다
 - **기여하기**: 앱이나 사이트의 사용 지식을 보태 주세요(일반 텍스트라 코드를 몰라도 됩니다). 코드 기여도 환영합니다. [기여 가이드](CONTRIBUTING.en.md)를 보세요

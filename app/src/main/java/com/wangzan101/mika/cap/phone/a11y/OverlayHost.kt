@@ -5,7 +5,11 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.PixelFormat
 import android.util.Log
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.view.Choreographer
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
@@ -61,6 +65,45 @@ interface OverlayDrag {
 }
 
 /**
+ * 长按:手指按下后不动(没移过触摸阈值)满 holdMs 才算长按,先移过阈值就是拖,之后不再算长按(见 [HoldGesture])。
+ * 长按开始后窗口不跟着拖,手指在屏幕上的位置(屏幕坐标)交给这里;窗口里正按着的按钮这时收到取消,单击不再成立。
+ */
+interface OverlayHold {
+    fun start(rawX: Float, rawY: Float)
+    fun move(rawX: Float, rawY: Float)
+    fun end(rawX: Float, rawY: Float)
+    /** 系统把这串触摸收走了(例如窗口被拆、来电):这次长按不算数。 */
+    fun cancel()
+}
+
+/**
+ * 一串触摸算点按、拖动还是长按(纯逻辑,时钟由调用方管):[down] 后先是 [Kind.Tap](还可能是点按);
+ * 手指离按下处超过 [slopPx] 就是 [Kind.Drag];还是 Tap 时到点([timeout])就是 [Kind.Hold]。定下拖或长按后不再变,下一次 [down] 重来。
+ */
+class HoldGesture(private val slopPx: Float) {
+    enum class Kind { Tap, Drag, Hold }
+
+    var kind = Kind.Tap
+        private set
+
+    fun down(): Kind {
+        kind = Kind.Tap
+        return kind
+    }
+
+    /** 手指此刻离按下处 [dist] 像素。 */
+    fun move(dist: Float): Kind {
+        if (kind == Kind.Tap && dist > slopPx) kind = Kind.Drag
+        return kind
+    }
+
+    fun timeout(): Kind {
+        if (kind == Kind.Tap) kind = Kind.Hold
+        return kind
+    }
+}
+
+/**
  * 借无障碍服务在用户的屏幕(主屏)上画浮层:窗口类型是无障碍浮层,不需要「显示在其他应用上层」权限。
  * 只管机制:加窗口、换位置、拖动、切换能不能接收键盘、拆窗口;画什么由调用方给的 Compose 内容决定。
  * 窗口只有内容那么大,内容以外的地方照常交给下面的 App。
@@ -71,9 +114,15 @@ class OverlayHost internal constructor(private val service: ScreenAccessibility)
 
     /**
      * 加一个包住内容大小的浮层窗口。平时不抢焦点、点不到的地方照常交给下面的 App;
-     * [onOutside] 给了时,在窗口外面按下会通知它(收起卡片用)。加不上(服务已断开、系统不让)时返回 null,不抛错。
+     * [onOutside] 给了时,在窗口外面按下会通知它(收起卡片用)。[touchable] 为 false 时窗口只画、不接触摸(按在上面等于按在下面的 App 上)。
+     * 加不上(服务已断开、系统不让)时返回 null,不抛错。
      */
-    fun open(placement: OverlayPlacement, onOutside: (() -> Unit)? = null, content: @Composable () -> Unit): OverlayWindow? {
+    fun open(
+        placement: OverlayPlacement,
+        onOutside: (() -> Unit)? = null,
+        touchable: Boolean = true,
+        content: @Composable () -> Unit,
+    ): OverlayWindow? {
         val owners = OverlayOwners()
         val frame = OverlayFrame(service).apply {
             setViewTreeLifecycleOwner(owners)
@@ -89,7 +138,8 @@ class OverlayHost internal constructor(private val service: ScreenAccessibility)
             WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                (if (touchable) 0 else WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE),
             PixelFormat.TRANSLUCENT,
         ).apply {
             // 按整块屏幕摆,不让系统再把窗口挤进状态栏、导航栏以内:要避开哪里由调用方按 area() 定
@@ -184,6 +234,28 @@ class OverlayWindow internal constructor(
         frame.handle = handle?.let(::Rect)
     }
 
+    /**
+     * 能长按时给 [hold],不能给 null:按着不动 [holdMs] 毫秒是长按(和 [draggable] 的拖动互斥,先动了就是拖)。
+     * 长按开始时轻震一下,窗口里的按钮收到取消。
+     */
+    fun holdable(hold: OverlayHold?, holdMs: Long = 400) {
+        if (!isOpen) return
+        frame.setHold(hold, holdMs)
+    }
+
+    /**
+     * 铺满整块屏幕(例如按住说话时压暗背后的那一层),或回到包住内容大小。平时空着的窗口包住内容就没有大小,
+     * 不占一块整屏的画布;要铺满时才铺满(包住内容的窗口系统会先按对话框的宽度量,内容填满也到不了整屏)。
+     */
+    fun setFullScreen(full: Boolean) {
+        if (!isOpen) return
+        val size = if (full) WindowManager.LayoutParams.MATCH_PARENT else WindowManager.LayoutParams.WRAP_CONTENT
+        if (params.width == size && params.height == size) return
+        params.width = size
+        params.height = size
+        update()
+    }
+
     /** 能接收键盘时(见 [setFocusable])用户按了返回键;输入法开着时返回键先收起输入法,不到这里。 */
     fun onBack(onBack: (() -> Unit)?) {
         if (isOpen) frame.onBack = onBack
@@ -262,6 +334,7 @@ class OverlayWindow internal constructor(
 /**
  * 浮层窗口的根,里面是 Compose 内容。收窗口外的按下([onOutside]);能拖动时([drag])手指按在把手([handle],没有时整个窗口)里、
  * 移过触摸阈值就把这串触摸截下来,里面的按钮收到取消。拖动按屏幕坐标算。
+ * 能长按时([hold])按下就开始计时,不动满时限就截下这串触摸交给 [hold](点按和拖动都不再成立)。
  */
 internal class OverlayFrame(context: Context) : FrameLayout(context) {
     var onOutside: (() -> Unit)? = null
@@ -270,11 +343,22 @@ internal class OverlayFrame(context: Context) : FrameLayout(context) {
     var onTouch: (() -> Unit)? = null
     var drag: OverlayDrag? = null
     var handle: Rect? = null
+    private var hold: OverlayHold? = null
+    private var holdMs = 400L
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private val gesture = HoldGesture(slop.toFloat())
     private var downX = 0f
     private var downY = 0f
+    private var lastX = 0f
+    private var lastY = 0f
     private var tracking = false
     private var dragging = false
+    private var holding = false
+    /** 长按开始时自己发给里面内容的那个取消:它经过 [track] 时不当成系统的取消。 */
+    private var ownCancel = false
+    private val holdTimer = Runnable(::holdReached)
+    /** 长按计时走主线程的 Handler,不走 View.postDelayed:后者在窗口还没挂上时要等挂上才跑。 */
+    private val timer = Handler(Looper.getMainLooper())
 
     init {
         addOnLayoutChangeListener { _, l, t, r, b, ol, ot, or, ob ->
@@ -282,7 +366,27 @@ internal class OverlayFrame(context: Context) : FrameLayout(context) {
         }
     }
 
+    /**
+     * 换长按的接收方([hold] 为 null 是不能长按了)。同一个接收方再装一次(每次重画都会装)什么都不变;
+     * 换了或拿掉时,正在进行的长按先通知旧的那个取消,这串触摸之后的抬起不再交给谁——否则旧的那个永远等不到收尾。
+     */
+    fun setHold(hold: OverlayHold?, holdMs: Long) {
+        this.holdMs = holdMs
+        if (hold === this.hold) return
+        val old = this.hold
+        this.hold = hold
+        timer.removeCallbacks(holdTimer)
+        if (holding) {
+            holding = false
+            tracking = false
+            old?.cancel()
+        }
+    }
+
     fun release() {
+        timer.removeCallbacks(holdTimer)
+        hold = null
+        holding = false
         drag = null
         handle = null
         onResize = null
@@ -312,43 +416,85 @@ internal class OverlayFrame(context: Context) : FrameLayout(context) {
         return super.dispatchKeyEvent(e)
     }
 
-    override fun onInterceptTouchEvent(e: MotionEvent): Boolean = track(e) && dragging
+    override fun onInterceptTouchEvent(e: MotionEvent): Boolean = track(e) && (dragging || holding)
 
     /** 按在内容里没有东西接的地方也能拖。 */
     @SuppressLint("ClickableViewAccessibility") // 拖动只是挪位置;读屏时用胶囊上的「移到另一边」
     override fun onTouchEvent(e: MotionEvent): Boolean = track(e)
 
-    /** 跟着这串触摸;返回 true 表示还要接着收(能拖的时候)。 */
+    /** 跟着这串触摸;返回 true 表示还要接着收(能拖、能长按的时候)。 */
     private fun track(e: MotionEvent): Boolean {
+        if (ownCancel) return true
         val d = drag
-        if (d == null) {
+        val h = hold
+        if (d == null && h == null) {
+            timer.removeCallbacks(holdTimer)
             tracking = false
             dragging = false
+            holding = false
             return false
         }
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = e.rawX
                 downY = e.rawY
+                lastX = e.rawX
+                lastY = e.rawY
                 tracking = handle?.contains(e.x.toInt(), e.y.toInt()) ?: true
                 dragging = false
+                holding = false
+                gesture.down()
+                timer.removeCallbacks(holdTimer)
+                if (tracking && h != null) timer.postDelayed(holdTimer, holdMs)
             }
             MotionEvent.ACTION_MOVE -> if (tracking) {
+                lastX = e.rawX
+                lastY = e.rawY
                 val dx = e.rawX - downX
                 val dy = e.rawY - downY
-                if (!dragging && hypot(dx, dy) > slop) {
-                    dragging = true
-                    d.start()
+                if (holding) {
+                    hold?.move(e.rawX, e.rawY)
+                } else if (gesture.move(hypot(dx, dy)) == HoldGesture.Kind.Drag) {
+                    timer.removeCallbacks(holdTimer)
+                    if (d != null) {
+                        if (!dragging) {
+                            dragging = true
+                            d.start()
+                        }
+                        d.move(dx, dy)
+                    }
                 }
-                if (dragging) d.move(dx, dy)
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                if (dragging) d.end(e.rawX - downX, e.rawY - downY)
+                timer.removeCallbacks(holdTimer)
+                val up = e.actionMasked == MotionEvent.ACTION_UP
+                if (holding) {
+                    if (up) hold?.end(e.rawX, e.rawY) else hold?.cancel()
+                } else if (dragging) d?.end(e.rawX - downX, e.rawY - downY)
                 tracking = false
                 dragging = false
+                holding = false
             }
         }
         return tracking
+    }
+
+    /** 按着没动到了时限:成了长按。里面正按着的按钮马上收到取消(不等下一个触摸事件),点按、双击都不再成立。 */
+    private fun holdReached() {
+        val h = hold ?: return
+        if (!tracking || dragging || gesture.timeout() != HoldGesture.Kind.Hold) return
+        holding = true
+        performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        val now = SystemClock.uptimeMillis()
+        val cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0f, 0f, 0)
+        ownCancel = true
+        try {
+            super.dispatchTouchEvent(cancel)
+        } finally {
+            ownCancel = false
+            cancel.recycle()
+        }
+        h.start(lastX, lastY)
     }
 }
 

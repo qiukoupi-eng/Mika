@@ -10,9 +10,13 @@ Open "Models" (模型) in Settings (the app also walks you through this on first
 
 1. Add a provider: pick a preset, or pick Custom and enter the endpoint URL; enter your API key. For servers you run yourself, such as Ollama or LM Studio, the address is prefilled with the default port; change it to that machine’s address, and the key is optional.
 2. Tap "Test and save" (测试并保存). When you connect your first provider, a main model is picked automatically.
-3. The main model must support tool calling. Optional: a vision model (understands the UI and finds buttons in screenshots) and a light model (anything cheap and fast; handles small jobs like judging task outcomes and extracting memories).
+3. The main model must support tool calling. Optional: a vision model (understands the UI and finds buttons in screenshots), a light model (anything cheap and fast; handles small jobs like judging task outcomes and extracting memories) and speech to text (see below).
 
-The three roles: the **main model** (does the work; must support tool calling), the **vision model** (describes the UI and locates things in screenshots; off by default on a fresh install, or choose "use main model"), and the **light model** (small jobs like judging outcomes, extracting memories and understanding intent; defaults to the main model). For exactly what "Test and save" tries and where the capability tags on the model list come from, see [model configuration details](../CONTRIBUTING.en.md#model-configuration-details) in the contributing guide.
+The first three roles: the **main model** (does the work; must support tool calling), the **vision model** (describes the UI and locates things in screenshots; off by default on a fresh install, or choose "use main model"), and the **light model** (small jobs like judging outcomes, extracting memories and understanding intent; defaults to the main model). For exactly what "Test and save" tries and where the capability tags on the model list come from, see [model configuration details](../CONTRIBUTING.en.md#model-configuration-details) in the contributing guide.
+
+## Speech to text
+
+The fourth role, used when you hold to talk; pick it under Settings › Models › Speech to text. By default it uses the phone's built-in speech recognition, which shows words as you speak and costs nothing. If the phone has none, or it is not accurate enough, pick a provider's speech model: it transcribes after you finish speaking and uses your quota. The list only shows models whose names look like speech models; for anything else, type the model name in by hand under that provider. Picking runs a short test transcription of silence and only selects the model if it works; otherwise you see why right away. If the phone's recognizer never responds when you hold to talk, Mika tells you and points you here; it never switches to a paid model by itself.
 
 ## Sign in with an account (no key needed)
 

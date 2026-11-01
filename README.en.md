@@ -86,6 +86,7 @@ Then try saying: "Set alarms for 9:40 and 10:00 tomorrow morning" or "Check the 
 | **Your current screen** | Double-tap the floating capsule to send the screen you're looking at: "how should I reply?", "note this down" |
 | **Schedules and conditions** | "Remind me at 9 tomorrow", "do this every Friday"; runs on time in the original conversation |
 | **Jump in or stop anytime** | Keep talking while a task runs to add or correct things (long-press to withdraw or edit one Mika hasn't picked up yet); after a stop it reports where it got to, and "continue" picks up from there |
+| **Hold to talk** | Hold the chat input to speak and edit the words before sending; long-press the floating capsule to speak and release to send. Uses the phone’s built-in speech recognition, or a provider’s speech model if it has none |
 | **Files and computing** | A Linux sandbox per conversation runs Python, Node and shell on the files you send (arm64) |
 | **From your computer** | AI tools on your computer can hand Mika tasks through CLI + Skill or MCP ([use Mika from a computer](docs/computer.en.md)) |
 
@@ -159,7 +160,7 @@ More answers are in the [FAQ](docs/faq.en.md).
 ## Community & contributing
 
 - **Docs**: all docs and a suggested reading order are in the [docs index](docs/README.en.md)
-- **Community**: join the [X group chat](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X); the WeChat group QR code is in the app under About › Join the community
+- **Community**: join the [X group chat](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X); to reach the author on WeChat, scan the QR code in the app under About › Contact the author (mention Mika in your request)
 - **Follow the author**: X [@wangzan101](https://x.com/wangzan101)
 - **Report a problem**: [open an issue](https://github.com/wangzan101/Mika/issues/new/choose); About › Send feedback in the app can attach diagnostics
 - **Contribute**: add usage knowledge for an app or website (plain text, no code needed), or contribute code; see the [contributing guide](CONTRIBUTING.en.md)

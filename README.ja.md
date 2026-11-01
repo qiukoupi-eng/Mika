@@ -1,4 +1,4 @@
-<!-- translated-from: README.md @ eb847483c1ab -->
+<!-- translated-from: README.md @ 28ff67918ea1 -->
 <div align="center">
 
 <img src="docs/media/logo.png" alt="Mika" width="88" />
@@ -89,6 +89,7 @@
 | **いま見ている画面** | フローティングカプセルをダブルタップすると、見ている画面を Mika に送れます：「これなんて返せばいい？」「メモしておいて」 |
 | **時間と条件** | 「明日の朝 9 時にリマインドして」「毎週金曜にこれをやって」。時間になると元の会話の中で実行します |
 | **いつでも口をはさめる、止められる** | 作業中でも話しかけて要望を足せます。まだ取り込まれていないものは長押しで取り消しや編集も可能。止めたときはどこまで進んだかを伝え、「続けて」でそこから再開します |
+| **押して話す** | 入力欄を押したまま話すと文字が入り、直してから送れます。フローティングカプセルは長押しで話し、指を離すとそのまま送信。端末の音声認識を使い、ない場合はプロバイダーの音声モデルを選べます |
 | **ファイルと計算** | 会話ごとに Linux サンドボックスがあり、Python、Node、シェルで送ったファイルを処理します（arm64） |
 | **パソコンからも使える** | パソコンの AI ツールから CLI + Skill または MCP で Mika に作業を頼めます（[パソコンから Mika を使う](docs/computer.en.md)） |
 
@@ -150,7 +151,7 @@ API キーなしで、ChatGPT（Plus / Pro）、xAI / Grok、OpenRouter のア�
 ## コミュニティと貢献
 
 - **ドキュメント**：すべてのドキュメントとおすすめの読む順番は[ドキュメント一覧](docs/README.en.md)へ
-- **コミュニティ**：[X のグループチャット](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)に参加できます。WeChat グループの QR コードはアプリの About › Join the community にあります
+- **コミュニティ**：[X のグループチャット](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)に参加できます。WeChat で作者に連絡するには、アプリの About › Contact the author にある QR コードを読み取ってください（友達申請に「Mika」と書いてください）
 - **作者をフォロー**：X [@wangzan101](https://x.com/wangzan101)
 - **問題を報告**：[Issue を作成](https://github.com/wangzan101/Mika/issues/new/choose)。アプリの About › Send feedback から診断情報を添えられます
 - **貢献する**：アプリやサイトの使い方の知識を書き足す（プレーンテキストで、コードは不要）、またはコードで貢献。[コントリビューションガイド](CONTRIBUTING.en.md)をご覧ください

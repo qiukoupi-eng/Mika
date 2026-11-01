@@ -138,7 +138,7 @@ class FeatureFlags(private val prefs: SharedPreferences) {
     }
 
     companion object {
-        private const val PREFS = "feature_flags"
+        const val PREFS = "feature_flags"
         private const val SPEED_FLAGS = "speed_flags"
         /**
          * 提速开关默认值的升级,按先后各做一次(键记下做过没有):v2 打开分级读屏、连续操作、按需看图;

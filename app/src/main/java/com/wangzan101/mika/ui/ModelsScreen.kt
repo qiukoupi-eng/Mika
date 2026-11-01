@@ -89,16 +89,18 @@ import com.wangzan101.mika.ui.theme.MikaShapes
 import com.wangzan101.mika.ui.theme.MikaSize
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
+import com.wangzan101.mika.voice.SpeechChoice
+import com.wangzan101.mika.voice.SpeechOptions
 
 /** 设置 › 模型:和上手时的配置模型是同一页([ModelSetupScreen]),不在引导流程里。 */
 @Composable
-fun ModelsScreen(store: ProviderStore, onBack: () -> Unit) {
-    ModelSetupScreen(store, onboarding = false, onBack = onBack, onDone = onBack)
+fun ModelsScreen(store: ProviderStore, onBack: () -> Unit, onOpenSpeech: (() -> Unit)? = null) {
+    ModelSetupScreen(store, onboarding = false, onBack = onBack, onDone = onBack, onOpenSpeech = onOpenSpeech)
 }
 
 /** 子页面共用的骨架:顶栏 + 可滚动内容。 */
 @Composable
-private fun Page(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
+internal fun Page(title: String, onBack: () -> Unit, content: @Composable () -> Unit) {
     PageBackground {
         Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.navigationBars).windowInsetsPadding(WindowInsets.ime)) {
             TopBar(title, MikaIcons.Back, onBack, stringResource(R.string.back))
@@ -129,7 +131,12 @@ internal fun RoleCard(icon: ImageVector, label: String, line: ModelsCopy.RoleLin
                     fontFamily = if (line.isModel) FontFamily.Monospace else null, color = if (line.unset) c.ink3 else c.ink,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                Text(line.subtitle, Modifier.padding(top = 1.dp), style = MikaType.Caption, color = c.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (line.subtitle.isNotEmpty()) {
+                    Text(
+                        line.subtitle, Modifier.padding(top = 1.dp), style = MikaType.Caption,
+                        color = if (line.subtitleOk) c.ok else c.ink2, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             RowChevron()
         }
@@ -250,7 +257,7 @@ fun RolePickerContent(ui: ModelSetupUi, role: ModelRole, actions: RolePickerActi
 
 /** 服务不提供模型列表时:照服务商文档填模型名;点「使用」先试调用一次([state] 是进度),通了才选上。 */
 @Composable
-private fun ManualModel(p: Provider, state: ListState?, first: Boolean, onUse: (String) -> Unit) {
+internal fun ManualModel(p: Provider, state: ListState?, first: Boolean, onUse: (String) -> Unit) {
     var name by rememberSaveable { mutableStateOf("") }
     val running = state == ListState.Running
     val enabled = name.isNotBlank() && !running
@@ -739,7 +746,11 @@ object ModelsCopy {
     }
 
     /** 用途卡上的一行:[title] 是模型名([isModel])、「用主模型」「不用」或「未设置」([unset]),[subtitle] 是补充说明。 */
-    data class RoleLine(val title: String, val subtitle: String, val isModel: Boolean = false, val unset: Boolean = false)
+    data class RoleLine(
+        val title: String, val subtitle: String, val isModel: Boolean = false, val unset: Boolean = false,
+        /** 副标题用「可用」的绿色(语音转文字写「可离线」)。 */
+        val subtitleOk: Boolean = false,
+    )
 
     fun roleName(role: ModelRole) = when (role) {
         ModelRole.Main -> tr(R.string.role_main)
@@ -761,6 +772,16 @@ object ModelsCopy {
         ModelRole.Main -> tr(R.string.role_main_hint)
         ModelRole.Vision -> tr(R.string.role_vision_hint)
         ModelRole.Light -> tr(R.string.role_light_hint)
+    }
+
+    /** 第四个用途「语音转文字」不在 [ModelRole] 里(它不是对话模型),卡片的名字、图标、右边两行在这里。 */
+    val SPEECH_LABEL: String get() = "${tr(R.string.role_speech)} · ${tr(R.string.role_speech_what)}"
+    val SPEECH_ICON: ImageVector get() = MikaIcons.Mic
+
+    fun speechLine(ui: ModelSetupUi): RoleLine {
+        val s = SpeechOptions.summary(ui.speech, ui.systemSpeech, ui.providers)
+        val unset = s.title == UNSET
+        return RoleLine(s.title, s.sub.orEmpty(), isModel = !unset && ui.speech is SpeechChoice.Provider, unset = unset, subtitleOk = s.subOk)
     }
 
     fun roleIcon(role: ModelRole): ImageVector = when (role) {

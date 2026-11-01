@@ -123,6 +123,12 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
     /** 模型配置与 Key;建出的模型都套上计量,记到 [usage]。 */
     override val providers: ProviderStore by lazy { ProviderStore.create(this, usage, "Mika/${BuildConfig.VERSION_NAME}") }
 
+    /** 语音转文字的选择:整个进程一份,设置页改了输入框立刻看得到(两份实例互相看不到对方的 set)。 */
+    val speech: com.wangzan101.mika.voice.SpeechSettings by lazy { com.wangzan101.mika.voice.SpeechSettings.get(this) }
+
+    /** 语音输入的入口,输入框和悬浮胶囊共用。 */
+    val voice: com.wangzan101.mika.voice.VoiceInput by lazy { com.wangzan101.mika.voice.VoiceInput(this, speech, providers) }
+
     /** 用 ChatGPT 登录:跑在 App 的作用域里,期间开前台服务撑住进程(见 [com.wangzan101.mika.settings.ChatGptSignIns])。 */
     val chatGptSignIn by lazy {
         com.wangzan101.mika.settings.ChatGptSignIns(scope,

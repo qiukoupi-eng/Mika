@@ -137,16 +137,7 @@ class OpenAiCompatModel(
         return JsonObject(m + ("content" to JsonArray(withMark)))
     }
 
-    private fun mapError(status: Int, retryAfter: String?, body: String): ModelError = ModelAccessErrors.of(status, body, model) ?: when {
-        status == 401 -> ModelError.Auth()
-        status == 402 || body.contains("insufficient_quota") -> ModelError.QuotaExceeded()
-        status == 429 -> ModelError.RateLimited(HttpSupport.retryAfterMs(retryAfter))
-        status == 400 && (body.contains("context_length") || body.contains("maximum context")) -> ModelError.ContextTooLong()
-        status == 404 -> ModelError.ModelNotFound(model)
-        status in 500..599 -> ModelError.Server(status)
-        status == 403 -> ModelError.Auth()
-        else -> ModelError.BadResponse("HTTP $status ${body.take(200)}")
-    }
+    private fun mapError(status: Int, retryAfter: String?, body: String): ModelError = ModelHttp.openAiError(status, retryAfter, body, model)
 
     private fun toolJson(t: ToolSpec): JsonObject = buildJsonObject {
         put("type", "function")

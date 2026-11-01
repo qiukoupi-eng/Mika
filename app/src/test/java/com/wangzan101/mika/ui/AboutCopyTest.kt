@@ -50,7 +50,7 @@ class AboutCopyTest {
         assertEquals("当前 0.1.0", AboutCopy.updateSub("0.1.0", beta = false, date = null))
     }
 
-    /** 交流群面板:中文界面微信群码在前;英文界面 X 群聊在前。 */
+    /** 联系作者面板:中文界面微信码在前;英文界面 X 群聊在前。 */
     @Test
     fun xGroupFirstOnlyInEnglish() {
         assertFalse(AboutCopy.X_GROUP_FIRST)

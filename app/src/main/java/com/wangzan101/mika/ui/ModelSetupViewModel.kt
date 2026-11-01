@@ -25,6 +25,10 @@ import com.wangzan101.mika.settings.ChatGptSignIns
 import com.wangzan101.mika.settings.AccountOutcome
 import com.wangzan101.mika.settings.DevicePrompt
 import com.wangzan101.mika.settings.SignInTarget
+import com.wangzan101.mika.voice.SpeechChoice
+import com.wangzan101.mika.voice.SpeechSettings
+import com.wangzan101.mika.voice.SystemCapability
+import com.wangzan101.mika.voice.Transcriber
 import com.wangzan101.mika.core.chatgpt.ChatGptAuth
 import com.wangzan101.mika.core.chatgpt.SignInException
 import com.wangzan101.mika.core.chatgpt.SignInFailure
@@ -211,6 +215,11 @@ data class ModelSetupUi(
     val manualPick: Map<String, ListState> = emptyMap(),
     /** 服务商页「重新测试」的进度(按服务商 id)。 */
     val retest: Map<String, ListState> = emptyMap(),
+    /** 语音转文字现在的选择,和这台手机自带识别的能力(给用途卡片和选择页用)。 */
+    val speech: SpeechChoice = SpeechChoice.Auto,
+    val systemSpeech: SystemCapability = SystemCapability(available = false, onDevice = false),
+    /** 正在拿一小段录音试转的服务商 id;没有时为 null。 */
+    val speechTesting: String? = null,
 ) {
     /** 还没有服务商时表单总是展开。 */
     val showForm: Boolean get() = formOpen || providers.isEmpty()
@@ -276,9 +285,19 @@ class ModelSetupViewModel(
     private val browser: SignInBrowser? = null,
     /** 登录跑在哪:界面给的是 App 那一份(退到后台、界面重建都不断,期间开前台服务);测试里就用 [scope]。 */
     private val signIns: ChatGptSignIns = ChatGptSignIns(scope),
+    /** 语音转文字的选择;测试和上手流程不传,卡片就不出现。 */
+    private val speech: SpeechSettings? = null,
+    private val systemSpeech: () -> SystemCapability = { SystemCapability(available = false, onDevice = false) },
+    /** 选语音模型时试转用的转写器,和按住说话用的是同一种建法(带客户端标识头)。 */
+    private val transcriber: (Provider) -> Transcriber = { p -> Transcriber(ProviderStore.modelHttp, store.clientHeaders(p)) },
 ) {
     private val _state = MutableStateFlow(snapshot(ModelSetupUi(AddForm.of(ProviderPresets.all.first()))))
     val state: StateFlow<ModelSetupUi> = _state.asStateFlow()
+
+    private val _speechProbe = MutableStateFlow<Map<String, String>>(emptyMap())
+
+    /** 服务商 id -> 选它的语音模型时试转没通过的原因(用现有的说法);选通了或重新选时清掉。 */
+    val speechProbe: StateFlow<Map<String, String>> = _speechProbe.asStateFlow()
 
     private var testJob: Job? = null
     private val refreshJobs = mutableMapOf<String, Job>()
@@ -286,6 +305,7 @@ class ModelSetupViewModel(
     init {
         // 别处(开发者选项等)改了存储时跟着更新
         scope.launch { merge(store.providers, store.configs, store.roles).collect { sync() } }
+        speech?.let { s -> scope.launch { s.choice.collect { sync() } } }
         // 登录在别处结束(通知上取消了)或界面重建前就开始了:跟着它的进度
         scope.launch {
             signIns.running.collect { running ->
@@ -350,6 +370,8 @@ class ModelSetupViewModel(
                 store.accountSession(p.id).let { SubscriptionAccount(it?.label.orEmpty(), it?.signedIn == true) }
             },
             openRouterAccount = store.openRouterAccount()?.let { p -> SubscriptionAccount("", store.hasKey(p.id)) },
+            speech = speech?.choice?.value ?: SpeechChoice.Auto,
+            systemSpeech = systemSpeech(),
         )
     }
 
@@ -826,6 +848,60 @@ class ModelSetupViewModel(
             onPicked()
         }
     }
+
+    // ---------- 语音转文字 ----------
+
+    /** 选「手机自带」或「不用」,当场生效。 */
+    fun pickSpeech(choice: SpeechChoice) {
+        if (choice is SpeechChoice.Provider) return
+        speech?.set(choice)
+        _speechProbe.value = emptyMap()
+        sync()
+    }
+
+    /**
+     * 选某个服务商的语音模型:先拿一小段静音试转(顺便认出该用哪种接口),通了才存成选择并记为核实过,然后调 [onPicked];
+     * 不通就在那一组下面说原因([speechProbe]),不改现在的选择。
+     */
+    fun pickSpeechModel(providerId: String, model: String, onPicked: () -> Unit = {}) {
+        val m = model.trim()
+        val settings = speech ?: return
+        if (m.isEmpty() || _state.value.speechTesting != null) return
+        val p = store.provider(providerId) ?: return
+        _speechProbe.value = _speechProbe.value - providerId
+        _state.update { it.copy(speechTesting = providerId) }
+        scope.launch {
+            val problem = try {
+                val method = withContext(io) {
+                    withTimeout(PROBE_TIMEOUT_MS) { transcriber(p).detect(p, store.providerKey(p.id), m) }
+                }
+                withContext(io) { store.markVerified(p.id, m) }
+                settings.set(SpeechChoice.Provider(p.id, m, method))
+                null
+            } catch (e: TimeoutCancellationException) {
+                tr(R.string.speech_pick_timeout, m, (PROBE_TIMEOUT_MS / 1000).toInt())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ModelError) {
+                speechFailure(m, p, e)
+            } catch (e: Exception) {
+                tr(R.string.speech_pick_failed, e.message.orEmpty())
+            }
+            if (problem != null) _speechProbe.value = _speechProbe.value + (providerId to problem)
+            _state.update { snapshot(it.copy(speechTesting = null)) }
+            if (problem == null) onPicked()
+        }
+    }
+
+    /** 试转没通过的原因:账号没开通、找不到模型用选主模型时同一套说法,其余照服务商回的原话。 */
+    private fun speechFailure(model: String, p: Provider, e: ModelError): String = when (e) {
+        is ModelError.ModelNotAvailable -> tr(R.string.model_probe_not_available, model, e.detail.ifEmpty { e.message.orEmpty() })
+        is ModelError.ModelNotFound -> tr(R.string.model_probe_not_found, model, ModelSetupCopy.modelExample(ProviderPresets.forHost(p.baseUrl)?.kind ?: p.kind))
+        else -> tr(R.string.speech_pick_failed, e.message.orEmpty())
+    }
+
+    /** 选择页打开时,上次试转的结果作废。 */
+    fun clearSpeechProbe() { _speechProbe.value = emptyMap() }
 
     /** 选择页打开时,上次手填试调用的结果作废。 */
     fun clearManualPick() = _state.update { it.copy(manualPick = emptyMap()) }

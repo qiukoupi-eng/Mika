@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 按住说话时录音，转成文字。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- 用户在关于页下载新版后，交给系统安装器确认覆盖安装。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- 沙箱联网时读当前网络的 DNS 服务器 -->
@@ -35,6 +37,11 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <!-- 语音输入要麦克风,但不是必需:没有麦克风的设备照常安装,只是用不了语音 -->
+    <uses-feature
+        android:name="android.hardware.microphone"
+        android:required="false" />
+
     <!-- list_apps 列出可启动的 App;解析系统权限框所在的包,用于判断「被切走」 -->
     <queries>
         <intent>
@@ -57,6 +64,10 @@
         <intent>
             <action android:name="android.intent.action.INSERT" />
             <data android:mimeType="vnd.android.cursor.dir/event" />
+        </intent>
+        <!-- 语音输入:安卓 11 起不声明这条,查手机自带识别服务永远查不到 -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
         </intent>
         <!-- 账号认证器所在的包:没有桌面图标的系统账号登录服务也要看得见,它的登录页冒到主屏上时留给用户处理 -->
         <intent>

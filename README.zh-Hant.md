@@ -1,4 +1,4 @@
-<!-- translated-from: README.md @ eb847483c1ab -->
+<!-- translated-from: README.md @ 28ff67918ea1 -->
 <div align="center">
 
 <img src="docs/media/logo.png" alt="Mika" width="88" />
@@ -87,6 +87,7 @@
 | **此刻的螢幕** | 點兩下懸浮膠囊，把你正在看的這個畫面傳給 Mika：「這要怎麼回」「幫我記下來」 |
 | **定時與條件** | 「明早 9 點提醒我」「每週五做某件事」，時間到了在原本的對話裡執行 |
 | **隨時插話、隨時停** | 任務進行中可以繼續補充要求，還沒處理的可以長按撤回或修改；停下後會交代做到哪裡，說「繼續」就接著做 |
+| **按住說話** | 輸入框按住說話，字填進框裡改好再送出；懸浮膠囊長按說話，放開直接送出。用手機內建的語音辨識，沒有時可選服務商的語音模型 |
 | **檔案與運算** | 每個對話一個 Linux 沙箱，跑 Python、Node 和 shell，處理你傳來的檔案（arm64） |
 | **電腦上也能用** | 電腦上的 AI 工具透過 CLI + Skill 或 MCP 把任務交給 Mika（[從電腦使用 Mika](docs/computer.md)） |
 
@@ -148,7 +149,7 @@
 ## 社群與貢獻
 
 - **文件**：全部文件和閱讀順序見[文件目錄](docs/README.md)
-- **交流群**：App 裡「關於 › 加入交流群」掃碼加入微信群；不用微信的話可以加入 [X 群聊](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)
+- **交流**：App 裡「關於 › 聯絡作者」掃碼加作者微信（請備註 Mika）；不用微信的話可以加入 [X 群聊](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)
 - **關注作者**：X [@wangzan101](https://x.com/wangzan101)
 - **回報問題**：[開 Issue](https://github.com/wangzan101/Mika/issues/new/choose)，App 裡「關於 › 回報問題」可以附上診斷資訊
 - **參與貢獻**：為某個 App、網站補一份使用知識（純文字，不用寫程式），或者貢獻程式碼，見[貢獻指南](CONTRIBUTING.md)

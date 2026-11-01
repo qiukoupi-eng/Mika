@@ -1,4 +1,4 @@
-<!-- translated-from: README.md @ eb847483c1ab -->
+<!-- translated-from: README.md @ 28ff67918ea1 -->
 <div align="center">
 
 <img src="docs/media/logo.png" alt="Mika" width="88" />
@@ -89,6 +89,7 @@ Después, prueba a decirle: «Pon alarmas mañana a las 9:40 y a las 10:00» o �
 | **Lo que tienes en pantalla** | Toca dos veces la cápsula flotante para enviarle la pantalla que estás viendo: «¿qué le respondo?», «apúntame esto» |
 | **Horarios y condiciones** | «Recuérdamelo mañana a las 9», «haz esto todos los viernes»; se ejecuta a su hora en la conversación original |
 | **Interrúmpelo o páralo cuando quieras** | Sigue hablándole mientras trabaja para añadir o corregir cosas (mantén pulsado un mensaje que aún no haya recogido para retirarlo o editarlo); al parar te dice hasta dónde llegó, y con «sigue» retoma desde ahí |
+| **Mantén pulsado para hablar** | Mantén pulsado el cuadro de texto para dictar y corrige antes de enviar; mantén pulsada la cápsula flotante para hablar y suelta para enviarlo directamente. Usa el reconocimiento de voz del teléfono o, si no tiene, un modelo de voz de tu proveedor |
 | **Archivos y cálculo** | Un sandbox de Linux por conversación ejecuta Python, Node y shell sobre los archivos que le envías (arm64) |
 | **Desde tu ordenador** | Las herramientas de IA de tu ordenador pueden encargarle tareas a Mika mediante CLI + Skill o MCP ([usar Mika desde un ordenador](docs/computer.en.md)) |
 
@@ -150,7 +151,7 @@ Hay más respuestas en las [preguntas frecuentes](docs/faq.en.md).
 ## Comunidad y contribuciones
 
 - **Documentación**: toda la documentación y un orden de lectura sugerido están en el [índice de documentación](docs/README.en.md)
-- **Comunidad**: únete al [chat de grupo en X](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X); el código QR del grupo de WeChat está en la app, en About › Join the community
+- **Comunidad**: únete al [chat de grupo en X](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X); para escribir al autor por WeChat, escanea el código QR de la app en About › Contact the author (menciona «Mika» en la solicitud)
 - **Sigue al autor**: X [@wangzan101](https://x.com/wangzan101)
 - **Informa de un problema**: [abre un issue](https://github.com/wangzan101/Mika/issues/new/choose); en la app, About › Send feedback permite adjuntar información de diagnóstico
 - **Contribuye**: añade conocimiento de uso para una app o un sitio web (texto plano, sin programar) o contribuye con código; consulta la [guía de contribución](CONTRIBUTING.en.md)
