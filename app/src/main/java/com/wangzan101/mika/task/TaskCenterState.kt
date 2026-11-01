@@ -12,9 +12,9 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * 任务进行中用户在同一对话里插的话:[Pending] 刚发出、还没送到任务,[Received] 任务的收件箱已收下(下一步就处理),
- * [Joined] 已交给当前任务的模型,[Next] 任务已收尾、作为下一件事,[Cancelled] 停止或当前任务收尾时没用上的远程插话。
+ * [Joined] 已交给当前任务的模型,[Next] 任务已收尾、作为下一件事,[Cancelled] 停止或当前任务收尾时没用上的远程插话,[Withdrawn] 用户已撤回。
  */
-enum class SteerState { Pending, Received, Joined, Next, Cancelled }
+enum class SteerState { Pending, Received, Joined, Next, Cancelled, Withdrawn }
 
 /** 还没交给模型的插话(任务就此收尾时作为下一件事,停止时作废)。 */
 val SteerState.unconsumed: Boolean get() = this == SteerState.Pending || this == SteerState.Received
@@ -28,12 +28,12 @@ data class SteerNote(
     val remote: Boolean = false,
 )
 
-/** 电脑只看到自己追加的消息去向,不带手机上插的话或正文。 */
+/** 电脑只看到自己追加的消息去向,不带手机上插的话或正文;远程插话撤不回(`RunInbox.withdrawSteer`),[SteerState.Withdrawn] 只为穷举,按没用上报。 */
 internal fun remoteSteers(notes: List<SteerNote>, finished: Boolean = false): List<RemoteSteer> = notes.filter { it.remote }.map {
     RemoteSteer(it.id, when (it.state) {
         SteerState.Pending, SteerState.Received -> if (finished) "not_applied" else "received"
         SteerState.Joined -> "joined"
-        SteerState.Next, SteerState.Cancelled -> "not_applied"
+        SteerState.Next, SteerState.Cancelled, SteerState.Withdrawn -> "not_applied"
     })
 }
 

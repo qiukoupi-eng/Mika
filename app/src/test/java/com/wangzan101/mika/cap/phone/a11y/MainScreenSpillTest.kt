@@ -3,6 +3,7 @@ package com.wangzan101.mika.cap.phone.a11y
 import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.InUse
 import com.wangzan101.mika.cap.phone.a11y.MainScreenSpill.PullBack
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -110,6 +111,20 @@ class MainScreenSpillTest {
         // 树本来就读不出东西的 App 不算要用户处理,照常挪回
         assertEquals(false, MainScreenSpill.needsUser(passwordField = false, readable = false, secureWindow = false))
         assertEquals(false, MainScreenSpill.needsUser(passwordField = false, readable = true, secureWindow = false))
+    }
+
+    @Test fun accountServiceWithoutLauncherIsAUserStep() {
+        val auth = setOf("com.example.accounts", "com.example.chat")
+        // 系统的账号登录服务:登记了认证器、没有桌面图标,冒到主屏上的加账号、验证码页整屏、没有密码框也留给用户
+        assertTrue(MainScreenSpill.authenticatorUi("com.example.accounts", auth, hasLauncher = false))
+    }
+
+    @Test fun authenticatorAppWithLauncherIsMovedBackAsBefore() {
+        val auth = setOf("com.example.accounts", "com.example.chat")
+        // 聊天 App 为同步联系人登记了认证器,但它有桌面图标:会话、分享页冒到主屏上照常挪回,不因认证器留下
+        assertFalse(MainScreenSpill.authenticatorUi("com.example.chat", auth, hasLauncher = true))
+        // 不是认证器的包,没有桌面图标也不算
+        assertFalse(MainScreenSpill.authenticatorUi("com.example.helper", auth, hasLauncher = false))
     }
 
     @Test fun oneVerdictPerTaskInOrder() {

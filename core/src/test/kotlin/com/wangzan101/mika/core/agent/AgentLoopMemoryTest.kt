@@ -13,8 +13,17 @@ import com.wangzan101.mika.core.model.Role
 import com.wangzan101.mika.core.model.StopReason
 import com.wangzan101.mika.core.record.RunEvent
 import com.wangzan101.mika.core.record.RunSink
+import com.wangzan101.mika.core.run.RunId
+import com.wangzan101.mika.core.run.RunInbox
+import com.wangzan101.mika.core.run.RunInput
+import com.wangzan101.mika.core.run.RunSpec
 import com.wangzan101.mika.core.tool.FakeScreen
+import com.wangzan101.mika.core.cap.web.AttachedPage
+import com.wangzan101.mika.core.cap.web.FakeWebPort
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -68,6 +77,59 @@ class AgentLoopMemoryTest {
         assertEquals(ids, loop.usedMemoryIds)
         assertTrue(s.items.value.all { it.useCount == 1 })
         assertEquals(listOf(ids), events.filterIsInstance<RunEvent.MemoryUsed>().map { it.ids })
+    }
+
+    // 浏览器页上问:页面说明里的标题、网址、选中的字是网页上的,不算用户说的话;记忆的引文出自它们时不收
+    @Test fun pageDescriptionIsNotTheUserWords() {
+        val s = store()
+        val said = UserUtterances()
+        val page = AttachedPage.Page("https://shop.example.com/address", "收货地址是幸福路 8 号 - 地址管理", "默认地址 幸福路 8 号")
+        val save = ModelReply(listOf(Part.ToolCall("c1", "memory_save",
+            """{"kind":"fact","content":"用户的收货地址是幸福路 8 号","quote":"收货地址是幸福路 8 号"}""")), StopReason.ToolUse, null)
+        val model = FakeModel(save, finishReply)
+        runBlocking {
+            AgentLoop(model, toolDispatcher(FakeScreen(), memory = s, utterances = said, web = FakeWebPort()), "B", memory = s)
+                .run(AttachedPage.compose(page, "这一页的地址对不对"))
+        }
+        val result = model.requests[1].last { it.role == Role.Tool }.parts.filterIsInstance<Part.ToolResult>().single().content
+        assertTrue(result, "quote_not_from_user" in result)
+        assertTrue(s.items.value.none { "幸福路" in it.content })
+        assertEquals(listOf("这一页的地址对不对"), said.all)
+    }
+
+    // 浏览器页上插话带着新选中的字:只收插话里打的字,页面说明不收
+    @Test fun pageSteerAddsOnlyTheTypedWords() = runBlocking {
+        assertEquals(listOf("这一页的地址对不对", "改成这个"), saidWithPageSteer("改成这个"))
+    }
+
+    // 插话只选了字、没打字:这一句什么也不收
+    @Test fun selectionOnlySteerAddsNothing() = runBlocking {
+        assertEquals(listOf("这一页的地址对不对"), saidWithPageSteer(""))
+    }
+
+    // 浏览器页上回答追问也一样:回答带着页面说明和选中的字时只收打的字
+    @Test fun pageAnswerAddsOnlyTheTypedWords() = runBlocking {
+        val s = store()
+        val said = UserUtterances()
+        val page = AttachedPage.Page("https://shop.example.com/address", "收货地址是幸福路 8 号 - 地址管理")
+        val ask = ModelReply(listOf(Part.ToolCall("q1", "ask_user", """{"prompt":"用哪个地址?"}""")), StopReason.ToolUse, null)
+        val loop = AgentLoop(FakeModel(ask, finishReply, finishReply), toolDispatcher(FakeScreen(), memory = s, utterances = said, web = FakeWebPort()), "B", memory = s)
+        val run = async { loop.run(AttachedPage.compose(page, "这一页的地址对不对")) }
+        withTimeout(5_000) { loop.state.first { it is TaskState.WaitingInput } }
+        assertTrue(loop.answerInput(AttachedPage.compose(page.copy(selection = "默认地址 幸福路 8 号"), "就这个")))
+        run.await()
+        assertEquals(listOf("这一页的地址对不对", "就这个"), said.all)
+    }
+
+    /** 在浏览器页上开局,插话带着新选中的字和 [words];返回这次记下的用户的话。 */
+    private suspend fun saidWithPageSteer(words: String): List<String> {
+        val s = store()
+        val said = UserUtterances()
+        val page = AttachedPage.Page("https://shop.example.com/address", "收货地址是幸福路 8 号 - 地址管理")
+        val inbox = RunInbox().apply { send(RunInput.Steer("m1", AttachedPage.compose(page.copy(selection = "默认地址 幸福路 8 号"), words))) }
+        AgentLoop(FakeModel(finishReply), toolDispatcher(FakeScreen(), memory = s, utterances = said, web = FakeWebPort()), "B", memory = s)
+            .run(RunSpec(RunId("r1"), AttachedPage.compose(page, "这一页的地址对不对"), "thread-1"), inbox)
+        return said.all
     }
 
     @Test fun disabledMeansNoBlockNoTools() {

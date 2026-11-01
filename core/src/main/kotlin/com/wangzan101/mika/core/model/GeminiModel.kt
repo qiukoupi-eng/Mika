@@ -25,7 +25,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * - 角色只有 user / model;相邻同角色合并。历史里的 System 消息并入 systemInstruction。
  * - Gemini 不给调用编号:合成 "gemini-<序号>-<名称>"(响应带 id 则用之);
  *   回传 functionResponse 时按 callId 到历史里的 ToolCall 找函数名。
- * - thought 部分解析为 Thinking,不回传、请求也不开 thinkingConfig。
+ * - thought 部分解析为 Thinking;选了思考强度时用 `generationConfig.thinkingConfig.thinkingLevel` 控制深度。
  */
 /** Google 给的占位签名:调用不是 Gemini 自己产生的(带不出原签名)时用它跳过签名校验。 */
 internal const val SKIP_SIGNATURE = "skip_thought_signature_validator"
@@ -40,6 +40,8 @@ class GeminiModel(
     private val headers: Map<String, String> = emptyMap(),
     /** 回复最多多少 token(`generationConfig.maxOutputTokens`);null 不限,按服务端默认。 */
     private val maxOutputTokens: Int? = null,
+    /** 用户选的思考档位;null 不发,`none` 尽量关掉思考,其余作为 `thinkingConfig.thinkingLevel` 发出。 */
+    private val reasoningEffort: String? = null,
 ) : StreamingChatModel {
     override val name: String get() = model
     private val endpoint = baseUrl.trimEnd('/') + "/v1beta/models/$model:generateContent"
@@ -78,7 +80,19 @@ class GeminiModel(
                 })
             })
             put("contents", buildContents(messages))
-            maxOutputTokens?.let { n -> putJsonObject("generationConfig") { put("maxOutputTokens", n) } }
+            if (maxOutputTokens != null || reasoningEffort != null) putJsonObject("generationConfig") {
+                maxOutputTokens?.let { put("maxOutputTokens", it) }
+                reasoningEffort?.let { effort ->
+                    putJsonObject("thinkingConfig") {
+                        if (effort == "none") {
+                            put("thinkingBudget", 0)
+                        } else {
+                            put("includeThoughts", true)
+                            put("thinkingLevel", effort.uppercase())
+                        }
+                    }
+                }
+            }
         }
         return Request.Builder().url(if (stream) streamEndpoint else endpoint)
             .withHeaders(headers)

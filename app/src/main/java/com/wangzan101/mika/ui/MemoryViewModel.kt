@@ -169,7 +169,7 @@ class MemoryViewModel(
 
     /** 恢复时清掉旧结果,免得下一次一不顺又马上被停用。 */
     fun restoreSkill(name: String) = changeSkill(name) {
-        it.copy(status = if (it.learnedFrom != null && "verified" !in it.outcomes) SkillStatus.trial else SkillStatus.active, outcomes = emptyList())
+        it.copy(status = it.restoredStatus(), outcomes = emptyList())
     }
 
     fun deleteSkill(name: String) { skills?.remove(name); skillsChanged() }
@@ -243,6 +243,7 @@ data class SkillsUi(val drafts: List<SkillRow> = emptyList(), val installed: Lis
                 s.markdown, suspended = s.status == SkillStatus.suspended, trial = s.status == SkillStatus.trial,
                 canRestore = skills?.revisions(s.name)?.isNotEmpty() == true,
                 recent = s.outcomes.takeLast(3).map(::outcomeLabel),
+                userCreated = s.createdByUser,
             )
         }
 
@@ -267,4 +268,6 @@ data class SkillRow(
     val id: String, val name: String, val display: String, val description: String, val markdown: String,
     val suspended: Boolean = false, val trial: Boolean = false, val canRestore: Boolean = false,
     val recent: List<String> = emptyList(), val changedLines: List<String> = emptyList(),
+    /** 用户在任务里要求写下的(不是从办成的任务里学来的)。 */
+    val userCreated: Boolean = false,
 )

@@ -11,6 +11,7 @@ import com.wangzan101.mika.core.action.OutwardPacing
 import com.wangzan101.mika.core.cap.phone.OperatingPace
 import com.wangzan101.mika.core.usage.RunUsageTally
 import com.wangzan101.mika.core.shell.AccessibilityRepair
+import com.wangzan101.mika.core.shell.HelperRestart
 import com.wangzan101.mika.ui.StatusCopy
 import com.wangzan101.mika.core.cap.sandbox.SandboxStatus
 import com.wangzan101.mika.cap.sandbox.SandboxState
@@ -297,10 +298,10 @@ class TaskRun(
      * [messageId] 是界面给这句话的编号,界面据此标出它的去向(见 [SteerNote])。
      */
     fun steer(text: String, messageId: String = UUID.randomUUID().toString()) {
-        synchronized(service.taskState.shownLock) { _steers.value = _steers.value + SteerNote(messageId, text, SteerState.Pending) }
-        scope.launch {
+        synchronized(service.taskState.shownLock) {
+            _steers.value = _steers.value + SteerNote(messageId, text, SteerState.Pending)
             // 收件箱收下了就马上告诉用户:模型此刻的请求已撤掉,下一步就带着这句话想(交给模型时再改成已加入)
-            if (inbox.send(RunInput.Steer(messageId, text)) == InputReceipt.Accepted) markSteers(setOf(messageId), SteerState.Received, from = SteerState.Pending)
+            if (inbox.steer(messageId, text) == InputReceipt.Accepted) markSteers(setOf(messageId), SteerState.Received, from = SteerState.Pending)
             else {
                 if (stopPressed) markSteers(setOf(messageId), SteerState.Cancelled)
                 else {
@@ -325,6 +326,13 @@ class TaskRun(
             }
             id
         }
+    }
+
+    /** 撤回手机上插的、模型还没取走的那句;已取走、已收尾或是电脑追加的(收件箱拒绝)返回 false,去向不变。 */
+    fun withdrawSteer(messageId: String): Boolean = synchronized(service.taskState.shownLock) {
+        if (!inbox.withdrawSteer(messageId)) return@synchronized false
+        markSteers(setOf(messageId), SteerState.Withdrawn)
+        true
     }
 
     /** 手机插话可转下一任务;远程插话只能用于当前任务,未消费的一律作废,不改变来源和权限。 */
@@ -473,7 +481,10 @@ class TaskRun(
                 val shell = withTimeoutOrNull(SHELL_WAIT_MS) { conn.shell.filterNotNull().first() }
                     ?: run {
                         phoneServices.setupPrompt.request()
-                        throw PhoneUnavailable(NO_PHONE_HELPER)
+                        // 只用 USB 命令起过的助手停了:照实说要再运行命令,不让人去找无线调试
+                        throw PhoneUnavailable(
+                            if (phoneServices.shellControl.restart == HelperRestart.UsbCommand) NO_PHONE_HELPER_USB else NO_PHONE_HELPER,
+                        )
                     }
                 // 服务卡在「开着却没运行」、正在自动重启时多等一会儿,修好了接着做,放弃了照常报错
                 val a11y = AccessibilityRepair.awaitService(ScreenAccessibility.instance, phoneServices.recovery.accessibilityRepair.phase, A11Y_WAIT_MS)
@@ -568,7 +579,8 @@ class TaskRun(
             val profileSnapshot = if (switches.useMemory) withContext(Dispatchers.IO) {
                 runCatching { memoryRuntime.profile().snapshot() }.onFailure { Log.w(TAG, "profile unavailable", it) }.getOrDefault(emptyList())
             } else emptyList()
-            val utterances = memory?.let { UserUtterances() }
+            // 用户本次说的话:记忆的引文、按用户要求写下技能的引文都据此核对(只在内存里,任务开始清空)
+            val utterances = UserUtterances()
             // 改名前沉淀的个人技能:里面的旧工具名载入时换成现在的
             val catalog = GuideCatalog.withPersonal(skills, memoryRuntime.skills(), legacyNames()::rewrite)
             // 内置浏览器:每个任务自己的后台网页显示、标签池和脚本引擎,第一次打开网址时才建(只用手机的任务不建);
@@ -669,7 +681,9 @@ class TaskRun(
                 userScreens = userScreens,
                 scheduleTrigger = if (provenance.origin == RunOrigin.Ui) { trigger -> TriggerRuntime.schedule(service, trigger) } else null,
                 scheduleAdmin = if (provenance.origin == RunOrigin.Ui) LocalScheduleAdmin(service) else null,
-                childHost = childRunner)
+                childHost = childRunner,
+                // 用户要求时写下或改写个人技能(和自学收下的放在同一处,设置里立刻能看到)
+                personalSkills = memoryRuntime.skills())
             dispatcher = tools
             val agent = AgentLoop(
                 model, tools,
@@ -985,7 +999,7 @@ class TaskRun(
             yieldToForeground = { while (service.hasActiveRuns()) delay(500) },
         )
         val notes = learning.learn(RunAftermath(
-            conversationId, runId, k.agent.taskText ?: goal, end, k.utterances?.all.orEmpty(), k.dispatcher.savedChanges, k.agent.usedMemoryIds,
+            conversationId, runId, k.agent.taskText ?: goal, end, k.utterances.takeIf { k.memory != null }?.all.orEmpty(), k.dispatcher.savedChanges, k.agent.usedMemoryIds,
             k.dispatcher.definitions().map { it.name }.toSet(), k.dispatcher.index,
             events = { withContext(Dispatchers.IO) { runId?.let { k.runStore?.events(it) }.orEmpty() } },
             origin = provenance.origin,
@@ -1069,6 +1083,7 @@ class TaskRun(
         val WAITING_DISPLAY: String get() = tr(R.string.task_waiting_display)
         const val A11Y_WAIT_MS = 5_000L
         val NO_PHONE_HELPER: String get() = tr(R.string.task_no_phone_helper)
+        val NO_PHONE_HELPER_USB: String get() = tr(R.string.task_no_phone_helper_usb)
         val NO_ACCESSIBILITY: String get() = tr(R.string.task_no_a11y)
         const val TAG = "MikaTask"
     }

@@ -121,10 +121,14 @@
     <string name="phone_connect_port_hint">On the “Wireless debugging” page, the number after the colon in “IP address &amp; port”, e.g. 41235</string>
     <string name="phone_connect_port_submit">Connect</string>
     <string name="fail_usb_stopped">Phone helper stopped</string>
-    <string name="fail_usb_stopped_body">It was started from a computer and stops when the phone restarts. Run the USB command on the computer again, or pair Wireless debugging so it restarts by itself.</string>
+    <string name="fail_usb_stopped_body">It was started with the USB start command, so it doesn’t come back by itself (for example after the phone restarts). Run the command below again and phone control is back.</string>
     <string name="phone_usb_ask">Can’t find Wireless debugging?</string>
     <string name="phone_usb_title">Can’t use Wireless debugging on this phone? Start from a computer instead</string>
-    <string name="phone_usb_body">Plug the phone into a computer with a USB cable and run this command on the computer. Run it again after the phone restarts.</string>
+    <string name="phone_usb_body">Plug the phone into a computer with a USB cable and run this command on the computer (any other way to run this adb command for the phone works too). Run it again after the phone restarts.</string>
     <string name="phone_usb_copy">Copy</string>
     <string name="phone_usb_copied">Command copied</string>
+    <string name="phone_usb_again_title">Run the start command again</string>
+    <string name="phone_usb_again_body">Plug the phone into a computer with a USB cable and run this command on the computer (any other way to run this adb command for the phone works too). It’s needed again after every phone restart.</string>
+    <string name="phone_success_note_usb">Keep USB debugging on. The helper was started with the USB command and doesn’t come back after a phone restart: open Mika and run the command again.</string>
+    <string name="phone_usage_note_usb">Mika’s built-in helper was started with the USB start command and keeps running after you unplug the cable. Keep “USB debugging” (in Developer options) on; turning it off stops phone control. After a phone restart the helper doesn’t come back by itself: open Mika and run the command again (you can copy it in “Set up phone control”). If this phone has a working “Wireless debugging”, pairing once lets Mika reconnect by itself after restarts.</string>
 </resources>

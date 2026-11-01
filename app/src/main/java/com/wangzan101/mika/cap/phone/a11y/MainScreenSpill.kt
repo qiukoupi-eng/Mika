@@ -89,6 +89,14 @@ internal object MainScreenSpill {
      */
     fun needsUser(passwordField: Boolean, readable: Boolean, secureWindow: Boolean): Boolean = passwordField || (!readable && secureWindow)
 
+    /**
+     * 这个包是不是系统的账号登录服务:在认证器[authenticators]里,自己又没有桌面图标([hasLauncher] 为 false)。
+     * 这种包冒到主屏上的只会是加账号、登录、验证一类页面,要用户亲手做,整屏、没有密码框也不能挪到 Mika 的屏上。
+     * 有桌面图标的认证器包(同步联系人的聊天 App、邮箱 App)只是顺带登记了账号,它的页面照常按别的判据走。纯逻辑。
+     */
+    fun authenticatorUi(pkg: String, authenticators: Set<String>, hasLauncher: Boolean): Boolean =
+        pkg in authenticators && !hasLauncher
+
     private fun verdict(a: Arrival, since: Long, windowMs: Long, topBefore: Int, excluded: Set<String>, userTaps: List<Tap>): Verdict? {
         if (a.at < since || a.at > since + windowMs) return null
         val pkg = a.packageName ?: return null

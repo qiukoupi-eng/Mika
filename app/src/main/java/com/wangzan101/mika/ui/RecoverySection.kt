@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.wangzan101.mika.core.shell.AutoOnBlock
 import com.wangzan101.mika.core.shell.BuiltinShellStatus
+import com.wangzan101.mika.core.shell.HelperRestart
 import com.wangzan101.mika.core.shell.PermissionResult
 import com.wangzan101.mika.core.shell.RecoveryCapability
 import com.wangzan101.mika.core.shell.RecoveryConsent
@@ -77,12 +78,21 @@ object RecoveryCopy {
         is PermissionResult.Failed -> FAILED
     }
 
+    /** 要靠配对过的无线调试才起作用的几项:只用 USB 启动命令起过助手时用不上。 */
+    private val NEEDS_PAIRING = setOf(RecoveryCapability.RestoreAfterReboot, RecoveryCapability.AutoWirelessDebugging)
+
     /**
      * 默认打开、还没生效的那一项下面说一句:没配好手机操作就提示先完成设置(配好后自动打开),
      * 自动打开没成功就照实说;生效了或用户关掉了不多说。
+     * 助手只用 USB 启动命令起过([HelperRestart.UsbCommand])时,靠无线调试重起助手的两项说清用不上、重启后要再运行命令。
      */
-    fun pending(c: RecoveryCapability, consent: RecoveryConsent, paired: Boolean, autoFailed: Set<RecoveryCapability>): String? = when {
-        !consent.wants(c) || consent.isApplied(c) -> null
+    fun pending(
+        c: RecoveryCapability, consent: RecoveryConsent, paired: Boolean, autoFailed: Set<RecoveryCapability>,
+        restart: HelperRestart = HelperRestart.None,
+    ): String? = when {
+        !consent.wants(c) -> null
+        restart == HelperRestart.UsbCommand && c in NEEDS_PAIRING -> tr(R.string.rec_needs_pairing)
+        consent.isApplied(c) -> null
         !paired -> NEED_SETUP
         c in autoFailed -> FAILED
         else -> null
@@ -127,7 +137,9 @@ fun RecoverySwitches() {
     var message by remember { mutableStateOf<Pair<RecoveryCapability, String>?>(null) }
     val notes = RecoveryCapability.entries.mapNotNull { cap ->
         val m = message
-        (if (m?.first == cap) m.second else RecoveryCopy.pending(cap, consent, shell == BuiltinShellStatus.Running || phone.shellControl.paired, autoFailed))
+        (if (m?.first == cap) m.second else RecoveryCopy.pending(
+            cap, consent, shell == BuiltinShellStatus.Running || phone.shellControl.paired, autoFailed, phone.shellControl.restart,
+        ))
             ?.let { cap to it }
     }.toMap()
     RecoverySection(

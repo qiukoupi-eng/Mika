@@ -23,9 +23,9 @@ class GeminiModelTest {
     @Before fun setUp() { server = MockWebServer().also { it.start() } }
     @After fun tearDown() { server.shutdown() }
 
-    private fun model(vision: Boolean = false) = GeminiModel(
+    private fun model(vision: Boolean = false, reasoningEffort: String? = null) = GeminiModel(
         server.url("/").toString().trimEnd('/'), "gk", "gemini-x",
-        Capabilities(true, vision, 1000000, false), OkHttpClient(),
+        Capabilities(true, vision, 1000000, false), OkHttpClient(), reasoningEffort = reasoningEffort,
     )
     private val user = listOf(Message(Role.User, listOf(Part.Text("hi")), Author.Mika))
     private fun ok(body: String) = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
@@ -52,6 +52,20 @@ class GeminiModelTest {
     @Test fun usesIdWhenPresent() = runTest {
         server.enqueue(ok(cand("""[{"functionCall":{"id":"c9","name":"phone_tap","args":{}}}]""")))
         assertEquals(Part.ToolCall("c9", "phone_tap", "{}"), model().complete("s", user, emptyList()).parts[0])
+    }
+
+    @Test fun sendsThinkingLevelOnlyWhenChosen() = runTest {
+        server.enqueue(ok(cand("""[{"text":"ok"}]""")))
+        model(reasoningEffort = "medium").complete("s", user, emptyList())
+        val cfg = sentBody().obj("generationConfig").obj("thinkingConfig")
+        assertEquals("MEDIUM", cfg.str("thinkingLevel"))
+        assertEquals("true", cfg["includeThoughts"]!!.jsonPrimitive.content)
+
+        server.enqueue(ok(cand("""[{"text":"ok"}]""")))
+        model(reasoningEffort = "none").complete("s", user, emptyList())
+        val off = sentBody().obj("generationConfig").obj("thinkingConfig")
+        assertEquals("0", off["thinkingBudget"]!!.jsonPrimitive.content)
+        assertFalse(off.containsKey("thinkingLevel"))
     }
 
     @Test fun parsesThoughtParts() = runTest {

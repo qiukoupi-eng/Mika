@@ -85,6 +85,7 @@ class SystemStatusMonitor(context: Context, private val shell: BuiltinShellContr
         wirelessDebuggingMissing = DeveloperSettings.wirelessDebuggingMissing(app.contentResolver),
         usbDebugging = DeveloperSettings.usbDebugging(app.contentResolver),
         restrictedSettings = restrictedSettings(),
+        helperRestart = shell.restart,
     )
 
     private fun channelImportance(id: String): Int? =

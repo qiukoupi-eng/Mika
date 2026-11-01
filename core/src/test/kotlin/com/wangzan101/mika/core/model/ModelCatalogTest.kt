@@ -63,6 +63,31 @@ class ModelCatalogTest {
         assertEquals("/v1/models?limit=1000&after_id=claude-a", server.takeRequest().path)
     }
 
+    /** Anthropic 列表的 `capabilities.effort` / `thinking.types`:档位逐项照填,不接受自适应思考的没有档位。 */
+    @Test fun anthropicReadsEffortLevelsAndThinkingTypes() = runTest {
+        fun sup(b: Boolean) = """{"supported":$b}"""
+        fun model(id: String, effort: String, types: String) = """{"type":"model","id":"$id","display_name":"$id",
+            "capabilities":{"effort":$effort,"thinking":{"supported":true,"types":$types}}}"""
+        val allEfforts = """{"high":${sup(true)},"low":${sup(true)},"max":${sup(true)},"medium":${sup(true)},"supported":true,"xhigh":${sup(false)}}"""
+        val noEffort = """{"high":${sup(false)},"low":${sup(false)},"max":${sup(false)},"medium":${sup(false)},"supported":false,"xhigh":null}"""
+        server.enqueue(ok("""{"data":[
+            ${model("full", allEfforts, """{"adaptive":${sup(true)},"between_tools":${sup(false)},"disabled":${sup(true)},"enabled":${sup(true)}}""")},
+            ${model("no-off", allEfforts, """{"adaptive":${sup(true)},"disabled":${sup(false)},"enabled":${sup(false)}}""")},
+            ${model("budget", allEfforts, """{"adaptive":${sup(false)},"disabled":${sup(true)},"enabled":${sup(true)}}""")},
+            ${model("plain", noEffort, """{"adaptive":${sup(false)},"disabled":${sup(true)},"enabled":${sup(true)}}""")}
+        ],"has_more":false}"""))
+        val byId = models(catalog.anthropic(base, "ak")).associateBy { it.id }
+        // 按由浅到深排;xhigh 没标支持的不给
+        assertEquals(listOf("none", "low", "medium", "high", "max"), byId.getValue("full").reasoningEfforts)
+        assertEquals(listOf("adaptive", "disabled", "enabled"), byId.getValue("full").thinkingTypes)
+        // 不接受关掉思考的:没有 none
+        assertEquals(listOf("low", "medium", "high", "max"), byId.getValue("no-off").reasoningEfforts)
+        // 只接受按预算思考、或不分档位的:能思考但没有可选档位
+        assertEquals(emptyList<String>(), byId.getValue("budget").reasoningEfforts)
+        assertEquals(emptyList<String>(), byId.getValue("plain").reasoningEfforts)
+        assertEquals(true, byId.getValue("plain").reasoning)
+    }
+
     /** 按协议逐个给地址的列表:形状照一家订阅服务的真实返回删减而来。 */
     private val perModelApi = """{"object":"list","data":[
         {"id":"deepseek-v4.1-flash","object":"model","name":"DeepSeek V4.1 Flash","type":"chat",

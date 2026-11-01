@@ -422,7 +422,44 @@ class BuiltinShellEngineTest {
         advanceUntilIdle()
         assertEquals(BuiltinShellStatus.Failed(BuiltinShellFailure.UsbHelperStopped), e.status.value)
         assertEquals(0, launches())
-        assertEquals(BuiltinShellFix.RePair, (e.status.value as BuiltinShellStatus.Failed).fix)
+        // 再运行一次命令,不是去配对无线调试
+        assertEquals(BuiltinShellFix.RunUsbCommand, (e.status.value as BuiltinShellStatus.Failed).fix)
+        assertEquals(HelperRestart.UsbCommand, e.restart)
+    }
+
+    /** 用着用着断了(比如助手正在换一个新的来交接):先显示正在连接,等一会儿还没回来才说停了。 */
+    @Test
+    fun usbHelperDropMidRunGetsAGraceBeforeStopped() = runTest {
+        val e = engine()
+        e.start()
+        helper.value = "usb"
+        runCurrent()
+        helper.value = null
+        runCurrent()
+        assertEquals(BuiltinShellStatus.Connecting, e.status.value)
+        advanceTimeBy(2_000)
+        assertEquals(BuiltinShellStatus.Connecting, e.status.value)
+        // 换手完成:新的助手来交接,一直没有闪成「已停止」
+        helper.value = "usb2"
+        runCurrent()
+        assertEquals(BuiltinShellStatus.Running, e.status.value)
+        advanceUntilIdle()
+        assertEquals(BuiltinShellStatus.Running, e.status.value)
+        assertEquals(0, launches())
+    }
+
+    /** 助手停了以后靠什么再起来:没设置、只用 USB 命令起过、配对过无线调试(配对过优先,哪怕上次是用命令起的)。 */
+    @Test
+    fun restartRouteFollowsHowTheHelperCameUp() = runTest {
+        val e = engine()
+        e.start()
+        advanceUntilIdle()
+        assertEquals(HelperRestart.None, e.restart)
+        helper.value = "usb"
+        runCurrent()
+        assertEquals(HelperRestart.UsbCommand, e.restart)
+        platform.pairedFlag = true
+        assertEquals(HelperRestart.Wireless, e.restart)
     }
 
     /** 重启后(新进程)助手没来交接:先等一会儿(还活着的会自己来),等不到才说它停了。 */

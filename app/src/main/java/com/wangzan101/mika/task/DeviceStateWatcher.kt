@@ -8,12 +8,20 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.PowerManager
 import android.view.Display
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * 设备状态:主屏是否不可操作(熄屏或锁屏),以及 Agent 的 App 任务是否被用户挪到了主屏。
@@ -27,13 +35,14 @@ class DeviceStateWatcher(
     private val power = appContext.getSystemService(PowerManager::class.java)
     private val keyguard = appContext.getSystemService(KeyguardManager::class.java)
 
-    private val _locked = MutableStateFlow(readLocked())
-    val locked: StateFlow<Boolean> = _locked.asStateFlow()
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val lock = LockState({ LockState.Reading(power.isInteractive, keyguard.isKeyguardLocked) }, scope)
+    val locked: StateFlow<Boolean> = lock.locked
 
     // 只用广播当作「该重新看一眼」的信号,状态本身每次都从系统读,不靠广播顺序推断
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            _locked.value = readLocked()
+            lock.refresh()
         }
     }
 
@@ -48,10 +57,8 @@ class DeviceStateWatcher(
         } else {
             appContext.registerReceiver(receiver, filter)
         }
-        _locked.value = readLocked() // 注册前后之间的变化
+        lock.refresh() // 注册前后之间的变化
     }
-
-    private fun readLocked() = isLocked(power.isInteractive, keyguard.isKeyguardLocked)
 
     /**
      * 轮询两块屏最上面的任务:[taskId] 不在虚拟屏最上面、却在主屏最上面,就是被用户挪走了。
@@ -73,14 +80,45 @@ class DeviceStateWatcher(
 
     fun close() {
         runCatching { appContext.unregisterReceiver(receiver) }
+        scope.cancel()
     }
 
     companion object {
         const val POLL_MS = 500L
 
-        internal fun isLocked(interactive: Boolean, keyguardLocked: Boolean) = !interactive || keyguardLocked
-
         internal fun isMovedAway(agentTop: Int, mainTop: Int, taskId: Int) =
             taskId >= 0 && agentTop != taskId && mainTop == taskId
+    }
+}
+
+/**
+ * 主屏是否不可操作(熄屏或锁屏)。广播来了重读一次;但解锁时系统先发 USER_PRESENT,
+ * [android.app.KeyguardManager.isKeyguardLocked] 要等锁屏界面真的退下去才变,这一刻读到的还是「锁着」,
+ * 之后不会再有广播。所以读到「亮着但锁着」时,只要有人在看这份状态,就每 [DeviceStateWatcher.POLL_MS] 再读一次,
+ * 直到读到解锁或熄屏;熄屏时不读,等 SCREEN_ON。
+ */
+internal class LockState(private val read: () -> Reading, scope: CoroutineScope) {
+    data class Reading(val interactive: Boolean, val keyguardLocked: Boolean) {
+        val locked get() = !interactive || keyguardLocked
+    }
+
+    @Volatile private var last = read()
+    private val _locked = MutableStateFlow(last.locked)
+    val locked: StateFlow<Boolean> = _locked.asStateFlow()
+
+    fun refresh() {
+        last = read()
+        _locked.value = last.locked
+    }
+
+    init {
+        scope.launch {
+            _locked.subscriptionCount.map { it > 0 }.distinctUntilChanged().collectLatest { watched ->
+                while (watched) {
+                    delay(DeviceStateWatcher.POLL_MS)
+                    if (last.interactive && last.keyguardLocked) refresh()
+                }
+            }
+        }
     }
 }

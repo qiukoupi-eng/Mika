@@ -22,7 +22,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 /**
  * Anthropic Messages API。
  * - 历史里的 System 消息并入 system 文本(Anthropic 没有 system 角色消息)。
- * - Thinking 不回传、请求也不开 extended thinking:Part.Thinking 不带 signature,而带 tool_use 的回合回放时必须带签名。
+ * - 选了思考强度时开自适应思考(`thinking.type = adaptive`)并把档位放进 `output_config.effort`;选 `none` 时关掉。
+ *   列表写明了模型接受哪几种思考方式([thinkingTypes])的,不接受的那种不发(什么都不发,按服务端默认)。
+ *   思考块的 `signature` 连同收到它的地址存在 [Part.Thinking.opaque] 里([SignedThinking]),
+ *   带工具调用的回合原样回传给同一个地址(不回传会被服务端拒绝)。
  * - 相邻同角色消息合并(Anthropic 要求 user/assistant 交替)。
  */
 class AnthropicModel(
@@ -31,12 +34,27 @@ class AnthropicModel(
     private val model: String,
     override val capabilities: Capabilities,
     private val http: OkHttpClient,
-    private val maxTokens: Int = 4096,
+    /** 回复上限(`max_tokens`,必填);null 按默认:开了思考的 [THINKING_MAX_TOKENS],否则 [DEFAULT_MAX_TOKENS]。 */
+    maxTokens: Int? = null,
     /** 每个请求都带的头(见 [ClientHeaders]);Key 的头由适配器自己加。 */
     private val headers: Map<String, String> = emptyMap(),
+    /** 用户选的思考强度;null 不发,`none` 关掉思考,其余作为 `output_config.effort` 发出。 */
+    private val reasoningEffort: String? = null,
+    /**
+     * 列表写明这个模型接受的思考方式(见 [ListedModel.thinkingTypes]);不含 `adaptive` 的不发档位,不含 `disabled` 的不发 `none`。
+     * null 是列表没说(档位来自别的列表写法),照档位发。
+     */
+    private val thinkingTypes: List<String>? = null,
 ) : StreamingChatModel {
     override val name: String get() = model
     private val endpoint = baseUrl.trimEnd('/') + "/v1/messages"
+    /** 实际发出的 `thinking.type`:`adaptive`、`disabled`,或 null(不发)。 */
+    private val thinkingType: String? = when (reasoningEffort) {
+        null -> null
+        "none" -> "disabled"
+        else -> "adaptive"
+    }?.takeIf { thinkingTypes == null || it in thinkingTypes }
+    private val maxTokens = maxTokens ?: if (thinkingType == "adaptive") THINKING_MAX_TOKENS else DEFAULT_MAX_TOKENS
     private val json = Json { ignoreUnknownKeys = true }
     private val ephemeral = buildJsonObject { put("type", "ephemeral") }
 
@@ -49,7 +67,7 @@ class AnthropicModel(
     override suspend fun completeStreaming(
         system: String, messages: List<Message>, tools: List<ToolSpec>, onText: (String) -> Unit,
     ): ModelReply {
-        val stream = AnthropicStream(onText, ::parseUsage)
+        val stream = AnthropicStream(endpoint, onText, ::parseUsage)
         val (status, retryAfter, text) = HttpSupport.stream(http, request(system, messages, tools, stream = true), stream::accept)
         if (status !in 200..299) throw mapError(status, retryAfter, text)
         if (text.isNotEmpty()) return parse(text).also { reply ->
@@ -76,6 +94,16 @@ class AnthropicModel(
                 tools.forEachIndexed { i, t -> add(toolJson(t, last = i == tools.lastIndex)) }
             })
             put("messages", buildMessages(messages))
+            when (thinkingType) {
+                "disabled" -> putJsonObject("thinking") { put("type", "disabled") }
+                "adaptive" -> {
+                    putJsonObject("thinking") {
+                        put("type", "adaptive")
+                        put("display", "summarized")
+                    }
+                    putJsonObject("output_config") { put("effort", reasoningEffort) }
+                }
+            }
         }
         return Request.Builder().url(endpoint)
             .withHeaders(headers)
@@ -151,15 +179,22 @@ class AnthropicModel(
         return results + rest
     }
 
-    private fun assistantBlocks(m: Message): List<JsonObject> = m.parts.mapNotNull { p ->
-        when (p) {
-            is Part.Text -> if (p.text.isEmpty()) null else buildJsonObject { put("type", "text"); put("text", p.text) }
-            is Part.ToolCall -> buildJsonObject {
-                put("type", "tool_use"); put("id", p.id); put("name", p.name)
-                put("input", try { json.parseToJsonElement(p.argsJson).jsonObject } catch (e: Exception) { JsonObject(emptyMap()) })
+    private fun assistantBlocks(m: Message): List<JsonObject> {
+        // 开思考时,带工具调用的回合必须把上一条助手消息的思考块连同签名原样带回。
+        // 明确关掉思考时不带,免得和当前请求的思考配置冲突。别的地址收到的不带(签名只有发它的服务认)。
+        val thinking = if (thinkingType == "disabled") emptyList()
+            else m.parts.filterIsInstance<Part.Thinking>().mapNotNull { SignedThinking.block(it, endpoint) }
+        val blocks = m.parts.mapNotNull { p ->
+            when (p) {
+                is Part.Text -> if (p.text.isEmpty()) null else buildJsonObject { put("type", "text"); put("text", p.text) }
+                is Part.ToolCall -> buildJsonObject {
+                    put("type", "tool_use"); put("id", p.id); put("name", p.name)
+                    put("input", try { json.parseToJsonElement(p.argsJson).jsonObject } catch (e: Exception) { JsonObject(emptyMap()) })
+                }
+                else -> null
             }
-            else -> null
         }
+        return thinking + blocks
     }
 
     private fun parse(text: String): ModelReply {
@@ -171,7 +206,13 @@ class AnthropicModel(
                 val b = el.jsonObject
                 when (b["type"]?.jsonPrimitive?.contentOrNull) {
                     "text" -> b["text"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() }?.let { parts += Part.Text(it) }
-                    "thinking" -> b["thinking"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() }?.let { parts += Part.Thinking(it) }
+                    "thinking" -> {
+                        val text = (b["thinking"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+                        val signature = (b["signature"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }
+                        if (text.isNotEmpty() || signature != null) parts += Part.Thinking(text, signature?.let { SignedThinking.signed(endpoint, it) })
+                    }
+                    "redacted_thinking" -> (b["data"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotEmpty() }
+                        ?.let { parts += Part.Thinking("", SignedThinking.redacted(endpoint, it)) }
                     "tool_use" -> parts += Part.ToolCall(
                         b["id"]!!.jsonPrimitive.content,
                         b["name"]!!.jsonPrimitive.content,
@@ -204,11 +245,15 @@ class AnthropicModel(
 }
 
 private class AnthropicStream(
+    private val endpoint: String,
     private val onText: (String) -> Unit,
     private val usageOf: (JsonElement?) -> Usage?,
 ) {
-    private data class Block(val type: String, val id: String = "", val name: String = "",
-        val text: StringBuilder = StringBuilder(), val input: StringBuilder = StringBuilder(), val initialInput: String = "{}")
+    private data class Block(
+        val type: String, val id: String = "", val name: String = "",
+        val text: StringBuilder = StringBuilder(), val input: StringBuilder = StringBuilder(), val initialInput: String = "{}",
+        val signature: StringBuilder = StringBuilder(), val data: String = "",
+    )
 
     private val json = Json { ignoreUnknownKeys = true }
     private val blocks = sortedMapOf<Int, Block>()
@@ -230,7 +275,9 @@ private class AnthropicStream(
                     id = (b["id"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
                     name = (b["name"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
                     initialInput = b["input"]?.toString() ?: "{}",
+                    data = (b["data"] as? JsonPrimitive)?.contentOrNull.orEmpty(),
                 ).also { block ->
+                    (b["signature"] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotEmpty)?.let(block.signature::append)
                     (b["text"] as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotEmpty)?.let {
                         block.text.append(it); visible.append(it); onText(visible.toString())
                     }
@@ -245,6 +292,7 @@ private class AnthropicStream(
                         block.text.append(it); visible.append(it); onText(visible.toString())
                     }
                     "thinking_delta" -> (delta["thinking"] as? JsonPrimitive)?.contentOrNull?.let { block.text.append(it) }
+                    "signature_delta" -> (delta["signature"] as? JsonPrimitive)?.contentOrNull?.let { block.signature.append(it) }
                     "input_json_delta" -> (delta["partial_json"] as? JsonPrimitive)?.contentOrNull?.let { block.input.append(it) }
                 }
             }
@@ -264,7 +312,12 @@ private class AnthropicStream(
         val parts = blocks.values.mapNotNull { block ->
             when (block.type) {
                 "text" -> block.text.toString().takeIf(String::isNotEmpty)?.let(Part::Text)
-                "thinking" -> block.text.toString().takeIf(String::isNotEmpty)?.let(Part::Thinking)
+                "thinking" -> {
+                    val text = block.text.toString()
+                    val signature = block.signature.toString().takeIf(String::isNotEmpty)
+                    if (text.isNotEmpty() || signature != null) Part.Thinking(text, signature?.let { SignedThinking.signed(endpoint, it) }) else null
+                }
+                "redacted_thinking" -> block.data.takeIf(String::isNotEmpty)?.let { Part.Thinking("", SignedThinking.redacted(endpoint, it)) }
                 "tool_use" -> {
                     if (block.id.isEmpty() || block.name.isEmpty()) throw ModelError.BadResponse("工具调用流缺少名称或编号")
                     Part.ToolCall(block.id, block.name, block.input.toString().ifEmpty { block.initialInput })
@@ -279,5 +332,33 @@ private class AnthropicStream(
             else -> StopReason.Other
         }
         return ModelReply(parts, stop, usage)
+    }
+}
+
+/** 默认回复上限;开了思考时思考也占这个额度,4K 往往在出答案前就用完,给 [THINKING_MAX_TOKENS]。 */
+private const val DEFAULT_MAX_TOKENS = 4096
+private const val THINKING_MAX_TOKENS = 16_000
+
+/**
+ * 记在 [Part.Thinking.opaque] 里的 Anthropic 思考块:带签名的 thinking 是 `{"endpoint":…,"signature":…}`,
+ * redacted_thinking 是 `{"endpoint":…,"redacted":…}`。签名只有发它的服务认,回放时只认同一个地址收到的;
+ * 别的地址(另一个 Anthropic 兼容服务)、别家适配器存的都不回传。
+ */
+internal object SignedThinking {
+    fun signed(endpoint: String, signature: String): String =
+        buildJsonObject { put("endpoint", endpoint); put("signature", signature) }.toString()
+
+    fun redacted(endpoint: String, data: String): String =
+        buildJsonObject { put("endpoint", endpoint); put("redacted", data) }.toString()
+
+    /** [p] 是从 [endpoint] 收到的思考块时,回放用的那一块;别处来的、认不出的为 null。 */
+    fun block(p: Part.Thinking, endpoint: String): JsonObject? {
+        val o = p.opaque?.let { runCatching { Json.parseToJsonElement(it) as? JsonObject }.getOrNull() } ?: return null
+        if ((o["endpoint"] as? JsonPrimitive)?.contentOrNull != endpoint) return null
+        (o["redacted"] as? JsonPrimitive)?.contentOrNull?.let { data ->
+            return buildJsonObject { put("type", "redacted_thinking"); put("data", data) }
+        }
+        val signature = (o["signature"] as? JsonPrimitive)?.contentOrNull ?: return null
+        return buildJsonObject { put("type", "thinking"); put("thinking", p.text); put("signature", signature) }
     }
 }

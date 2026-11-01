@@ -1,6 +1,7 @@
 package com.wangzan101.mika.settings
 
 import com.wangzan101.mika.core.shell.BuiltinShellStatus
+import com.wangzan101.mika.core.shell.HelperRestart
 import com.wangzan101.mika.core.shell.PairingChannelHealth
 
 enum class AccessibilityState {
@@ -36,6 +37,8 @@ data class SystemStatus(
     val usbDebugging: Boolean = true,
     /** 系统可能拦着不让打开无障碍(安卓 13 起,没从应用商店装的 App 要先允许受限制的设置)。 */
     val restrictedSettings: Boolean = false,
+    /** 助手停了以后靠什么再起来:只用 USB 启动命令起过时,各处都不往无线调试引,说清要再运行命令。 */
+    val helperRestart: HelperRestart = HelperRestart.None,
 )
 
 fun SystemStatus.notificationOverview() = NotificationOverview.of(

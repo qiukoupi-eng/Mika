@@ -6,6 +6,7 @@ import com.wangzan101.mika.core.shell.BuiltinShellStatus
 import com.wangzan101.mika.core.shell.PairingDiscovery
 import com.wangzan101.mika.core.shell.PhoneSetupFlow
 import com.wangzan101.mika.core.shell.A11yLossRecord
+import com.wangzan101.mika.core.shell.HelperRestart
 import com.wangzan101.mika.core.shell.HelperRestoreReport
 import com.wangzan101.mika.core.shell.RecoveryCapability
 import com.wangzan101.mika.core.shell.RecoveryConsent
@@ -169,6 +170,11 @@ object Diagnostics {
         val p = s.phone
         val view = PhoneSetupFlow.view(i)
         line("helper", shell(i.status))
+        line("helper restart", when (i.restart) {
+            HelperRestart.Wireless -> "wireless debugging (paired)"
+            HelperRestart.UsbCommand -> "USB start command"
+            HelperRestart.None -> "not set up"
+        })
         line("setup", "phase=${view.phase}" + (view.current?.let { ", current=${step(it)}" } ?: ""))
         line("steps", SetupStep.entries.joinToString(", ") { "${it.ordinal + 1} ${view.marks[it]}" })
         view.suspect?.let { line("suspect", step(it.step) + if (it.unreadable) " (switch unreadable)" else "") }

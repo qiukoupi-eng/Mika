@@ -22,6 +22,7 @@ import com.wangzan101.mika.core.knowledge.GuideCatalog
 import com.wangzan101.mika.core.memory.MemoryStore
 import com.wangzan101.mika.core.memory.ProfileStore
 import com.wangzan101.mika.core.memory.UserUtterances
+import com.wangzan101.mika.core.skills.PersonalSkills
 import com.wangzan101.mika.core.uistate.ScreenPort
 import com.wangzan101.mika.core.tool.AgentTool
 import com.wangzan101.mika.core.tool.LegacyNames
@@ -106,9 +107,11 @@ fun toolDispatcher(
     childHost: ChildRunHost? = null,
     /** 这个对话里用户发来的屏幕;给了而这次的话或之前几轮里带着屏幕时提供 view_user_screen。 */
     userScreens: UserScreenSource? = null,
+    /** 用户的个人技能;和 [skills]、[utterances] 都给了才提供 skill_save(用户要求时写下或改一份个人技能)。 */
+    personalSkills: PersonalSkills? = null,
 ): ToolDispatcher {
     val config = ToolConfig(visionEnabled, skills, recordFrames, vision, inlineScreen, adaptiveVision, memory, profile, utterances, conversationId,
-        imageOps, scheduleTrigger, scheduleAdmin, runSpec, childHost, userScreens)
+        imageOps, scheduleTrigger, scheduleAdmin, runSpec, childHost, userScreens, personalSkills)
     val providers: List<CapabilityProvider> = listOf(
         object : CapabilityProvider {
             override val id = PHONE

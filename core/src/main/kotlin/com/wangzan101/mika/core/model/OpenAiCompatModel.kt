@@ -30,6 +30,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
  * 有的服务商要求工具调用前后的思考接着回传,不回传就拒绝。只回传从这个地址收到的,别家给的思考不发
  * (不认这个字段的服务商不会收到它)。[reasoningField] 是模型列表里写明的思考字段(`reasoning_content` 或
  * `reasoning`):写明了的,来历不明的思考(旧版本存下的历史)也按它回传。
+ * 选了思考强度时另发 `reasoning_effort`;服务商没在列表里写档位的,这里不会收到值。
  */
 class OpenAiCompatModel(
     baseUrl: String,
@@ -40,6 +41,8 @@ class OpenAiCompatModel(
     reasoningField: String? = null,
     /** 每个请求都带的头(客户端标识、服务商要的会话号等,见 [ClientHeaders]);Key 的头由适配器自己加。 */
     private val headers: Map<String, String> = emptyMap(),
+    /** 用户选的思考强度(`reasoning_effort`);null 不发。 */
+    private val reasoningEffort: String? = null,
 ) : StreamingChatModel {
     override val name: String get() = model
     private val endpoint = baseUrl.trimEnd('/') + "/chat/completions"
@@ -90,6 +93,7 @@ class OpenAiCompatModel(
     private fun request(system: String, messages: List<Message>, tools: List<ToolSpec>, stream: Boolean, includeUsage: Boolean = true): Request {
         val payload = buildJsonObject {
             put("model", model)
+            reasoningEffort?.let { put("reasoning_effort", it) }
             // 思考只在带工具的请求里回传(工具调用一步接一步时要接着想);不带工具的旁路调用不需要
             val replayReasoning = tools.isNotEmpty()
             val wire = listOf(buildJsonObject { put("role", "system"); put("content", system) }) +

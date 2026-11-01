@@ -1,6 +1,8 @@
 # 电脑端 CLI 与 Agent Skill
 
-[English](cli.en.md)
+简体中文 | [English](cli.en.md)
+
+> 从电脑使用 Mika，先看[从电脑使用 Mika](computer.md)：怎么在 CLI + Skill 和 MCP 之间选、怎么连。
 
 CLI 与 MCP 是并列入口,共用手机端的远程任务服务。CLI 调用普通 HTTP 任务 API,不需要 MCP SDK、握手、工具发现或 MCP 客户端配置。Skill 告诉电脑 Agent 怎样使用 CLI、处理追问和报告真实结果;手机上的 Mika 仍负责规划和执行。
 
@@ -22,24 +24,15 @@ flowchart LR
     CLI -->|"HTTP，可经 ADB 转发"| API
 ```
 
-## 安装
+## 安装与维护
 
-需要 Python 3.10+ 和包含任务 API v1 的 Mika APK。旧 APK 只有 MCP 时,CLI 会明确提示不兼容。此功能随源码构建提供,不能仅凭已有 MCP 能力判断某个已发布 APK 支持它。
+安装、升级、回退和卸载见 [CLI / Skill 安装指南](computer-install.md)。CLI 与 MCP 通常二选一。手机需要 task API v1,官方 APK 从 v0.1.23 起提供。
 
-在仓库根目录使用 pipx 安装,或在自己的 Python 虚拟环境里使用 pip:
-
-```bash
-pipx install ./tools/mika
-# 或在已激活的虚拟环境中:
-python3 -m pip install ./tools/mika
-mika --help
-```
-
-也可以直接运行 `python3 tools/mika/scripts/mika_cli.py --help`,不安装 Python 依赖。将整个 `tools/mika/` 目录复制到支持 Skills 的 Agent 的技能目录,并命名为 `mika`,即可安装电脑端 Skill。该目录带齐脚本和许可,单独复制后可运行;不依赖手机内部技能目录或另一个仓库检出。
+只装 Skill 时,下面的 `mika` 代表 `python3 <技能目录>/mika/scripts/mika_cli.py`（Windows 用 `py -3`）。
 
 ## 连接手机
 
-ADB 模式需要 Android platform-tools。数据线或已经配对并连接的无线 ADB 都可以;无线连接尚未出现在 ADB 中时,先按手机的无线调试页面完成配对/连接。
+ADB 模式需要 Android platform-tools。数据线或已经配对并连接的无线 ADB 都可以；无线 ADB 需要这台电脑与手机完成配对、连接，并在 `adb devices` 中显示为 `device`。Mika 在手机内为启动助手完成的配对，不等于电脑已配对；它们也不同于下面的直接局域网访问。
 
 ```bash
 mika devices --json
@@ -50,6 +43,8 @@ mika doctor --device SERIAL --json
 只有一个在线设备时可省略 `--device`;也支持已有的 ANDROID_SERIAL 环境变量。多设备不猜目标,连接失败也不切换到另一台手机。`connect` 调用 Mika 写到手机上的官方启动脚本,打开电脑连接并启动所需助手;此动作不提交业务任务。其余命令只读取当前连接。
 
 每次调用重新读取当前令牌、端口和开机编号,申请自己的 `adb forward tcp:0` 临时端口,完成后只删除该转发。令牌只保存在进程内存中,启动脚本的原始输出不转发到终端。CLI 退出不关闭手机服务,也不停止正在执行的任务。
+
+CLI 会处理端口转发，无需照 MCP 步骤手工转发固定端口。拔插后先让同一台手机重新出现在 ADB 中；手机重启或电脑连接开关被关闭后，再运行 `connect`。
 
 也可以使用手机设置里显式开启的局域网/私有网络连接:
 

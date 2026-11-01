@@ -78,7 +78,7 @@ internal fun SkillsSection(vm: MemoryViewModel, ui: SkillsUi, pending: Boolean) 
             if (ui.installed.isEmpty()) EmptyNote(stringResource(R.string.skills_empty))
             ui.installed.forEachIndexed { i, s ->
                 val state = when { s.suspended -> stringResource(R.string.skills_suspended); s.trial -> stringResource(R.string.skills_trial); else -> null }
-                val detail = listOfNotNull(state, s.recent.takeIf { it.isNotEmpty() }?.let { stringResource(R.string.skills_recent, it.joinToString(" · ")) }).joinToString(" · ")
+                val detail = listOfNotNull(stringResource(R.string.skills_user_created).takeIf { s.userCreated }, state, s.recent.takeIf { it.isNotEmpty() }?.let { stringResource(R.string.skills_recent, it.joinToString(" · ")) }).joinToString(" · ")
                 Column(Modifier.testTag("skill-row")) {
                     ListRow(null, s.display, s.description.ifBlank { null }, first = i == 0, detail = detail, onClick = { acting = s }) {
                         MikaSwitch(!s.suspended, { on -> if (on) vm.restoreSkill(s.name) else vm.suspendSkill(s.name) })

@@ -157,8 +157,8 @@ open class ScreenAccessibility : AccessibilityService() {
             }
 
             override fun onFailure(errorCode: Int) {
-                // 屏上有防截屏窗口:安卓 12 起有专门的错误码;更早的系统截出来是黑的,由调用方看画面判断
-                val secure = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && errorCode == ERROR_TAKE_SCREENSHOT_SECURE_WINDOW
+                // 屏上有防截屏窗口:安卓 14 起有专门的错误码;更早的系统截出来是黑的,由调用方看画面判断
+                val secure = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && errorCode == ERROR_TAKE_SCREENSHOT_SECURE_WINDOW
                 if (cont.isActive) cont.resume(if (secure) MainShot.Secure else MainShot.Failed(errorCode))
             }
         })

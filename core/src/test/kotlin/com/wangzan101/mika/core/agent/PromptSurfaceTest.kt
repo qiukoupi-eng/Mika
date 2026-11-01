@@ -52,6 +52,7 @@ class PromptSurfaceTest {
                     FakeScreen(), visionEnabled = true, skills = GuideCatalog.loadBundled(), vision = VisionService(says(), JvmTestImageOps),
                     web = FakeWebPort(), inlineScreen = true, deepLinks = true,
                     memory = mem, utterances = UserUtterances(), sandbox = FakeSandbox(SandboxStatus.Ready(network = false)), workspace = { "w" },
+                    personalSkills = com.wangzan101.mika.core.skills.InMemoryPersonalSkills(),
                 )
             }, SpeedFlags(inlineScreen = true, batchSteps = true, deepLinks = true), mem)
         },
