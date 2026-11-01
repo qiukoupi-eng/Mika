@@ -17,11 +17,11 @@
     <string name="about_feedback_sheet_sub">Found a problem or have an idea? Tell the author wherever suits you.</string>
     <string name="about_feedback_github">Open an issue on GitHub</string>
     <string name="about_feedback_github_sub">Report bugs or request features and follow progress</string>
-    <string name="about_feedback_group">Talk in the community</string>
-    <string name="about_group">Join the community</string>
-    <string name="about_group_sub">WeChat group · X group chat</string>
-    <string name="about_group_sheet_title">Join the Mika community</string>
-    <string name="about_group_sheet_sub">Chat about usage, share ideas, see new features first</string>
+    <string name="about_feedback_group">Tell the author on WeChat or X</string>
+    <string name="about_group">Contact the author</string>
+    <string name="about_group_sub">WeChat · X group chat</string>
+    <string name="about_group_sheet_title">Contact the author</string>
+    <string name="about_group_sheet_sub">Chat about usage or share ideas. When adding on WeChat, mention Mika in your request</string>
     <string name="about_group_hint">Long-press to save · or scan in WeChat</string>
     <string name="about_group_no_wechat">Not on WeChat?</string>
     <string name="about_group_join_x">Join the X group chat</string>

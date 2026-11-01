@@ -154,7 +154,7 @@
 ## 社区与贡献
 
 - **文档**：全部文档和阅读顺序见[文档目录](docs/README.md)
-- **交流群**：App 里「关于 › 加入交流群」扫码进微信群；不用微信可以加入 [X 群聊](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)
+- **交流**：App 里「关于 › 联系作者」扫码加作者微信（请备注 Mika）；不用微信可以加入 [X 群聊](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)
 - **关注作者**：X [@wangzan101](https://x.com/wangzan101)
 - **反馈问题**：[提 Issue](https://github.com/wangzan101/Mika/issues/new/choose)，App 里「关于 › 反馈问题」可以附上诊断信息
 - **参与贡献**：给某个 App、网站补一份使用知识（纯文本，不用写代码），或者贡献代码，见[贡献指南](CONTRIBUTING.md)

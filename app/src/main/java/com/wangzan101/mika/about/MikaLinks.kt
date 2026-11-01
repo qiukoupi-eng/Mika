@@ -4,7 +4,7 @@ import com.wangzan101.mika.R
 import com.wangzan101.mika.i18n.tr
 import java.net.URLEncoder
 
-/** Mika 对外的地址都在这里:仓库、问题、作者、交流群、检查更新用的两个来源。换地址只改这一处。 */
+/** Mika 对外的地址都在这里:仓库、问题、作者、X 群聊、检查更新用的两个来源。换地址只改这一处。 */
 object MikaLinks {
     const val REPO = "https://github.com/wangzan101/Mika"
     const val REPO_LABEL = "github.com/wangzan101/Mika"

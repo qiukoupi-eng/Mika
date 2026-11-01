@@ -75,7 +75,7 @@ private enum class AboutSheet { Update, Changelog, Feedback, Group, Diagnostics 
 
 /**
  * 关于 Mika:顶上图标、名字、一句话介绍、版本(Beta 标记、构建编号);下面三组——检查更新与更新记录,
- * 交流群与反馈,关注作者、开源仓库与使用说明;一段数据说明;最底下许可证与作者。
+ * 联系作者与反馈,关注作者、开源仓库与使用说明;一段数据说明;最底下许可证与作者。
  * 外部链接都交给 [onOpenUrl](系统浏览器);手动检查的结果到了([UpdateState.manualRounds] 变了)才提示。
  * [diagnostics] 写出诊断信息(反馈面板里「复制诊断信息」点开预览时在后台线程调)。
  */
@@ -308,7 +308,7 @@ private fun FeedbackSheet(onGitHub: () -> Unit, onDiagnostics: () -> Unit, onGro
         Column(Modifier.padding(top = 6.dp)) {
             FeedbackOption(MikaIcons.Code, AboutCopy.FEEDBACK_GITHUB, AboutCopy.FEEDBACK_GITHUB_SUB, first = true, onGitHub)
             FeedbackOption(MikaIcons.Copy, AboutCopy.DIAGNOSTICS, AboutCopy.DIAGNOSTICS_SUB, first = false, onDiagnostics)
-            // 微信群、X 群聊都在交流群面板里,这里只开那个面板
+            // 作者微信、X 群聊都在联系作者面板里,这里只开那个面板
             FeedbackOption(MikaIcons.Chats, AboutCopy.FEEDBACK_GROUP, AboutCopy.GROUP_SUB, first = false, onGroup)
         }
     }
@@ -322,7 +322,7 @@ private fun FeedbackOption(icon: ImageVector, title: String, sub: String, first:
 }
 
 /**
- * 交流群面板:微信群二维码(长按或按钮存进相册)和 X 群聊入口。[xFirst] 时(英文界面)X 群聊在上、微信群码在下,
+ * 联系作者面板:作者的微信二维码(长按或按钮存进相册)和 X 群聊入口。[xFirst] 时(英文界面)X 群聊在上、微信码在下,
  * 不然微信在前、X 群聊作为「不用微信？」的去处放在下面。
  */
 @Composable

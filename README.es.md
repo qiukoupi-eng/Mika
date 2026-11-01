@@ -1,4 +1,4 @@
-<!-- translated-from: README.md @ 1c0491dd8d44 -->
+<!-- translated-from: README.md @ 28ff67918ea1 -->
 <div align="center">
 
 <img src="docs/media/logo.png" alt="Mika" width="88" />
@@ -151,7 +151,7 @@ Hay más respuestas en las [preguntas frecuentes](docs/faq.en.md).
 ## Comunidad y contribuciones
 
 - **Documentación**: toda la documentación y un orden de lectura sugerido están en el [índice de documentación](docs/README.en.md)
-- **Comunidad**: únete al [chat de grupo en X](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X); el código QR del grupo de WeChat está en la app, en About › Join the community
+- **Comunidad**: únete al [chat de grupo en X](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X); para escribir al autor por WeChat, escanea el código QR de la app en About › Contact the author (menciona «Mika» en la solicitud)
 - **Sigue al autor**: X [@wangzan101](https://x.com/wangzan101)
 - **Informa de un problema**: [abre un issue](https://github.com/wangzan101/Mika/issues/new/choose); en la app, About › Send feedback permite adjuntar información de diagnóstico
 - **Contribuye**: añade conocimiento de uso para una app o un sitio web (texto plano, sin programar) o contribuye con código; consulta la [guía de contribución](CONTRIBUTING.en.md)

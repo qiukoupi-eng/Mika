@@ -1,4 +1,4 @@
-<!-- translated-from: README.md @ 1c0491dd8d44 -->
+<!-- translated-from: README.md @ 28ff67918ea1 -->
 <div align="center">
 
 <img src="docs/media/logo.png" alt="Mika" width="88" />
@@ -151,7 +151,7 @@ API 키 없이 ChatGPT(Plus / Pro), xAI / Grok, OpenRouter 계정으로 로그�
 ## 커뮤니티와 기여
 
 - **문서**: 모든 문서와 추천 읽기 순서는 [문서 목록](docs/README.en.md)에 있습니다
-- **커뮤니티**: [X 그룹 채팅](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)에 참여하세요. WeChat 그룹 QR 코드는 앱의 About › Join the community에 있습니다
+- **커뮤니티**: [X 그룹 채팅](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)에 참여하세요. WeChat으로 작성자에게 연락하려면 앱의 About › Contact the author에 있는 QR 코드를 스캔하세요(친구 신청에 "Mika"라고 적어 주세요)
 - **작성자 팔로우**: X [@wangzan101](https://x.com/wangzan101)
 - **문제 신고**: [Issue 열기](https://github.com/wangzan101/Mika/issues/new/choose). 앱의 About › Send feedback에서 진단 정보를 첨부할 수 있습니다
 - **기여하기**: 앱이나 사이트의 사용 지식을 보태 주세요(일반 텍스트라 코드를 몰라도 됩니다). 코드 기여도 환영합니다. [기여 가이드](CONTRIBUTING.en.md)를 보세요

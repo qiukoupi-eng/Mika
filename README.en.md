@@ -160,7 +160,7 @@ More answers are in the [FAQ](docs/faq.en.md).
 ## Community & contributing
 
 - **Docs**: all docs and a suggested reading order are in the [docs index](docs/README.en.md)
-- **Community**: join the [X group chat](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X); the WeChat group QR code is in the app under About › Join the community
+- **Community**: join the [X group chat](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X); to reach the author on WeChat, scan the QR code in the app under About › Contact the author (mention Mika in your request)
 - **Follow the author**: X [@wangzan101](https://x.com/wangzan101)
 - **Report a problem**: [open an issue](https://github.com/wangzan101/Mika/issues/new/choose); About › Send feedback in the app can attach diagnostics
 - **Contribute**: add usage knowledge for an app or website (plain text, no code needed), or contribute code; see the [contributing guide](CONTRIBUTING.en.md)
