@@ -8,11 +8,11 @@ import java.io.File
 import java.security.MessageDigest
 
 /**
- * README 的几份译文跟得上中文 README.md:
+ * docs/readme/ 下的几份译文跟得上仓库首页的英文 README.md:
  *  - 每份译文开头有 `<!-- translated-from: README.md @ <指纹> -->`,指纹是翻译时 README.md 的 [fingerprint];
  *    README.md 改了而译文没跟着改,这里失败并列出哪几份过期了;
- *  - 译文和 README.md 的 `## ` 小节一样多,用到的本地图片(`docs/media/…` 这类相对路径)一样;网上的徽章图各语言自己写,不比。
- * README.en.md 的生成段落由 [ReadmeSectionsTest] 守着,不在这里。
+ *  - 译文和 README.md 的 `## ` 小节一样多,用到的本地图片一样(各自按所在目录解析成仓库里的路径再比);网上的徽章图各语言自己写,不比。
+ * 生成段落只在 README.md 和简体中文 [ReadmeSections.README_ZH] 里,由 [ReadmeSectionsTest] 守着;其他译文不能有。
  */
 class ReadmeTranslationsTest {
     private val root = File("..").canonicalFile
@@ -33,20 +33,20 @@ class ReadmeTranslationsTest {
 
     @Test fun translationsKeepStructure() {
         val sections = sections(source)
-        val images = localImages(source)
+        val images = localImages(source, ReadmeSections.README)
         val bad = TRANSLATIONS.flatMap { name ->
             val text = File(root, name).readText()
             listOfNotNull(
                 sections(text).takeIf { it != sections }?.let { "$name 有 $it 个 ## 小节,README.md 有 $sections 个" },
-                localImages(text).takeIf { it != images }?.let { "$name 的本地图片和 README.md 不一样:多了 ${it - images},少了 ${images - it}" },
+                localImages(text, name).takeIf { it != images }?.let { "$name 的本地图片和 README.md 不一样:多了 ${it - images},少了 ${images - it}" },
             )
         }
         assertTrue("README 译文和 README.md 结构不一致:\n" + bad.joinToString("\n"), bad.isEmpty())
     }
 
     @Test fun translationsHaveNoGeneratedBlocks() {
-        val bad = TRANSLATIONS.filter { "<!-- generated:" in File(root, it).readText() }
-        assertTrue("生成段落只放在 README.md、README.en.md,译文里换成指向它们的一句话:$bad", bad.isEmpty())
+        val bad = (TRANSLATIONS - ReadmeSections.README_ZH).filter { "<!-- generated:" in File(root, it).readText() }
+        assertTrue("生成段落只放在 README.md、${ReadmeSections.README_ZH},其他译文里换成指向它们的一句话:$bad", bad.isEmpty())
     }
 
     @Test fun fingerprintIgnoresGeneratedBlocksAndLineEndings() {
@@ -58,8 +58,9 @@ class ReadmeTranslationsTest {
     }
 
     companion object {
-        /** 改这里也要改 core/build.gradle.kts 里测试的 docsFiles 输入。 */
-        val TRANSLATIONS = listOf("README.zh-Hant.md", "README.ja.md", "README.ko.md", "README.es.md")
+        /** 译文都在 docs/ 下,core/build.gradle.kts 里测试的 docsDir 输入已经盖住;放到别处要另加输入。 */
+        val TRANSLATIONS = listOf(ReadmeSections.README_ZH) +
+            listOf("zh-Hant", "ja", "ko", "es").map { "docs/readme/README.$it.md" }
         private val MARKER = Regex("""<!-- translated-from: README\.md @ ([0-9a-f]+) -->""")
         private val GENERATED = Regex("""<!-- generated:([\w-]+):start -->.*?<!-- generated:\1:end -->""", RegexOption.DOT_MATCHES_ALL)
 
@@ -80,8 +81,11 @@ class ReadmeTranslationsTest {
 
         private val IMAGE = Regex("""<img\s[^>]*\bsrc="([^"]+)"|!\[[^\]]*]\(([^)\s]+)""")
 
-        private fun localImages(text: String): Set<String> =
-            IMAGE.findAll(prose(text).joinToString("\n")).map { it.groupValues[1].ifEmpty { it.groupValues[2] } }
-                .filter { "://" !in it }.toSet()
+        /** [text] 里的本地图片,按所在文件 [path](相对仓库根目录)的目录解析成仓库里的路径,各语言的相对写法不同也能比。 */
+        private fun localImages(text: String, path: String): Set<String> {
+            val dir = File(path).parentFile
+            return IMAGE.findAll(prose(text).joinToString("\n")).map { it.groupValues[1].ifEmpty { it.groupValues[2] } }
+                .filter { "://" !in it }.map { (if (dir == null) File(it) else File(dir, it)).normalize().invariantSeparatorsPath }.toSet()
+        }
     }
 }

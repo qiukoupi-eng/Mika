@@ -26,6 +26,7 @@ import com.wangzan101.mika.record.RunStore
 import com.wangzan101.mika.R
 import com.wangzan101.mika.cap.web.KeptPage
 import com.wangzan101.mika.core.cap.web.KeptPageClose
+import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.chat.ConversationStore
 import java.util.UUID
 import kotlinx.coroutines.withContext
@@ -506,10 +507,22 @@ class CapsuleController(
      * 再写成带屏幕的一句话([UserScreenMessage])照常发出;存不下就不发。
      */
     private fun deliver(c: CardView, kind: CardInputKind, shot: CapturedScreen, words: String) {
+        val access = (context.applicationContext as MikaApp).appAccess.current()
+        if (shot.sourcePackages.isEmpty() || shot.sourcePackages.any { !access.canShare(it) }) {
+            inputUi = inputUi.copy(screen = null)
+            android.widget.Toast.makeText(context, tr(R.string.appaccess_share_expired), android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         val conversationId = CapsuleCards.conversationOf(c) ?: ConversationStore.shared(context).newConversation()
         scope.launch {
             val saved = runCatching { (context.applicationContext as MikaApp).userScreens.save(conversationId, shot) }
                 .onFailure { Log.w(TAG, "could not save the screen", it) }.getOrNull() ?: return@launch
+            val latest = (context.applicationContext as MikaApp).appAccess.current()
+            if (shot.sourcePackages.any { !latest.canShare(it) }) {
+                inputUi = inputUi.copy(screen = null)
+                android.widget.Toast.makeText(context, tr(R.string.appaccess_share_expired), android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
             submit(c, kind, UserScreenMessage.compose(saved.id, words), conversationId)
             refresh()
         }
@@ -565,12 +578,28 @@ class CapsuleController(
             }
             // 空着的那个窗口(展开时一颗那个、收起时卡片那个)不画东西,不用等它
             suspend fun <T> OverlayWindow.hidden(block: suspend () -> T): T = if (height > 0) hiddenWhile(block) else block()
-            val (shot, read) = w.hidden { c.hidden { MainScreenCapture.shoot(service) } }
+            val store = (context.applicationContext as MikaApp).appAccess
+            val sources = MainScreenCapture.sourcePackages(service) ?: return null
+            if (context.packageName in sources || !store.current().available) return null
+            for (pkg in sources) {
+                if (!store.current().canShare(pkg) && !com.wangzan101.mika.cap.phone.a11y.requestScreenShare(service, store, pkg, appLabel(pkg))) return null
+            }
+            val capture = w.hidden { c.hidden {
+                if (MainScreenCapture.sourcePackages(service) != sources || sources.any { !store.current().canShare(it) }) null
+                else MainScreenCapture.shoot(service)
+            } } ?: return null
+            val (shot, read) = capture
+            if (MainScreenCapture.sourcePackages(service) != sources || sources.any { !store.current().canShare(it) }) {
+                (shot as? ScreenAccessibility.MainShot.Ok)?.bitmap?.recycle()
+                return null
+            }
             flash++
             wake()
             val area = service.overlays().area()
             val r = MainScreenCapture.build(service, shot, read, area.insetTop, area.insetBottom) { ConfirmationNotifier.appLabel(context, it) }
-            return (r as? MainScreenCapture.Result.Captured)?.shot
+            if (sources.any { !store.current().canShare(it) } || MainScreenCapture.sourcePackages(service) != sources) return null
+            val captured = (r as? MainScreenCapture.Result.Captured)?.shot ?: return null
+            return CapturedScreen(captured.jpeg, captured.screen, sources)
         } finally {
             capturing = false
         }
@@ -581,12 +610,12 @@ class CapsuleController(
      * 空闲卡片也改成接着这个对话(新开的对话标题就是这句话)。
      */
     private fun startIn(conversationId: String, text: String) {
-        TaskService.start(context, text, conversationId, queue = true)
+        TaskService.start(context, text, conversationId)
         follow = conversationId
         idle = idle?.let { CardView.Chat(conversationId, title = if (it.target == conversationId) it.title else ScreenCopy.plain(text)) }
     }
 
-    /** 点开空闲图标:先读最近那段对话是哪个、标题是什么,再展开(来回由 [updateThread] 读)。 */
+    /** 点开空闲图标:先读用户此刻在哪个对话([loadIdle]),再展开(来回由 [updateThread] 读)。 */
     private fun openIdle() {
         scope.launch {
             idle = loadIdle()
@@ -595,11 +624,18 @@ class CapsuleController(
         }
     }
 
-    /** 空闲卡片接着的那段对话:最近的那个(没有任何对话时开新对话)。 */
+    /**
+     * 空闲卡片接着的那段对话:用户在 App 里所在的那个,没有记录时接着最近那个(见 [CapsuleIdle]);一个都没有时开新对话。
+     * 不按对话文件的时间猜:新开的对话还没有文件,猜到的是上一个。
+     */
     private suspend fun loadIdle(): CardView.Chat = withContext(Dispatchers.IO) {
         runCatching {
-            val last = ConversationStore.shared(context).list().firstOrNull()
-            CardView.Chat(last?.id, title = last?.title?.let(ScreenCopy::plain))
+            val store = ConversationStore.shared(context)
+            val recent = store.list().firstOrNull()?.let { CardView.Chat(it.id, title = it.title?.let(ScreenCopy::plain)) }
+            CapsuleIdle.chat(store.currentChat(), recent) { id ->
+                // 和侧栏一样:用户起的名字或第一句话
+                (store.title(id) ?: store.turns(id).firstOrNull()?.userText)?.let(ScreenCopy::plain)
+            }
         }.getOrElse { CardView.Chat(null) }
     }
 
@@ -730,7 +766,10 @@ class CapsuleController(
         zoomed = false
         val run = key?.let(::runFor) ?: return
         previewJob = scope.launch {
-            run.frames.filterNotNull().previewFrames(same = ::sameFrame).flowOn(Dispatchers.Default).collect { preview = it }
+            launch { run.frames.collect { if (it == null) preview = null } }
+            run.frames.filterNotNull().previewFrames(same = ::sameFrame).flowOn(Dispatchers.Default).collect {
+                preview = it.takeIf { run.frames.value != null }
+            }
         }
     }
 
@@ -746,10 +785,6 @@ class CapsuleController(
             keeper.frames().filterNotNull().previewFrames(same = ::sameFrame).flowOn(Dispatchers.Default).collect { preview = it }
         }
     }
-
-    /** 新的一帧和上一张一样(同一张图,或尺寸相同、像素都相同)就不推:网页画面每次给的是新拷贝。 */
-    private fun sameFrame(a: Bitmap, b: Bitmap): Boolean =
-        a === b || !a.isRecycled && !b.isRecycled && a.width == b.width && a.height == b.height && a.sameAs(b)
 
     // ---------- 位置与拖动 ----------
 
@@ -1081,13 +1116,21 @@ class CapsuleController(
         }
     }
 
-    /** 展开卡片(空闲图标是空闲卡片)。 */
+    /** 展开卡片(空闲图标是空闲卡片)。每次展开都按用户此刻在哪个对话重读一次空闲卡片,不拿上次那份。 */
     private fun expand() {
         val v = view ?: return
-        if (v.kind == CapsuleKind.Idle) openIdle()
-        else {
-            open()
-            refresh()
+        if (v.kind == CapsuleKind.Idle) {
+            openIdle()
+            return
+        }
+        open()
+        refresh()
+        scope.launch {
+            val fresh = loadIdle()
+            if (fresh != idle) {
+                idle = fresh
+                refresh()
+            }
         }
     }
 

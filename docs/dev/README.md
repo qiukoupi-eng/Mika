@@ -2,7 +2,7 @@
 
 简体中文 | [English](README.en.md)
 
-写给想读代码、改代码、补知识的人。怎么构建、怎么提 PR，先看[贡献指南](../../CONTRIBUTING.md)。用户文档在[上一级](../README.md)。
+写给想读代码、改代码、补知识的人。怎么构建、怎么提 PR，先看[贡献指南](../../.github/CONTRIBUTING.zh-CN.md)。用户文档在[上一级](../README.md)。
 
 ## 先读
 
@@ -22,9 +22,11 @@
 
 | 文档 | 讲什么 |
 | --- | --- |
+| [app-access.md](app-access.md) | 应用访问规则、主动分享授权与标准手机工具的限制边界 |
 | [account-signin.md](account-signin.md) | 用账号登录模型服务商（不填 Key）的设计，以及明确不做的部分 |
 | [chatgpt-signin-check.md](chatgpt-signin-check.md) | 上手机之前，在电脑上用 App 同一套代码走一遍「用 ChatGPT 登录」 |
 | [remote-device-access-check.md](remote-device-access-check.md) | 远程亮屏与解锁的验证记录 |
+| [remote-mcp.md](remote-mcp.md) | 自托管远程 CLI / MCP 的部署、手机鉴权和断线语义 |
 
 ## 仓库里别处的开发文档
 

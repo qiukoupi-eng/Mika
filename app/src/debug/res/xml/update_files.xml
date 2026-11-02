@@ -1,2 +1,3 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 下载的更新包(按 ABI 挑选的 arm64-v8a 或 universal)都放 cache/updates -->
 <paths><cache-path name="updates" path="updates/" /></paths>

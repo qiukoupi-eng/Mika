@@ -27,7 +27,7 @@ import com.wangzan101.mika.ui.components.SubPage
 import com.wangzan101.mika.ui.theme.MikaTheme
 import com.wangzan101.mika.ui.theme.MikaType
 
-/** 许可证页上第三方组件的数据;与仓库根目录 THIRD_PARTY_NOTICES.md 的条目一一对应(LicensesTest 核对)。 */
+/** 许可证页上第三方组件的数据;与仓库 licenses/THIRD_PARTY_NOTICES.md 的条目一一对应(LicensesTest 核对)。 */
 object Licenses {
     data class Entry(val name: String, val license: String, val note: String)
 
@@ -59,6 +59,8 @@ object Licenses {
         Entry("Kotlin 标准库", "Apache-2.0", "kotlin-stdlib 2.1.20 等,以及 JetBrains annotations 23.0.0。https://kotlinlang.org/"),
         Entry("kotlinx.coroutines", "Apache-2.0", "版本 1.9.0。https://github.com/Kotlin/kotlinx.coroutines"),
         Entry("kotlinx.serialization", "Apache-2.0", "版本 1.7.3。https://github.com/Kotlin/kotlinx.serialization"),
+        Entry("OpenTelemetry", "Apache-2.0", "详细 Trace 的 OTLP 消息定义。 https://opentelemetry.io/"),
+        Entry("Protocol Buffers", "BSD-3-Clause", "详细 Trace 的 Protobuf 编码。 https://protobuf.dev/"),
         Entry("OkHttp", "Apache-2.0", "版本 4.12.0,用于访问模型接口。https://square.github.io/okhttp/"),
         Entry("Okio", "Apache-2.0", "版本 3.6.0,OkHttp 的依赖。https://github.com/square/okio/"),
         Entry("AndroidX(含 Jetpack Compose)", "Apache-2.0", "Compose 1.7.6、Material3 1.3.1、Activity 1.9.3、Lifecycle 2.8.3、Core 1.13.1、WebKit 1.12.1 等界面与系统组件库。https://developer.android.com/jetpack/androidx"),

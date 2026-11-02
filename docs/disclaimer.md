@@ -5,7 +5,7 @@
 ## Beta 说明
 
 - 这是早期公开测试版，功能和界面还在快速变化，升级时可能有不兼容的改动。
-- 目前主要在一台安卓 14 手机上测试过。别的安卓版本、别的手机上可能遇到没见过的问题，欢迎[反馈](../CONTRIBUTING.md#报告问题)。
+- 目前主要在一台安卓 14 手机上测试过。别的安卓版本、别的手机上可能遇到没见过的问题，欢迎[反馈](../.github/CONTRIBUTING.zh-CN.md#报告问题)。
 - Mika 会替你操作第三方 App 和网站，请先读下面的免责声明。
 
 ## 免责声明
@@ -25,4 +25,4 @@
 
 Mika 以 [Apache License 2.0](../LICENSE) 发布，版权声明见 [NOTICE](../NOTICE)。
 
-第三方组件保留各自的许可证，见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。其中：APK 里带有 PRoot（GPL-2.0-or-later，静态链接 talloc，LGPL-3.0-or-later）编译成的独立可执行程序 `libproot.so`、`libproot_loader.so`，Mika 只以子进程方式运行它们；源码地址与校验值在 [`tools/sandbox/sources.lock`](../tools/sandbox/sources.lock)，补丁在 `tools/sandbox/patches/`，可以用 `tools/sandbox/build-native.sh` 重新编译。沙箱的运行环境（Alpine Linux 3.22 的最小根文件系统和软件包）随 APK 发布，发布时附带对应源码包，做法见 [`tools/sandbox/README.md`](../tools/sandbox/README.md)。
+第三方组件保留各自的许可证，见 [THIRD_PARTY_NOTICES.md](../licenses/THIRD_PARTY_NOTICES.md)。其中：APK 里带有 PRoot（GPL-2.0-or-later，静态链接 talloc，LGPL-3.0-or-later）编译成的独立可执行程序 `libproot.so`、`libproot_loader.so`，Mika 只以子进程方式运行它们；源码地址与校验值在 [`tools/sandbox/sources.lock`](../tools/sandbox/sources.lock)，补丁在 `tools/sandbox/patches/`，可以用 `tools/sandbox/build-native.sh` 重新编译。沙箱的运行环境（Alpine Linux 3.22 的最小根文件系统和软件包）随 APK 发布，发布时附带对应源码包，做法见 [`tools/sandbox/README.md`](../tools/sandbox/README.md)。

@@ -152,6 +152,10 @@ class OpenAiCompatModelTest {
         assertTrue(errorFor(MockResponse().setResponseCode(400).setBody("context_length_exceeded")) is ModelError.ContextTooLong)
         assertTrue(errorFor(MockResponse().setResponseCode(400).setBody("exceeds the maximum context")) is ModelError.ContextTooLong)
         assertEquals("m", (errorFor(MockResponse().setResponseCode(404)) as ModelError.ModelNotFound).model)
+        // 网关回的 404 不一定是模型名不对:带上它 JSON 里的原话;HTML 页不当原话
+        val gateway = errorFor(MockResponse().setResponseCode(404).setBody("""{"error":{"type":"not_found_error","message":"none of group/rpa's models is ready"}}""")) as ModelError.ModelNotFound
+        assertEquals("none of group/rpa's models is ready", gateway.detail)
+        assertEquals("", (errorFor(MockResponse().setResponseCode(404).setBody("<html><body>404 Not Found</body></html>")) as ModelError.ModelNotFound).detail)
         assertEquals(503, (errorFor(MockResponse().setResponseCode(503)) as ModelError.Server).status)
         // 这个账号没开通这个模型:不当成 Key 或请求的问题
         val na = errorFor(MockResponse().setResponseCode(400).setBody("""{"code":"InvalidParameter","message":"The product is not activated."}""")) as ModelError.ModelNotAvailable
@@ -290,6 +294,14 @@ class OpenAiCompatModelTest {
         assertEquals(Usage(500, 7, 128), model().complete("sys", user, emptyList()).usage)
         server.enqueue(ok("""{"choices":[{"finish_reason":"stop","message":{"content":"hi"}}],"usage":{"prompt_tokens":500,"completion_tokens":7}}"""))
         assertEquals(Usage(500, 7, 0), model().complete("sys", user, emptyList()).usage)
+    }
+
+    @Test fun readsReasoningTokensDetails() = runTest {
+        server.enqueue(ok("""{"choices":[{"finish_reason":"stop","message":{"content":"hi"}}],"usage":{"prompt_tokens":500,"completion_tokens":70,"completion_tokens_details":{"reasoning_tokens":64}}}"""))
+        assertEquals(Usage(500, 70, 0, reasoningTokens = 64), model().complete("sys", user, emptyList()).usage)
+        // 报得比输出还多的按输出截
+        server.enqueue(ok("""{"choices":[{"finish_reason":"stop","message":{"content":"hi"}}],"usage":{"prompt_tokens":500,"completion_tokens":7,"completion_tokens_details":{"reasoning_tokens":64}}}"""))
+        assertEquals(Usage(500, 7, 0, reasoningTokens = 7), model().complete("sys", user, emptyList()).usage)
     }
 
     @Test fun cachedTakesLargerFieldClampedToInput() = runTest {

@@ -9,6 +9,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
+import android.media.AudioManager
+import android.media.AudioPlaybackConfiguration
 import android.net.LocalSocket
 import android.net.LocalSocketAddress
 import android.net.Uri
@@ -38,6 +40,8 @@ import com.wangzan101.mika.core.uistate.AppCopies
 import com.wangzan101.mika.core.uistate.PressKeys
 import java.io.File
 import java.io.ByteArrayOutputStream
+import java.lang.reflect.Method
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.system.exitProcess
@@ -61,8 +65,6 @@ class ShellService(
     private val muted = AudioMuteLedger(File(stateDir, "mika_audio_mute_$allowedUid"))
     /** Mika 所在的用户:本来那份 App 装在这里;别的用户里的是另一份(分身、工作资料)。 */
     private val myUser = allowedUid / PER_USER_RANGE
-    /** appops 作用的用户:Mika 所在的用户。 */
-    private val userArg = myUser.toString()
 
     // 不能用 getSystemService:那样拿到的 DisplayManager 绑的是系统上下文,包名与 shell uid 对不上
     @SuppressLint("PrivateApi")
@@ -86,20 +88,77 @@ class ShellService(
     }
 
     override fun createDisplay(surface: Surface, width: Int, height: Int, dpi: Int): Int = try {
-        val vd = displayManager.createVirtualDisplay("mika-agent", width, height, dpi, surface, displayFlags())
+        createVirtualDisplay(surface, width, height, dpi, trusted = true)
+    } catch (t: Throwable) {
+        if (!retryWithoutTrust(t)) {
+            Log.e(TAG, "createDisplay failed", t)
+            -1
+        } else {
+            // shell 没有 ADD_TRUSTED_DISPLAY 时(有的系统不给):去掉只对可信屏可用的几项再建一次。
+            // 退回后这块屏没有自己的焦点,自检页读它的标志会报「own focus no」并给出主屏焦点可能受影响的提示(Advice.FocusShared)。
+            Log.w(TAG, "createDisplay without trusted display flags, retrying", t)
+            try {
+                createVirtualDisplay(surface, width, height, dpi, trusted = false)
+            } catch (t: Throwable) {
+                Log.e(TAG, "createDisplay failed", t)
+                -1
+            }
+        }
+    }
+
+    private fun createVirtualDisplay(surface: Surface, width: Int, height: Int, dpi: Int, trusted: Boolean): Int {
+        val flags = displayFlags(Build.VERSION.SDK_INT, trusted)
+        val vd = displayManager.createVirtualDisplay("mika-agent", width, height, dpi, surface, flags)
         val id = vd.display.displayId
         synchronized(displays) { displays[id] = vd }
         setImePolicy(id)
-        id
-    } catch (t: Throwable) {
-        Log.e(TAG, "createDisplay failed", t)
-        -1
+        if (DisplayAwake.needed(flags, FLAG_OWN_DISPLAY_GROUP, displayGroup(id))) awake.start(id)
+        return id
     }
+
+    /** 自成一组的虚拟屏一直不睡,见 [DisplayAwake]。 */
+    private val awake by lazy {
+        val timer = Executors.newSingleThreadScheduledExecutor { Thread(it, "mika-display-awake").apply { isDaemon = true } }
+        DisplayAwake(::pokeDisplay) { r ->
+            val f = timer.scheduleWithFixedDelay(r, 0, DisplayAwake.PERIOD_MS, TimeUnit.MILLISECONDS)
+            return@DisplayAwake { f.cancel(false) }
+        }
+    }
+
+    /** IPowerManager 和它按屏报用户操作的方法;拿不到为 null(只记一次,屏照常用,只是没人替它续亮)。 */
+    @get:SuppressLint("PrivateApi")
+    private val userActivity: Pair<Any, Method>? by lazy {
+        runCatching {
+            val binder = Class.forName("android.os.ServiceManager").getMethod("getService", String::class.java).invoke(null, "power")
+            val power = Class.forName("android.os.IPowerManager\$Stub").getMethod("asInterface", android.os.IBinder::class.java).invoke(null, binder)!!
+            power to (DisplayAwake.userActivityMethod(power.javaClass) ?: error("no per-display userActivity"))
+        }.onFailure { Log.w(TAG, "display keep-awake unavailable: ${it.message}") }.getOrNull()
+    }
+
+    private fun pokeDisplay(displayId: Int): Boolean {
+        val (power, method) = userActivity ?: return false
+        return try {
+            method.invoke(power, displayId, SystemClock.uptimeMillis(), DisplayAwake.EVENT_TOUCH, 0)
+            true
+        } catch (t: Throwable) {
+            Log.w(TAG, "userActivity failed, display keep-awake off", t)
+            false
+        }
+    }
+
+    /** 这块屏所在的显示组(DisplayInfo.displayGroupId,隐藏字段);读不到为 null。 */
+    @SuppressLint("PrivateApi")
+    private fun displayGroup(displayId: Int): Int? = runCatching {
+        val global = Class.forName("android.hardware.display.DisplayManagerGlobal").getMethod("getInstance").invoke(null)!!
+        val info = global.javaClass.getMethod("getDisplayInfo", Int::class.java).invoke(global, displayId)!!
+        info.javaClass.getField("displayGroupId").getInt(info)
+    }.getOrNull()
 
     /** 只往这个服务自己建的虚拟屏上启动,调用方传错屏号(比如主屏)也不会打扰用户。 */
     private fun ownDisplay(displayId: Int): Boolean = synchronized(displays) { displayId in displays }
 
     override fun releaseDisplay(displayId: Int) {
+        awake.stop(displayId)
         synchronized(displays) { displays.remove(displayId) }?.release()
     }
 
@@ -127,6 +186,8 @@ class ShellService(
             Log.e(TAG, "cannot inspect main-screen tasks", t)
             return START_ERROR
         }
+        // 上次任务留下的那个任务还在主屏后面:整个挪回来,接着那一页做,不另开一个从头来
+        if (resumeKept(displayId, packageName, userId)) return START_OK
         val intent = launchIntent(packageName, userId) ?: return START_NOT_FOUND
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val options = ActivityOptions.makeBasic().setLaunchDisplayId(displayId).toBundle()
@@ -226,6 +287,8 @@ class ShellService(
         val decision = try {
             // 别的任务正在 Mika 另一块屏上用它:绝不结束它的进程
             if (onOtherOwnDisplay(listOf(packageName), displayId, userId)) return START_IN_USE_BY_OTHER
+            // 要从头开:上次任务留在主屏后面的那份是 Mika 自己留下的,先关掉,不算用户的状态
+            dropKept(packageName, userId)
             val displayField = TASK_INFO.getField("displayId")
             val taskDisplays = allTasks().filter { isCopy(it, packageName, userId) }.map { displayField.getInt(it) }
             ColdStart.decide(taskDisplays, displayId, inUseOnMainScreen(packageName, userId))
@@ -592,6 +655,232 @@ class ShellService(
         exec("am", "display", "move-stack", "$taskId", "$displayId") == 0
     }
 
+    /**
+     * 任务结束时留在主屏后面的任务:任务编号 → 键([AppsAfterTask.keyOf])。下次 Mika 打开同一份 App 时把它挪回来([resumeKept])。
+     * 只在内存里:助手重启后不认得,打开时照常走启动入口(系统多半也会把这个后台任务拉过来)。
+     */
+    private val kept = HashMap<Int, String>()
+
+    /**
+     * 任务结束:按 [AppsAfterTask] 定下这块屏上每个任务的去留,留下的挪到主屏最后面,再释放这块屏(屏带着
+     * FLAG_DESTROY_CONTENT_ON_REMOVAL,没挪走的随屏关掉)。顺序:定去留 → 挪留下的 → 再看一眼出声的 → 核对主屏最上面 → 释放。
+     * 静音由 Mika 在这之后还原,留下的 App 不会在还原时突然出声。
+     *
+     * 挪到最后面的做法(都是安卓原版的接口):先用 WindowContainerTransaction.setHidden 把任务藏起来,
+     * 再 moveRootTaskToDisplay 挪到主屏(系统总是把它放在最上面,藏着就不显示、不拿焦点、不让用户正在用的页面暂停),
+     * 接着 reorder 到最后面,最后取消隐藏。哪一步在这台系统上用不了就不再挪,照旧随屏关掉,结果里写明。
+     */
+    override fun finishDisplay(displayId: Int, keep: Array<String>?, close: Array<String>?): Bundle? = synchronized(launchLock) {
+        if (!ownDisplay(displayId)) return null
+        val closed = ArrayList<String>()
+        val notes = LinkedHashSet<String>()
+        // 已挪到主屏后面的;中途出错也照记,下次打开接得上
+        val moved = ArrayList<AppsAfterTask.Fate>()
+        try {
+            val playing = playingUids()
+            if (playing == null) notes += AppsAfterTask.NOTE_PLAYBACK_UNKNOWN
+            val rows = tasksOn(displayId)
+            val idField = TASK_INFO.getField("taskId")
+            val byId = rows.associateBy { idField.getInt(it) }
+            val fates = AppsAfterTask.decide(rows.map { afterTaskRow(it, playing) },
+                AppsAfterTask.normalize(keep, myUser), AppsAfterTask.normalize(close, myUser))
+            val mainTop = topTaskId(Display.DEFAULT_DISPLAY)
+            var supported = true
+            for (f in fates) {
+                if (!f.keep) { closed += AppsAfterTask.closedEntry(f); continue }
+                if (!supported) { closed += AppsAfterTask.closedEntry(f.copy(keep = false, why = AppsAfterTask.Why.MoveUnsupported)); continue }
+                when (keepBehind(byId.getValue(f.task.id))) {
+                    Behind.OK -> moved += f
+                    Behind.UNSUPPORTED -> {
+                        supported = false
+                        notes += AppsAfterTask.NOTE_MOVE_UNSUPPORTED
+                        closed += AppsAfterTask.closedEntry(f.copy(keep = false, why = AppsAfterTask.Why.MoveUnsupported))
+                    }
+                    Behind.FAILED -> closed += AppsAfterTask.closedEntry(f.copy(keep = false, why = AppsAfterTask.Why.MoveFailed))
+                }
+            }
+            // 挪过去之后又出声的(没标过 keep):挪回这块屏,随屏关掉;挪不回就直接关
+            val playingNow = if (moved.isEmpty()) null else playingUids()
+            val nowLoud = moved.map { f -> AppsAfterTask.recheck(f, task(f.task.id)?.let { playingIn(it, playingNow) }) }.filter { !it.keep }
+            for (f in nowLoud) {
+                if (!moveRoot(f.task.id, displayId)) removeTask(f.task.id)
+                moved.removeAll { it.task.id == f.task.id }
+                closed += AppsAfterTask.closedEntry(f)
+            }
+            val removed = ensureBehind(moved.map { it.task.id }.toSet(), mainTop)
+            moved.filter { it.task.id in removed }.forEach { closed += AppsAfterTask.closedEntry(it.copy(keep = false, why = AppsAfterTask.Why.MoveFailed)) }
+            moved.removeAll { it.task.id in removed }
+        } catch (t: Throwable) {
+            Log.e(TAG, "finishDisplay: cannot inspect tasks, closing the rest with the display", t)
+            notes += "error ${t.javaClass.simpleName}"
+        }
+        synchronized(kept) { moved.forEach { kept[it.task.id] = it.key } }
+        releaseDisplay(displayId)
+        Bundle().apply {
+            putStringArray(AppsAfterTask.KEY_KEPT, moved.map { it.key }.toTypedArray())
+            putStringArray(AppsAfterTask.KEY_CLOSED, closed.toTypedArray())
+            putString(AppsAfterTask.KEY_NOTE, notes.joinToString("; ").ifEmpty { null })
+        }
+    }
+
+    private enum class Behind { OK, UNSUPPORTED, FAILED }
+
+    /** 任务的一行给 [AppsAfterTask.decide]:键、是不是普通 App 的页面、是不是 Mika 自己的、此刻出不出声。 */
+    private fun afterTaskRow(t: Any, playing: Map<Int, Set<String>>?): AppsAfterTask.Task {
+        val user = runCatching { TASK_INFO.getField("userId").getInt(t) }.getOrDefault(myUser)
+        val pkgs = packagesOf(t).distinct()
+        val type = runCatching { TASK_INFO.getField("topActivityType").getInt(t) }.getOrNull()
+        return AppsAfterTask.Task(
+            id = TASK_INFO.getField("taskId").getInt(t),
+            keys = pkgs.map { AppsAfterTask.keyOf(it, user, myUser) },
+            standard = type == null || type == ACTIVITY_TYPE_UNDEFINED || type == ACTIVITY_TYPE_STANDARD,
+            own = pkgs.any { it in ownPackages },
+            playing = playingIn(t, playing),
+            muted = synchronized(muted) { pkgs.any { muted.contains(AppsAfterTask.keyOf(it, user, myUser)) } },
+        )
+    }
+
+    private val ownPackages: Set<String> by lazy {
+        runCatching { context.packageManager.getPackagesForUid(allowedUid)?.toSet() }.getOrNull().orEmpty()
+    }
+
+    /** 这个任务的 App(同一份用户里的)此刻在出声;读不到为 null。 */
+    private fun playingIn(task: Any, playing: Map<Int, Set<String>>?): Boolean? {
+        playing ?: return null
+        val user = runCatching { TASK_INFO.getField("userId").getInt(task) }.getOrNull()
+        val pkgs = packagesOf(task)
+        return playing.any { (uid, owners) -> (user == null || uid / PER_USER_RANGE == user) && pkgs.any { it in owners } }
+    }
+
+    /**
+     * 此刻正在播放的 uid → 这个 uid 的包。先问音频服务(AudioManager.getActivePlaybackConfigurations,
+     * 带 MODIFY_AUDIO_ROUTING 时才给出 uid);拿到的 uid 被隐去时改读 `dumpsys audio`。只认播放器状态为 started 的
+     * (被 Mika 静音的照样算在播:静音只是没声,还原就响)。都读不到为 null。
+     */
+    private fun playingUids(): Map<Int, Set<String>>? {
+        val uids = runCatching {
+            val configs = context.getSystemService(AudioManager::class.java).activePlaybackConfigurations
+            val uidOf = AudioPlaybackConfiguration::class.java.getMethod("getClientUid")
+            val stateOf = AudioPlaybackConfiguration::class.java.getMethod("getPlayerState")
+            val rows = configs.map { (uidOf.invoke(it) as Int) to (stateOf.invoke(it) as Int) }
+            if (rows.any { it.first < 0 }) null
+            else rows.filter { it.second == AppsAfterTask.PLAYER_STATE_STARTED }.map { it.first }.toSet()
+        }.onFailure { Log.w(TAG, "playback configurations unavailable", it) }.getOrNull()
+            ?: sh("dumpsys", "audio").takeIf { it.first == 0 }?.second?.let(AppsAfterTask::playingUids)
+            ?: return null
+        return uids.associateWith { uid ->
+            runCatching { context.packageManager.getPackagesForUid(uid)?.toSet() }.getOrNull().orEmpty()
+        }
+    }
+
+    /** 把 Mika 屏上的任务 [row] 挪到主屏最后面(做法见 [finishDisplay])。 */
+    private fun keepBehind(row: Any): Behind {
+        val id = TASK_INFO.getField("taskId").getInt(row)
+        val token = runCatching { TASK_INFO.getField("token").get(row) }.getOrNull() ?: return Behind.UNSUPPORTED
+        if (!transact { wct -> wctCall(wct, "setHidden", token, true) }) return Behind.UNSUPPORTED
+        if (!moveRoot(id, Display.DEFAULT_DISPLAY)) {
+            transact { wct -> wctCall(wct, "setHidden", token, false) }
+            return Behind.UNSUPPORTED
+        }
+        // 放到最后面之前不取消隐藏:取消隐藏时系统不挪它,先取消就会出现在用户眼前
+        val behind = transact { wct -> wctCall(wct, "reorder", token, false) }
+        if (behind && transact { wct -> wctCall(wct, "setHidden", token, false) }) return Behind.OK
+        // 停在半路(藏着或在最上面)都不能留:关掉
+        Log.w(TAG, "task $id could not be put behind on the main screen, removing it")
+        removeTask(id)
+        return Behind.FAILED
+    }
+
+    /**
+     * 核对:挪过去的任务都没到用户眼前(主屏上看得见)。看得见了(本不该发生)就马上再排到最后面,还看得见就关掉。
+     * 看得见按 TaskInfo.isVisible;读不到这一项的系统按「是不是主屏最上面的任务」看(那里的任务按最近使用排,只作退路)。
+     * [before] 是挪之前主屏最上面的任务,只记进日志。
+     */
+    private fun ensureBehind(moved: Set<Int>, before: Int): Set<Int> {
+        if (moved.isEmpty()) return emptySet()
+        val removed = HashSet<Int>()
+        val visibleField = runCatching { TASK_INFO.getField("isVisible") }.getOrNull()
+        fun inFront(): List<Any> = if (visibleField != null) {
+            tasksOn(Display.DEFAULT_DISPLAY).filter { TASK_INFO.getField("taskId").getInt(it) in moved && visibleField.getBoolean(it) }
+        } else listOfNotNull(tasksOn(Display.DEFAULT_DISPLAY).firstOrNull()?.takeIf { TASK_INFO.getField("taskId").getInt(it) in moved })
+        repeat(2) { attempt ->
+            val front = inFront()
+            if (front.isEmpty()) return removed
+            for (row in front) {
+                val id = TASK_INFO.getField("taskId").getInt(row)
+                Log.w(TAG, "moved task $id is in front on the main screen (top was $before), sending it back")
+                val token = runCatching { TASK_INFO.getField("token").get(row) }.getOrNull()
+                if (attempt == 1 || token == null || !transact { wct -> wctCall(wct, "reorder", token, false) }) {
+                    removeTask(id)
+                    removed += id
+                }
+            }
+        }
+        return removed
+    }
+
+    /** IActivityTaskManager.moveRootTaskToDisplay;接口不在时退回 `am display move-stack`(同一个调用)。 */
+    private fun moveRoot(taskId: Int, displayId: Int): Boolean = moveTask(taskId, displayId)
+
+    /** IActivityTaskManager.removeTask(关掉任务,和最近任务里划掉一样);不行退回 `am stack remove`。 */
+    private fun removeTask(taskId: Int): Boolean = try {
+        taskManager.javaClass.getMethod("removeTask", Int::class.java).invoke(taskManager, taskId) as Boolean
+    } catch (t: Throwable) {
+        Log.w(TAG, "removeTask unavailable, falling back to am", t)
+        exec("am", "stack", "remove", "$taskId") == 0
+    }
+
+    /** 建一个 WindowContainerTransaction,经 IWindowOrganizerController.applyTransaction 交给系统;哪一步不行返回 false。 */
+    @SuppressLint("PrivateApi")
+    private fun transact(build: (Any) -> Unit): Boolean = try {
+        val wct = WCT.getConstructor().newInstance()
+        build(wct)
+        val controller = taskManager.javaClass.getMethod("getWindowOrganizerController").invoke(taskManager)!!
+        controller.javaClass.methods.first { it.name == "applyTransaction" && it.parameterTypes.size == 1 }.invoke(controller, wct)
+        true
+    } catch (t: Throwable) {
+        Log.w(TAG, "window container transaction failed", t)
+        false
+    }
+
+    @SuppressLint("PrivateApi")
+    private fun wctCall(wct: Any, method: String, token: Any, flag: Boolean) {
+        WCT.getMethod(method, Class.forName("android.window.WindowContainerToken"), Boolean::class.javaPrimitiveType).invoke(wct, token, flag)
+    }
+
+    /** 主屏上(没在用户眼前)的、上次任务留下的这份 App 的任务。 */
+    private fun keptOnMain(packageName: String, userId: Int): List<Any> {
+        val ids = synchronized(kept) { kept.keys.toSet() }
+        if (ids.isEmpty()) return emptyList()
+        val idField = TASK_INFO.getField("taskId")
+        val displayField = TASK_INFO.getField("displayId")
+        val visibleField = runCatching { TASK_INFO.getField("isVisible") }.getOrNull()
+        val all = allTasks()
+        // 已经不在的任务不再记着
+        synchronized(kept) { kept.keys.retainAll(all.map { idField.getInt(it) }.toSet()) }
+        return all.filter { t ->
+            idField.getInt(t) in ids && displayField.getInt(t) == Display.DEFAULT_DISPLAY && isCopy(t, packageName, userId) &&
+                visibleField?.getBoolean(t) != true
+        }
+    }
+
+    /** 把留在主屏后面的那个任务挪回 Mika 的屏;没有、或挪不了返回 false(调用方照常启动)。 */
+    private fun resumeKept(displayId: Int, packageName: String, userId: Int): Boolean {
+        val row = runCatching { keptOnMain(packageName, userId).firstOrNull() }.getOrNull() ?: return false
+        val id = TASK_INFO.getField("taskId").getInt(row)
+        if (!moveRoot(id, displayId)) return false
+        synchronized(kept) { kept.remove(id) }
+        return true
+    }
+
+    /** 冷启动前关掉上次任务留在主屏后面的那份(Mika 自己留下的,不是用户的状态)。 */
+    private fun dropKept(packageName: String, userId: Int) {
+        keptOnMain(packageName, userId).forEach { t ->
+            val id = TASK_INFO.getField("taskId").getInt(t)
+            if (removeTask(id)) synchronized(kept) { kept.remove(id) }
+        }
+    }
+
     /** 主屏任务的记录:Agent 动作前开始盯,见 [MainScreenWatch]。第一次用到才建(线程、任务栈监听)。 */
     private val mainWatch by lazy { MainScreenWatch({ taskManager }, ::taskRows) }
 
@@ -715,56 +1004,97 @@ class ShellService(
         return send(n - 1, MotionEvent.ACTION_UP) || send(n - 1, MotionEvent.ACTION_UP)
     }
 
-    /**
-     * 只有 DOWN 就没注入成功时才退回 shell 命令;DOWN 已送达后再退回会造成一次多余的完整点击/按键,
-     * 这时只补发 UP(失败重试一次)。
-     */
-    private inline fun injectPair(down: InputEvent, up: InputEvent, displayId: Int, fallback: () -> Boolean): Boolean {
-        if (!inject(down, displayId)) return fallback()
-        return inject(up, displayId) || inject(up, displayId)
-    }
+    private inline fun injectPair(down: InputEvent, up: InputEvent, displayId: Int, fallback: () -> Boolean): Boolean =
+        sendPair({ inject(down, displayId) }, { inject(up, displayId) }, fallback)
 
     /**
      * `appops set <pkg> PLAY_AUDIO ignore`;首次静音时记下原模式(同时落文件),取消静音时恢复。
      * 原来没设置过的恢复成 allow,不写 default(见 [AudioMuteLedger.restoreMode])。
-     * 命令失败返回 false,且不记录原模式(读不到原值就不改)。
+     * 命令失败返回 false,且不记录原模式(读不到原值就不改)。作用在 Mika 所在的用户上(本来那份)。
      */
-    override fun setAudioMuted(packageName: String, muted: Boolean): Boolean = synchronized(this.muted) {
+    override fun setAudioMuted(packageName: String, muted: Boolean): Boolean = audioMuted(packageName, null, muted)
+
+    /** 同 [setAudioMuted],作用在 [userId] 那份用户里的那份(分身、工作资料);记录按 [AppAudioKey] 分开记。 */
+    override fun setAudioMutedInUser(packageName: String, userId: Int, muted: Boolean): Boolean {
+        if (userId == myUser) return audioMuted(packageName, null, muted)
+        return audioMuted(packageName, otherUser(userId) ?: return false, muted)
+    }
+
+    private fun audioMuted(packageName: String, user: Int?, muted: Boolean): Boolean = synchronized(this.muted) {
+        val key = AppAudioKey.of(packageName, user)
         if (muted) {
-            if (!this.muted.contains(packageName)) {
-                val (code, out) = appops("get", packageName)
+            if (!this.muted.contains(key)) {
+                val (code, out) = appops("get", packageName, user)
                 if (code != 0) return false
-                this.muted.put(packageName, parsePlayAudioMode(out))
+                this.muted.put(key, parsePlayAudioMode(out))
             }
-            appops("set", packageName, "ignore").first == 0
+            appops("set", packageName, user, "ignore").first == 0
         } else {
-            val ok = appops("set", packageName, AudioMuteLedger.restoreMode(this.muted[packageName])).first == 0
-            if (ok) this.muted.remove(packageName)
+            val ok = appops("set", packageName, user, AudioMuteLedger.restoreMode(this.muted[key])).first == 0
+            if (ok) this.muted.remove(key)
             ok
         }
     }
 
     /** 启动时把上次没来得及恢复的包还原(只动记录里的)。 */
     fun recoverMuted() {
-        synchronized(muted) { muted.restoreAll { pkg, mode -> appops("set", pkg, mode).first == 0 } }
+        synchronized(muted) { muted.restoreAll(::writeRecorded) }
     }
 
-    private fun appops(verb: String, packageName: String, mode: String? = null): Pair<Int, String> =
-        if (mode == null) sh("appops", verb, "--user", userArg, packageName, "PLAY_AUDIO")
-        else sh("appops", verb, "--user", userArg, packageName, "PLAY_AUDIO", mode)
+    /** 按记录的键写回一项;键不合格式的当作已处理,免得一直留着。 */
+    private fun writeRecorded(key: String, mode: String): Boolean {
+        val (pkg, user) = AppAudioKey.parse(key) ?: return true
+        return appops("set", pkg, user, mode).first == 0
+    }
 
-    override fun getAudioMode(packageName: String): String? {
-        val (code, out) = appops("get", packageName)
+    /** [user] 为空是 Mika 所在的用户。 */
+    private fun appops(verb: String, packageName: String, user: Int?, mode: String? = null): Pair<Int, String> {
+        val u = (user ?: myUser).toString()
+        return if (mode == null) sh("appops", verb, "--user", u, packageName, "PLAY_AUDIO")
+        else sh("appops", verb, "--user", u, packageName, "PLAY_AUDIO", mode)
+    }
+
+    /** 别的用户编号原样给出;就是 Mika 所在的用户时为 null(按本来那份处理);不合法时也为 null,调用方据此拒绝。 */
+    private fun otherUser(userId: Int): Int? = userId.takeIf { it >= 0 && it != myUser }
+
+    override fun getAudioMode(packageName: String): String? = audioMode(packageName, null)
+
+    override fun getAudioModeInUser(packageName: String, userId: Int): String? {
+        if (userId == myUser) return audioMode(packageName, null)
+        return audioMode(packageName, otherUser(userId) ?: return null)
+    }
+
+    private fun audioMode(packageName: String, user: Int?): String? {
+        val (code, out) = appops("get", packageName, user)
         return if (code == 0) parsePlayAudioMode(out) else null
     }
 
     /** "default"(没设置过)按 allow 写,理由同 [AudioMuteLedger.restoreMode]。 */
-    override fun setAudioMode(packageName: String, mode: String): Boolean {
+    override fun setAudioMode(packageName: String, mode: String): Boolean = audioMode(packageName, null, mode)
+
+    override fun setAudioModeInUser(packageName: String, userId: Int, mode: String): Boolean {
+        if (userId == myUser) return audioMode(packageName, null, mode)
+        return audioMode(packageName, otherUser(userId) ?: return false, mode)
+    }
+
+    private fun audioMode(packageName: String, user: Int?, mode: String): Boolean {
         if (!MODE_RE.matches(mode)) return false
-        val ok = appops("set", packageName, AudioMuteLedger.restoreMode(mode)).first == 0
-        if (ok) synchronized(muted) { muted.remove(packageName) }
+        val ok = appops("set", packageName, user, AudioMuteLedger.restoreMode(mode)).first == 0
+        if (ok) synchronized(muted) { muted.remove(AppAudioKey.of(packageName, user)) }
         return ok
     }
+
+    /**
+     * 该包([userId] 那份用户里的)在主屏上有看得见的任务:用户正在主屏用它。静音按包作用,这时静了它用户手上的也没声了,
+     * Mika 据此不去静它。看不清主屏时按「在用」答,宁可不静也不把用户正在用的静了。
+     */
+    override fun visibleOnMainScreen(packageName: String, userId: Int): Boolean =
+        try {
+            inUseOnMainScreen(packageName, userId)
+        } catch (t: Throwable) {
+            Log.e(TAG, "cannot inspect main-screen tasks", t)
+            true
+        }
 
     /**
      * 只有读得到用户原来的剪贴板才动它:读不到就分不清「原来是空的」和「有内容但看不到」,
@@ -968,25 +1298,16 @@ class ShellService(
 
     override fun releaseAll() {
         restoreClip()
-        synchronized(muted) { muted.packages() }.forEach { setAudioMuted(it, false) }
+        synchronized(muted) { muted.packages() }.forEach { key ->
+            AppAudioKey.parse(key)?.let { (pkg, user) -> audioMuted(pkg, user, false) } ?: synchronized(muted) { muted.remove(key) }
+        }
+        awake.stopAll()
         synchronized(displays) { displays.values.toList().also { displays.clear() } }.forEach { it.release() }
     }
 
     override fun destroy() {
         releaseAll()
         exitProcess(0)
-    }
-
-    private fun displayFlags(): Int {
-        var flags = FLAG_PUBLIC or FLAG_OWN_CONTENT_ONLY or FLAG_SUPPORTS_TOUCH or
-            FLAG_ROTATES_WITH_CONTENT or FLAG_DESTROY_CONTENT_ON_REMOVAL
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            flags = flags or FLAG_TRUSTED or FLAG_OWN_DISPLAY_GROUP or FLAG_ALWAYS_UNLOCKED or FLAG_TOUCH_FEEDBACK_DISABLED
-        }
-        // 只有 OWN_FOCUS 时,虚拟屏上启动 App 或 App 自己开新页面都会让它成为「最上层焦点屏」,
-        // 主屏的焦点窗口随之清空;STEAL_TOP_FOCUS_DISABLED(需同时有 OWN_FOCUS、TRUSTED)让它不抢主屏的焦点
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) flags = flags or FLAG_OWN_FOCUS or FLAG_STEAL_TOP_FOCUS_DISABLED
-        return flags
     }
 
     /** IWindowManager.setDisplayImePolicy:输入法不弹到用户的主屏。选哪种策略见 IME_POLICY。 */
@@ -1003,7 +1324,7 @@ class ShellService(
         event.javaClass.getMethod("setDisplayId", Int::class.java).invoke(event, displayId)
         val manager = inputManager()
         manager.javaClass.getMethod("injectInputEvent", InputEvent::class.java, Int::class.java)
-            .invoke(manager, event, if (waitForFinish) INJECT_MODE_WAIT_FOR_FINISH else INJECT_MODE_ASYNC) as Boolean
+            .invoke(manager, event, injectMode(event is KeyEvent, waitForFinish)) as Boolean
     } catch (t: Throwable) {
         Log.w(TAG, "injectInputEvent failed", t)
         false
@@ -1100,7 +1421,9 @@ class ShellService(
         private const val READ_CLIPBOARD_IN_BACKGROUND = "android.permission.READ_CLIPBOARD_IN_BACKGROUND"
 
         private val TASK_INFO: Class<*> by lazy { Class.forName("android.app.TaskInfo") }
+        private val WCT: Class<*> by lazy { Class.forName("android.window.WindowContainerTransaction") }
         private const val INJECT_MODE_ASYNC = 0 // InputManager.INJECT_INPUT_EVENT_MODE_ASYNC
+        private const val INJECT_MODE_WAIT_FOR_RESULT = 1 // InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_RESULT
         private const val INJECT_MODE_WAIT_FOR_FINISH = 2 // InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH
         private const val VIRTUAL_KEYBOARD = -1 // KeyCharacterMap.VIRTUAL_KEYBOARD
         private const val USER_CURRENT = -2 // UserHandle.USER_CURRENT
@@ -1120,6 +1443,49 @@ class ShellService(
         private const val FLAG_TOUCH_FEEDBACK_DISABLED = 1 shl 13
         private const val FLAG_OWN_FOCUS = 1 shl 14
         private const val FLAG_STEAL_TOP_FOCUS_DISABLED = 1 shl 16
+
+        /**
+         * 建虚拟屏用的标志。[trusted] 为 false 时去掉依赖可信屏的那几项:有的系统里 shell 没有
+         * ADD_TRUSTED_DISPLAY,带上 TRUSTED 会被系统以 SecurityException 拒绝;OWN_DISPLAY_GROUP、ALWAYS_UNLOCKED
+         * 和 OWN_FOCUS/STEAL_TOP_FOCUS_DISABLED 同样只对可信屏可用。其余几项与可信与否无关,照旧。
+         */
+        internal fun displayFlags(sdk: Int, trusted: Boolean): Int {
+            var flags = FLAG_PUBLIC or FLAG_OWN_CONTENT_ONLY or FLAG_SUPPORTS_TOUCH or
+                FLAG_ROTATES_WITH_CONTENT or FLAG_DESTROY_CONTENT_ON_REMOVAL
+            if (sdk >= Build.VERSION_CODES.TIRAMISU) {
+                flags = flags or FLAG_TOUCH_FEEDBACK_DISABLED
+                if (trusted) flags = flags or FLAG_TRUSTED or FLAG_OWN_DISPLAY_GROUP or FLAG_ALWAYS_UNLOCKED
+            }
+            // 只有 OWN_FOCUS 时,虚拟屏上启动 App 或 App 自己开新页面都会让它成为「最上层焦点屏」,
+            // 主屏的焦点窗口随之清空;STEAL_TOP_FOCUS_DISABLED(需同时有 OWN_FOCUS、TRUSTED)让它不抢主屏的焦点
+            if (sdk >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE && trusted) {
+                flags = flags or FLAG_OWN_FOCUS or FLAG_STEAL_TOP_FOCUS_DISABLED
+            }
+            return flags
+        }
+
+        /**
+         * 注入方式。按键等到系统定下投给谁(WAIT_FOR_RESULT):屏上没有能接按键的窗口时注入报失败,调用方才会退回 shell 命令
+         * 或报动作失败,不再「发了就算成」;只等派发、不等 App 处理完,最多等到系统自己的注入超时。
+         * 触摸照旧不等(ASYNC):一笔划要按时间逐点送,等派发会打乱快慢。[waitForFinish] 的(主屏解锁输入)等 App 处理完。
+         */
+        internal fun injectMode(key: Boolean, waitForFinish: Boolean): Int = when {
+            waitForFinish -> INJECT_MODE_WAIT_FOR_FINISH
+            key -> INJECT_MODE_WAIT_FOR_RESULT
+            else -> INJECT_MODE_ASYNC
+        }
+
+        /**
+         * 一对按下/抬起:只有按下就没注入成功时才走 [fallback](shell 命令);按下已送达后再退回会造成一次多余的完整点击/按键,
+         * 这时只补发抬起(失败重试一次)。
+         */
+        internal inline fun sendPair(down: () -> Boolean, up: () -> Boolean, fallback: () -> Boolean): Boolean {
+            if (!down()) return fallback()
+            return up() || up()
+        }
+
+        /** 只有缺权限(SecurityException,如 shell 没有 ADD_TRUSTED_DISPLAY)才值得去掉可信标志再试;别的失败照旧报错。 */
+        internal fun retryWithoutTrust(t: Throwable): Boolean = t is SecurityException
 
         // WindowManager.DISPLAY_IME_POLICY_LOCAL = 0, _FALLBACK_DISPLAY = 1, _HIDE = 2。
         // 真机(安卓 14)实测 LOCAL:在虚拟屏聚焦输入框后输入法窗口出现在虚拟屏上,主屏焦点不变,无需 HIDE。

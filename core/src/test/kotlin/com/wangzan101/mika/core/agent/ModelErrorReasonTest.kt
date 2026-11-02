@@ -17,6 +17,35 @@ class ModelErrorReasonTest {
         assertEquals("找不到模型「gemini」", ModelError.ModelNotFound("gemini").message)
     }
 
+    /** 404 也可能是网关、中转服务在说别的:有原话时照原话说、不断定模型不存在,句末的点不重复;没有原话时和上面一样。 */
+    @Test fun modelNotFoundCarriesWhatTheServerSaid() {
+        assertEquals(
+            "调用模型「group/rpa」时服务端回复：none of group/rpa's models is ready。可能是模型名不对，或者服务那边暂时不可用。" +
+                "去设置 › 模型,检查模型名(要填完整的模型 ID,比如 Gemini 的模型名类似 gemini-flash-latest)或改用对应的预设。",
+            StopRules.modelFailed(ModelError.ModelNotFound("group/rpa", "none of group/rpa's models is ready")).reason,
+        )
+        assertEquals(
+            "服务端回复：The model `x` does not exist。可能是模型名不对，或者服务那边暂时不可用。请到设置 › 模型检查模型名和 Base URL 是否正确。",
+            StopRules.modelFailed(ModelError.ModelNotFound("", "The model `x` does not exist.")).reason,
+        )
+        val said = StopRules.modelFailed(ModelError.ModelNotFound("m", "gone")).reason
+        assertFalse(said.contains("不存在"))
+    }
+
+    /** 引在句中的服务端原话,三种带原话的失败都只去掉末尾一个句号;截短的省略号不动。 */
+    @Test fun quotedServerTextDropsOneTrailingPeriod() {
+        fun reasons(detail: String) = listOf(
+            StopRules.modelFailed(ModelError.ModelNotFound("m", detail)).reason,
+            StopRules.modelFailed(ModelError.ChatGptNotEligible(detail)).reason,
+            StopRules.modelFailed(ModelError.AccountPlanNotAllowed("ChatGPT", detail)).reason,
+        )
+        reasons("Not allowed.").forEach { assertTrue(it, it.contains("Not allowed。") && !it.contains("Not allowed.")) }
+        reasons("不允许。").forEach { assertTrue(it, it.contains("不允许。") && !it.contains("不允许。。")) }
+        reasons("Not allowed").forEach { assertTrue(it, it.contains("Not allowed。")) }
+        reasons("Too long…").forEach { assertTrue(it, it.contains("Too long…。")) }
+        reasons("Wait...").forEach { assertTrue(it, it.contains("Wait...。")) }
+    }
+
     /** 这个账号用不了的模型、不支持工具的模型:说清是哪个、去哪换,或到服务商后台开通。 */
     @Test fun modelNotAvailableNamesTheModel() {
         assertEquals(

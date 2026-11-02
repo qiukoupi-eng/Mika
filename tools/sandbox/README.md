@@ -9,7 +9,7 @@ Mika 只以子进程方式运行它们,不链接它们。
 | `libproot_loader.so` | PRoot 的载入器(静态、`-nostdlib`) | 同一个 PRoot 源码包 | 5.4.0 | GPL-2.0-or-later |
 | `libmikarun.so` | Mika 的沙箱启动器(超时、断网、清场) | `app/src/main/cpp/mikarun/mikarun.c` | 随 Mika | MIT |
 
-许可证全文在仓库根目录的 `licenses/`,版权声明见 `THIRD_PARTY_NOTICES.md`。
+许可证全文和版权声明(`licenses/THIRD_PARTY_NOTICES.md`)都在仓库根目录的 `licenses/`。
 
 ## 自带的运行环境
 

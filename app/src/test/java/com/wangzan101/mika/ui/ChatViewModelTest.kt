@@ -4,9 +4,14 @@ import com.wangzan101.mika.i18n.ChineseTexts
 import com.wangzan101.mika.task.TaskGate
 
 import com.wangzan101.mika.chat.ConversationStore
+import com.wangzan101.mika.chat.CurrentChat
 import com.wangzan101.mika.confirm.ConfirmationNotifier
 import com.wangzan101.mika.core.agent.FailKind
+import com.wangzan101.mika.core.agent.GateReason
+import com.wangzan101.mika.core.agent.QuoteMessage
 import com.wangzan101.mika.core.agent.TaskState
+import com.wangzan101.mika.R
+import com.wangzan101.mika.i18n.tr
 import com.wangzan101.mika.core.gate.ConfirmationRequest
 import com.wangzan101.mika.core.risk.IrrevAction
 import com.wangzan101.mika.core.agent.Turn
@@ -20,6 +25,8 @@ import com.wangzan101.mika.takeover.Takeover
 import com.wangzan101.mika.task.SteerNote
 import com.wangzan101.mika.task.SteerState
 import com.wangzan101.mika.ui.PipPhysics.Corner
+import com.wangzan101.mika.core.cap.web.AttachedPage
+import com.wangzan101.mika.core.userscreen.UserScreenMessage
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
@@ -76,6 +83,12 @@ class ChatViewModelTest {
     private fun TestScope.vm(store: ConversationStore = ConversationStore(tmp.newFolder())) =
         ChatViewModel(backgroundScope, state, stage, actions, store, appLabel = { if (it == "com.chat") "聊天" else it },
             activities = acts, steers = steerFlow).also { runCurrent() }
+
+    /** 和 [vm] 一样,但能指定这块屏开没开。 */
+    private fun TestScope.vmWithScreen(open: MutableStateFlow<Boolean>) =
+        ChatViewModel(backgroundScope, state, stage, actions, ConversationStore(tmp.newFolder()),
+            appLabel = { if (it == "com.chat") "聊天" else it }, activities = acts, steers = steerFlow,
+            screenOpen = open).also { runCurrent() }
 
     private fun TestScope.emit(s: TaskState) {
         state.value = s
@@ -173,6 +186,31 @@ class ChatViewModelTest {
         assertEquals("已把亮度调到 50%。\n自动亮度已关闭。" to "设置 › 显示 页面的亮度滑块显示 50%,自动亮度开关为关",
             splitEvidence("已把亮度调到 50%。\n自动亮度已关闭。\n依据: 设置 › 显示 页面的亮度滑块显示 50%,自动亮度开关为关"))
         assertEquals("结论。" to "来自搜索结果第一条", splitEvidence("结论。证据：来自搜索结果第一条"))
+    }
+
+    /** 每一步都带着它实际做的动作:点开这一步才看得到用了哪个工具、对什么、结果如何。 */
+    @Test fun eachStepCarriesWhatItActuallyDid() = runTest {
+        val vm = vm()
+        vm.send("打开设置看电量", ok)
+        emit(TaskState.Running(0, "正在准备"))
+        did(1, "act", "phone_tap", "com.chat", "changed")
+        did(1, "act", "phone_type_text", "com.other", "unknown_code", failed = true)
+        val ex = vm.ui.value.exchanges.single()
+        assertEquals(
+            listOf(
+                // 用工具的界面说法,不带工具名
+                StepAction("点击", "聊天", "changed", false),
+                StepAction("输入文字", "com.other", "unknown_code", true),
+            ),
+            ex.stepActions.getValue(1),
+        )
+        // 只挂在有动作的那一步上
+        assertEquals(setOf(1), ex.stepActions.keys)
+        // 点开后每件事一行:做了什么 · 对什么 · 结果;错误码不给人看,说「没成功」
+        val lines = ex.stepActions.getValue(1).map(ChatCopy::actionLine)
+        assertEquals("点击 · 聊天 · ${tr(R.string.result_effective)}", lines[0])
+        assertEquals("输入文字 · com.other · ${tr(R.string.step_failed)}", lines[1])
+        lines.forEach { assertFalse(it, it.contains("phone_") || it.contains("unknown_code")) }
     }
 
     @Test fun unverifiedIsMarkedOnTheResult() = runTest {
@@ -495,6 +533,69 @@ class ChatViewModelTest {
         assertEquals(ExchangeStatus.Cancelled(), vm.ui.value.exchanges.single().status)
         assertEquals(ComposerMode.Idle, vm.ui.value.composer)
         assertFalse(vm.ui.value.pip.visible)
+    }
+
+    // 等着服务空下来时,那条消息下面说清在等前一个任务,不像卡住了;交给服务后换成任务自己的进展
+    @Test fun waitingMessageSaysItWaitsForThePreviousTask() = runTest {
+        val busy = MutableStateFlow(true)
+        val vm = ChatViewModel(backgroundScope, state, stage, actions, ConversationStore(tmp.newFolder()), busy)
+        runCurrent()
+        assertTrue(vm.send("下一个", ok))
+        runCurrent()
+        val waiting = vm.ui.value.exchanges.single()
+        assertEquals(ExchangeStatus.Working, waiting.status)
+        assertEquals("等前一个任务做完再开始", ChatCopy.progressLine(waiting))
+        busy.value = false
+        runCurrent()
+        assertEquals(listOf("start:下一个"), calls)
+        emit(TaskState.Running(1, "打开设置", reason = "打开设置"))
+        assertEquals("打开设置", ChatCopy.progressLine(vm.ui.value.exchanges.single()))
+    }
+
+    // 对话页看到服务空着就交过去,交到之前别处(定时、电脑)先开始了一个:服务把这条排在它后面(不丢),
+    // 对话里看得到在排队;那个任务收尾后这条照常开始、做完
+    private fun TestScope.raceVm(): ChatViewModel {
+        val vm = ChatViewModel(backgroundScope, state, stage, actions, ConversationStore(tmp.newFolder()), MutableStateFlow(false),
+            shownTask = shown, activeConversations = active).also { runCurrent() }
+        assertTrue(vm.send("订会议室", ok))
+        assertEquals(listOf("start:订会议室"), calls)
+        val mine = vm.ui.value.conversationId!!
+        // 别处的任务抢先开始、在服务里显示着:不接到这个对话里
+        active.value = listOf("remote")
+        shown.value = "remote" to TaskState.Running(3, "查快递")
+        emit(TaskState.Running(3, "查快递"))
+        assertEquals("订会议室", vm.ui.value.exchanges.single().goal)
+        assertEquals(ExchangeStatus.Working, vm.ui.value.exchanges.single().status)
+        // 这条排在它后面,服务显示它的排队状态
+        val queued = TaskState.Held(GateReason.queued("排队中:前面还有 1 个任务"))
+        active.value = listOf("remote", mine)
+        shown.value = mine to queued
+        emit(queued)
+        return vm
+    }
+
+    @Test fun messageQueuedBehindATaskStartedElsewhereStartsAfterIt() = runTest {
+        val vm = raceVm()
+        val mine = vm.ui.value.conversationId!!
+        assertEquals(ExchangeStatus.Queued("排队中:前面还有 1 个任务"), vm.ui.value.exchanges.single().status)
+        assertEquals(ComposerMode.Busy, vm.ui.value.composer)
+        // 那个任务收尾,这条放出来开始跑,直到做完
+        active.value = listOf(mine)
+        shown.value = mine to TaskState.Running(1, "打开日历", reason = "打开日历")
+        emit(TaskState.Running(1, "打开日历", reason = "打开日历"))
+        assertEquals(ExchangeStatus.Working, vm.ui.value.exchanges.single().status)
+        shown.value = mine to TaskState.Succeeded("订好了")
+        emit(TaskState.Succeeded("订好了"))
+        assertEquals("订好了", (vm.ui.value.exchanges.single().status as ExchangeStatus.Done).answer)
+    }
+
+    // 排着队时点停止:只停这个对话的那条,不发不带编号的停止(那会停掉服务显示着的、别处开始的任务)
+    @Test fun stopWhileQueuedInServiceCancelsOnlyThisMessage() = runTest {
+        val vm = raceVm()
+        val mine = vm.ui.value.conversationId!!
+        vm.cancel()
+        assertEquals("cancel@$mine", calls.last())
+        assertFalse("cancel" in calls)
     }
 
     @Test fun historyLoadsWhenOpeningConversation() = runTest {
@@ -1058,6 +1159,26 @@ class ChatViewModelTest {
         assertEquals("r-a", vm.ui.value.exchanges.last().runId)
     }
 
+    // 跑的时候就挂上运行编号(「运行过程」当场能进),按卡片所在的对话取,不用服务显示中的那个
+    @Test fun runningCardUsesItsOwnConversationsLiveRunId() = runTest {
+        val live = mutableMapOf<String, String>()
+        val vm = ChatViewModel(
+            backgroundScope, state, stage, actions, ConversationStore(tmp.newFolder()), serviceBusy = MutableStateFlow(true),
+            endedRunIds = MutableStateFlow(mapOf("a" to "r-a")), liveRunId = { live[it] },
+            parallelFlag = { true }, shownTask = shown, activeConversations = active,
+        ).also { runCurrent() }
+        vm.switchTo("a")
+        assertTrue(vm.send("设置版本号", ok))
+        live["b"] = "r-b"
+        show("a", TaskState.Running(0, "正在准备"))
+        assertNull("这个对话的任务还没分到编号:不拿别的对话的", vm.ui.value.exchanges.last().runId)
+        live["a"] = "r-a"
+        show("a", TaskState.Running(1, "打开设置"))
+        assertEquals("r-a", vm.ui.value.exchanges.last().runId)
+        show("a", TaskState.Succeeded("12"))
+        assertEquals("r-a", vm.ui.value.exchanges.last().runId)
+    }
+
     // 开关在界面建好之后才打开:开始任务时重读,不用重建界面
     @Test fun parallelFlagReadWhenStarting() = runTest {
         var flag = false
@@ -1225,6 +1346,28 @@ class ChatViewModelTest {
         assertNull(vm.editSteer("r"))
         assertFalse(calls.any { it == "withdraw:r" })
         assertEquals(SteerState.Received, vm.ui.value.exchanges.single().steers.last().state)
+    }
+
+    // 悬浮胶囊带着屏幕、浏览器页带着页面说明插的话也显示在对话里:取回编辑会把标记原文放进输入框,只给撤回,不给编辑
+    @Test fun steersWithAScreenOrAPageCanOnlyBeWithdrawn() = runTest {
+        val vm = vm()
+        vm.send("当前任务", ok)
+        emit(TaskState.Running(1, "在做"))
+        val screen = UserScreenMessage.compose("s1", "这个按钮是干什么的")
+        val page = AttachedPage.compose(AttachedPage.Page("https://example.com/a", "标题", "选中的一段"), "这段什么意思")
+        steerFlow.value = listOf(SteerNote("s", screen, SteerState.Received), SteerNote("p", page, SteerState.Received))
+        runCurrent()
+        assertEquals("s", withdrawableSteer(vm.ui.value.exchanges, "m0-s")?.id)
+        assertFalse(editableSteer(screen))
+        assertFalse(editableSteer(page))
+        assertNull(vm.editSteer("s"))
+        assertNull(vm.editSteer("p"))
+        assertFalse(calls.any { it.startsWith("withdraw:") })
+        assertTrue(vm.withdrawSteer("p"))
+        assertEquals(listOf(SteerState.Received, SteerState.Withdrawn), vm.ui.value.exchanges.single().steers.map { it.state })
+        // 只有字和引用的照旧能编辑
+        assertTrue(editableSteer("改这句话"))
+        assertTrue(editableSteer(QuoteMessage.compose(QuoteMessage.Quote(QuoteMessage.From.Mika, "明天有雨"), "改这句话")))
     }
 
     @Test fun withdrawingBeforeTheTaskStartsPreventsLaterDelivery() = runTest {
@@ -1619,7 +1762,7 @@ class ChatViewModelTest {
         calls.clear()
         // 定时任务在对话 b 里排上,服务显示了它
         active.value = listOf("a", "b")
-        serve("b", TaskState.Held(TaskGate.paused("排队中:前面还有 1 个任务")))
+        serve("b", TaskState.Held(GateReason.queued("排队中:前面还有 1 个任务")))
         assertEquals(listOf("show:a"), calls)
         assertEquals(ExchangeStatus.Working, vm.ui.value.exchanges.last().status)
     }
@@ -1721,5 +1864,112 @@ class ChatViewModelTest {
         assertEquals(listOf(joined) to listOf(received, pending), steersAroundDraft(listOf(joined, received, pending)))
         assertEquals(listOf(joined) to emptyList<SteerNote>(), steersAroundDraft(listOf(joined)))
         assertEquals(emptyList<SteerNote>() to listOf(received), steersAroundDraft(listOf(received)))
+    }
+    /** 等另一个任务放开 App 时仍在干活:进展那一行写在等谁,不算暂停、也不算要你处理。 */
+    @Test fun waitingForAnotherTasksAppIsStillWorking() = runTest {
+        val vm = vm()
+        vm.send("给张三发消息", ok)
+        emit(TaskState.Running(2, "打开聊天", tool = "phone_launch_app", progress = com.wangzan101.mika.core.agent.RunProgress.WaitingForApp("聊天")))
+        val ex = vm.ui.value.exchanges.single()
+        assertEquals(ExchangeStatus.Working, ex.status)
+        assertEquals("等另一个任务用完聊天", ex.line)
+        assertEquals(ComposerMode.Busy, vm.ui.value.composer)
+    }
+
+    /** 屏一开小画面就浮出来;用户关掉后只剩小按钮,任务照常在跑。 */
+    @Test fun smallWindowCanBeClosedForThisTask() = runTest {
+        val open = MutableStateFlow(false)
+        val vm = vmWithScreen(open)
+        vm.send("打开设置看电量", ok)
+        emit(TaskState.Running(0, "正在准备"))
+        assertFalse("还没开屏时不浮出来", vm.ui.value.pip.visible)
+        open.value = true
+        runCurrent()
+        assertTrue(vm.ui.value.pip.visible)
+        assertFalse(vm.ui.value.pip.closed)
+
+        vm.closePip()
+        assertTrue("关掉后还有小按钮", vm.ui.value.pip.visible)
+        assertTrue(vm.ui.value.pip.closed)
+        assertEquals(ExchangeStatus.Working, vm.ui.value.exchanges.single().status)
+        // 之后的进展不让它自己再浮出来
+        emit(TaskState.Running(1, "点了设置"))
+        assertTrue(vm.ui.value.pip.closed)
+
+        vm.reopenPip()
+        assertFalse("点小按钮再打开", vm.ui.value.pip.closed)
+    }
+
+    /** 关着小画面时要你接管:不自己弹开,但小按钮进入「要你处理」的样子,要你做的事照样在对话卡片里。 */
+    @Test fun closedSmallWindowStillSignalsWhenItNeedsYou() = runTest {
+        val open = MutableStateFlow(false)
+        val vm = vmWithScreen(open)
+        vm.send("付款", ok)
+        emit(TaskState.Running(0, "正在准备"))
+        open.value = true
+        runCurrent()
+        vm.closePip()
+        emit(TaskState.WaitingTakeover("payment", "要你付款"))
+        val pip = vm.ui.value.pip
+        assertTrue(pip.visible)
+        assertTrue(pip.closed)
+        assertFalse("关着时接管也不弹开", pip.expanded)
+        assertEquals(PipMode.NeedsYou, pip.mode)
+        assertTrue(vm.ui.value.exchanges.single().status is ExchangeStatus.NeedsTakeover)
+    }
+
+    /** 关掉只管那一个任务:下一个任务照常浮出小画面。 */
+    @Test fun closingTheSmallWindowOnlyLastsForThatTask() = runTest {
+        val open = MutableStateFlow(false)
+        val vm = vmWithScreen(open)
+        vm.send("打开设置看电量", ok)
+        emit(TaskState.Running(0, "正在准备"))
+        open.value = true
+        runCurrent()
+        vm.closePip()
+        emit(TaskState.Succeeded("电量 80%"))
+        open.value = false
+        advanceTimeBy(ChatViewModel.DONE_LINGER_MS + 1)
+        runCurrent()
+
+        vm.send("再看看存储", ok)
+        emit(TaskState.Running(0, "正在准备"))
+        open.value = true
+        runCurrent()
+        assertTrue(vm.ui.value.pip.visible)
+        assertFalse(vm.ui.value.pip.closed)
+    }
+
+    // ---------- 胶囊接着哪个对话 ----------
+    // 胶囊不看对话文件最后被谁写过,而是看界面此刻在哪个对话:这三处改动各告诉它一次。
+
+    @Test fun newChatTellsTheCapsuleItIsAFreshOne() = runTest {
+        val store = ConversationStore(tmp.newFolder())
+        val vm = vm(store)
+        assertEquals(null, store.currentChat())
+        vm.newConversation()
+        assertEquals(CurrentChat.Fresh, store.currentChat())
+    }
+
+    @Test fun openingAConversationTellsTheCapsuleWhichOne() = runTest {
+        val store = ConversationStore(tmp.newFolder())
+        store.append("c-old", Turn("查天气", "晴", "succeeded"))
+        val vm = vm(store)
+        vm.openConversation("c-old")
+        assertEquals(CurrentChat.Open("c-old"), store.currentChat())
+    }
+
+    /** 新对话里说的第一句话定下编号:胶囊之后接着这个对话,不是上一个。 */
+    @Test fun theFirstMessageInANewChatTellsTheCapsuleItsId() = runTest {
+        val store = ConversationStore(tmp.newFolder())
+        val vm = vm(store)
+        vm.newConversation()
+        assertTrue(vm.send("查天气", ok))
+        val id = vm.ui.value.conversationId
+        assertTrue(id != null)
+        assertEquals(CurrentChat.Open(id!!), store.currentChat())
+        emit(TaskState.Succeeded("晴"))
+        // 结束后还是它:胶囊不会跳回上一个对话
+        assertEquals(CurrentChat.Open(id), store.currentChat())
     }
 }

@@ -15,10 +15,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
-import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 
 /**
  * Gemini generateContent 原生接口。
@@ -66,7 +64,7 @@ class GeminiModel(
         return stream.finish()
     }
 
-    private fun request(system: String, messages: List<Message>, tools: List<ToolSpec>, stream: Boolean): Request {
+    private suspend fun request(system: String, messages: List<Message>, tools: List<ToolSpec>, stream: Boolean): Request {
         val systemText = (listOf(system) + messages.filter { it.role == Role.System }
             .map { m -> m.parts.filterIsInstance<Part.Text>().joinToString("\n") { it.text } })
             .filter { it.isNotBlank() }.joinToString("\n\n")
@@ -97,7 +95,7 @@ class GeminiModel(
         return Request.Builder().url(if (stream) streamEndpoint else endpoint)
             .withHeaders(headers)
             .header("x-goog-api-key", apiKey)
-            .post(payload.toString().toRequestBody("application/json".toMediaType()))
+            .postInference(InferenceProtocol.Gemini, payload)
             .build()
     }
 
@@ -239,7 +237,8 @@ class GeminiModel(
         fun n(k: String) = (u[k] as? JsonPrimitive)?.intOrNull
         val inT = n("promptTokenCount") ?: return null
         // promptTokenCount 已含缓存命中部分,与统一口径一致
-        return Usage(inT, (n("candidatesTokenCount") ?: 0) + (n("thoughtsTokenCount") ?: 0), n("cachedContentTokenCount") ?: 0)
+        val thoughts = n("thoughtsTokenCount") ?: 0
+        return Usage(inT, (n("candidatesTokenCount") ?: 0) + thoughts, n("cachedContentTokenCount") ?: 0, thoughts)
     }
 }
 

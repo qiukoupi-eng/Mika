@@ -26,12 +26,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -55,11 +58,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.wangzan101.mika.core.model.ModelRole
+import com.wangzan101.mika.settings.ModelContextSettings
 import com.wangzan101.mika.settings.ModelOption
 import com.wangzan101.mika.settings.ModelOptions
 import com.wangzan101.mika.settings.ProviderConfig
 import com.wangzan101.mika.settings.ProviderPresets
 import com.wangzan101.mika.settings.ProviderStore
+import com.wangzan101.mika.settings.RoleChoice
 import com.wangzan101.mika.ui.components.ButtonKind
 import com.wangzan101.mika.ui.components.ButtonSize
 import com.wangzan101.mika.ui.components.CapabilityTag
@@ -138,6 +143,7 @@ fun ModelSetupScreen(
                 refresh = { vm.refresh(provider.id) }, changeKey = { vm.changeKey(provider.id, it) },
                 remove = { vm.removeProvider(provider.id); openProvider = null; allModels = false },
                 use = { r, model -> vm.pick(r, provider.id, model) },
+                setVision = { model, sees -> vm.setModelVision(provider.id, model, sees) },
                 showAll = { allModels = true },
                 retest = { vm.retest(provider.id) },
                 // ChatGPT 照旧直接去浏览器登录;xAI、OpenRouter 先打开说明面板
@@ -185,11 +191,13 @@ fun ModelSetupScreen(
                 ui, onboarding,
                 ModelSetupActions(
                     selectPreset = vm::selectPreset, setKind = vm::setKind, setBaseUrl = vm::setBaseUrl, setApiKey = vm::setApiKey,
-                    setModel = vm::setModel, setName = vm::setName,
-                    testAndSave = vm::testAndSave, openForm = vm::openForm, closeForm = vm::closeForm,
+                    setModel = vm::setModel, setManual = vm::setManual, setName = vm::setName,
+                    testAndSave = vm::testAndSave, saveUntested = vm::saveWithoutTest,
+                    openForm = vm::openForm, closeForm = vm::closeForm,
                     openProvider = { openProvider = it; allModels = false }, pickRole = { picking = it }, next = onDone, openSpeech = onOpenSpeech,
                     openSignIn = { signInSheet = it },
                     setReasoningEffort = vm::setReasoningEffort,
+                    setModelContext = vm::setModelContext,
                 ),
                 onBack,
             )
@@ -226,8 +234,12 @@ class ModelSetupActions(
     val setBaseUrl: (String) -> Unit = {},
     val setApiKey: (String) -> Unit = {},
     val setModel: (String) -> Unit = {},
+    /** 「手动填写模型名」的开和收。 */
+    val setManual: (Boolean) -> Unit = {},
     val setName: (String) -> Unit = {},
     val testAndSave: () -> Unit = {},
+    /** 不测试,直接保存(见 [ModelSetupViewModel.saveWithoutTest])。 */
+    val saveUntested: () -> Unit = {},
     val openForm: () -> Unit = {},
     val closeForm: () -> Unit = {},
     val openProvider: (String) -> Unit = {},
@@ -238,6 +250,7 @@ class ModelSetupActions(
     /** 打开一家账号登录的说明面板。 */
     val openSignIn: (SignInKind) -> Unit = {},
     val setReasoningEffort: (ModelRole, String?) -> Unit = { _, _ -> },
+    val setModelContext: (String, ModelContextSettings) -> Boolean = { _, _ -> false },
 )
 
 /**
@@ -265,7 +278,7 @@ fun ModelSetupContent(ui: ModelSetupUi, onboarding: Boolean, actions: ModelSetup
                     RolesSection(ui, onPick, actions.setReasoningEffort, null)
                     FooterNote(ModelSetupCopy.ONBOARDING_NOTE)
                 } else {
-                    RolesSection(ui, onPick, actions.setReasoningEffort, actions.openSpeech)
+                    RolesSection(ui, onPick, actions.setReasoningEffort, actions.openSpeech, actions.setModelContext)
                     ProvidersSection(ui, actions)
                 }
                 Spacer(Modifier.height(16.dp))
@@ -290,7 +303,10 @@ private fun ProvidersSection(ui: ModelSetupUi, actions: ModelSetupActions) {
         GroupCard {
             ui.providers.forEachIndexed { i, p ->
                 val line = if (ui.signedOut(p)) ModelsCopy.CHATGPT_SIGNED_OUT else ModelsCopy.providerLine(p, ui.listing[p.id], ui.rolesOf(p))
-                val warning = ModelsCopy.UNVERIFIED.takeIf { ui.unverified(p).isNotEmpty() }
+                // 有用着却没试通过的模型、或跳过测试存下且已经在用:这一行就提醒「没测试通过」
+                val warning = ModelsCopy.UNVERIFIED.takeIf {
+                    ui.unverified(p).isNotEmpty() || (ui.untested(p) && ui.rolesOf(p).isNotEmpty())
+                }
                 ProviderRow(p, line, first = i == 0, warning = warning) { actions.openProvider(p.id) }
             }
             if (!ui.showForm) {
@@ -321,6 +337,7 @@ private fun AddProviderForm(ui: ModelSetupUi, actions: ModelSetupActions) {
     val c = MikaTheme.colors
     val f = ui.form
     var showKey by remember { mutableStateOf(false) }
+    var confirmUntested by remember { mutableStateOf(false) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         GroupLabel(ModelsCopy.ADD_PROVIDER, Modifier.weight(1f))
         if (ui.providers.isNotEmpty()) {
@@ -375,13 +392,22 @@ private fun AddProviderForm(ui: ModelSetupUi, actions: ModelSetupActions) {
         ) {
             Text(if (showKey) stringResource(R.string.hide) else stringResource(R.string.show), Modifier.clickable { showKey = !showKey }, fontSize = 13.sp, color = c.accent)
         }
-        if (f.noList) {
+        if (f.showModel) {
             InputRow(
                 ModelSetupCopy.MODEL_NAME, f.model, actions.setModel, ModelSetupCopy.modelExample(f.exampleKind),
                 keyboard = KeyboardType.Uri, modifier = Modifier.testTag("setup-model"),
             )
         }
     }
+    // 列表里没有要的模型、或这家不提供列表时,随时可以自己填(没列出模型时那一栏已经在了)
+    if (!f.noList) {
+        Text(
+            if (f.manual) ModelSetupCopy.MANUAL_OFF else ModelSetupCopy.MANUAL_ON,
+            Modifier.padding(start = 16.dp, top = 8.dp).clickable { actions.setManual(!f.manual) }.padding(vertical = 4.dp).testTag("setup-manual-model"),
+            fontSize = 13.sp, color = c.accent,
+        )
+    }
+    if (f.manual && !f.noList) FooterNote(ModelSetupCopy.MANUAL_NOTE, Modifier.testTag("setup-manual-note"))
     f.urlProblem?.takeIf { f.urlEditable && f.baseUrl.isNotBlank() }?.let { FooterNote(it, color = c.bad) }
     f.suggestedPreset?.let { preset -> PresetSuggestion(f, preset.label) { actions.selectPreset(preset.label) } }
     if (f.noList) FooterNote(if (f.isCustom) ModelSetupCopy.NO_LIST_CUSTOM else ModelSetupCopy.NO_LIST_PRESET, Modifier.testTag("setup-no-list"))
@@ -398,6 +424,26 @@ private fun AddProviderForm(ui: ModelSetupUi, actions: ModelSetupActions) {
             fontSize = 13.sp, lineHeight = 18.sp, color = c.bad,
         )
     }
+    // 试不成又想先存下的:做成按钮,不要藏成一行小字——它是个真实的动作,不是说明
+    MikaButton(
+        ModelSetupCopy.SAVE_UNTESTED, { confirmUntested = true },
+        Modifier.fillMaxWidth().padding(top = 6.dp).testTag("setup-save-untested"),
+        kind = ButtonKind.Tonal, size = ButtonSize.Small, enabled = f.canSaveUntested,
+    )
+    if (confirmUntested) AlertDialog(
+        onDismissRequest = { confirmUntested = false },
+        title = { Text(ModelSetupCopy.SAVE_UNTESTED_TITLE) },
+        text = { Text(ModelSetupCopy.SAVE_UNTESTED_BODY) },
+        confirmButton = {
+            TextButton({
+                confirmUntested = false
+                actions.saveUntested()
+            }) { Text(ModelSetupCopy.SAVE_UNTESTED_CONFIRM) }
+        },
+        dismissButton = {
+            TextButton({ confirmUntested = false }) { Text(stringResource(R.string.cancel)) }
+        },
+    )
     FooterNote(ModelSetupCopy.TEST_NOTE, Modifier.padding(top = 6.dp))
 }
 
@@ -467,7 +513,9 @@ internal object SignInPage {
 
 /** 用途:主模型、看图模型、轻量模型各一张卡,点开是选择页。 */
 @Composable
-private fun RolesSection(ui: ModelSetupUi, onPick: (ModelRole) -> Unit, onReasoning: (ModelRole, String?) -> Unit, onSpeech: (() -> Unit)?) {
+private fun RolesSection(ui: ModelSetupUi, onPick: (ModelRole) -> Unit, onReasoning: (ModelRole, String?) -> Unit,
+    onSpeech: (() -> Unit)?, onContext: ((String, ModelContextSettings) -> Boolean)? = null,
+) {
     GroupLabel(ModelsCopy.ROLES)
     GroupCard {
         ModelRole.entries.forEachIndexed { i, role ->
@@ -475,12 +523,71 @@ private fun RolesSection(ui: ModelSetupUi, onPick: (ModelRole) -> Unit, onReason
                 onPick(role)
             }
             ReasoningControl(ui, role) { onReasoning(role, it) }
+            if (onContext != null) ModelContextControl(ui, role, onContext)
         }
         // 第四个用途:语音转文字(不是对话模型,点开是单独的选择页)
         if (onSpeech != null) {
             RoleCard(ModelsCopy.SPEECH_ICON, ModelsCopy.SPEECH_LABEL, ModelsCopy.speechLine(ui), tag = "role-speech", onClick = onSpeech)
         }
     }
+}
+
+@Composable
+private fun ModelContextControl(ui: ModelSetupUi, role: ModelRole,
+    onSave: (String, ModelContextSettings) -> Boolean,
+) {
+    if (ui.roles[role] !is RoleChoice.Model) return
+    val cfg = ui.configFor(role) ?: return
+    val saved = ui.providerOf(cfg)?.contextSettings?.get(cfg.model) ?: ModelContextSettings()
+    var open by rememberSaveable(cfg.id) { mutableStateOf(false) }
+    TextButton(onClick = { open = true }, modifier = Modifier.padding(start = 8.dp).testTag("context-${role.name.lowercase()}")) {
+        Text(stringResource(R.string.model_context_title))
+    }
+    if (!open) return
+    var window by rememberSaveable(cfg.id) { mutableStateOf(saved.windowTokens?.toString().orEmpty()) }
+    var trigger by rememberSaveable(cfg.id) { mutableStateOf(saved.triggerTokens?.toString().orEmpty()) }
+    var saveFailed by remember { mutableStateOf(false) }
+    fun positiveInt(text: String) = text.trim().takeIf { it.all { c -> c in '0'..'9' } }?.toIntOrNull()?.takeIf { it > 0 }
+    val settings = ModelContextSettings(positiveInt(window), positiveInt(trigger))
+    val modelWindow = cfg.capabilities.contextTokens
+    val limits = settings.limits(modelWindow)
+    val badWindow = window.isNotBlank() && settings.windowTokens == null
+    val badTrigger = trigger.isNotBlank() && (settings.triggerTokens == null || (!badWindow && settings.triggerTokens != limits.trigger))
+    val keyboard = KeyboardOptions(keyboardType = KeyboardType.Number)
+    AlertDialog(
+        onDismissRequest = { open = false },
+        modifier = Modifier.imePadding(),
+        title = { Text(stringResource(R.string.model_context_title)) },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(cfg.model)
+                Text(stringResource(R.string.model_context_note))
+                OutlinedTextField(window, { window = it; saveFailed = false },
+                    modifier = Modifier.fillMaxWidth().testTag("context-window"), singleLine = true, keyboardOptions = keyboard,
+                    label = { Text(stringResource(R.string.model_context_window)) },
+                    placeholder = { Text(stringResource(R.string.model_context_auto, modelWindow)) },
+                    supportingText = if (badWindow) ({ Text(stringResource(R.string.model_context_integer)) }) else null,
+                    isError = badWindow)
+                OutlinedTextField(trigger, { trigger = it; saveFailed = false },
+                    modifier = Modifier.fillMaxWidth().testTag("context-trigger"), singleLine = true, keyboardOptions = keyboard,
+                    label = { Text(stringResource(R.string.model_context_trigger)) },
+                    placeholder = { Text(stringResource(R.string.model_context_auto, limits.trigger)) },
+                    supportingText = {
+                        if (!badWindow && limits.usable > 0) Text(stringResource(R.string.model_context_range,
+                            limits.minTrigger.coerceAtLeast(1), limits.usable))
+                        else if (badTrigger) Text(stringResource(R.string.model_context_integer))
+                    }, isError = badTrigger)
+                if (!badWindow && (trigger.isBlank() || settings.triggerTokens != null)) Text(stringResource(R.string.model_context_effective, limits.window, limits.trigger),
+                    modifier = Modifier.testTag("context-effective"))
+                TextButton(onClick = { window = ""; trigger = ""; saveFailed = false }) { Text(stringResource(R.string.reset)) }
+                if (saveFailed) Text(stringResource(R.string.model_context_save_failed), color = MikaTheme.colors.bad)
+            }
+        },
+        confirmButton = { TextButton(onClick = {
+            if (onSave(cfg.id, settings)) open = false else saveFailed = true
+        }, enabled = !badWindow && !badTrigger, modifier = Modifier.testTag("context-save")) { Text(stringResource(R.string.save)) } },
+        dismissButton = { TextButton(onClick = { open = false }) { Text(stringResource(R.string.cancel)) } },
+    )
 }
 
 /** 模型的能力标签;[accent] 为假时一律中性色(列表行里强调色留给「在用」的胶囊)。 */
@@ -515,6 +622,13 @@ object ModelSetupCopy {
     val MODEL_NAME: String get() = tr(R.string.model_manual_name)
     val NO_LIST_CUSTOM: String get() = tr(R.string.model_no_list_custom)
     val NO_LIST_PRESET: String get() = tr(R.string.model_no_list_preset)
+    val MANUAL_ON: String get() = tr(R.string.model_manual_on)
+    val MANUAL_OFF: String get() = tr(R.string.model_manual_off)
+    val MANUAL_NOTE: String get() = tr(R.string.model_manual_note)
+    val SAVE_UNTESTED: String get() = tr(R.string.model_save_untested)
+    val SAVE_UNTESTED_TITLE: String get() = tr(R.string.model_save_untested_title)
+    val SAVE_UNTESTED_BODY: String get() = tr(R.string.model_save_untested_body)
+    val SAVE_UNTESTED_CONFIRM: String get() = tr(R.string.model_save_untested_confirm)
 
     /** 手填模型名时举的例子,按接口类型(各家模型名的样子不同)。 */
     fun modelExample(kind: ProviderConfig.Kind): String = tr(
@@ -540,18 +654,20 @@ object ModelSetupCopy {
 
     fun failed(reason: String) = tr(R.string.model_failed, reason)
 
-    /** 模型的能力标签:(文字, 是否强调色)。接口没给、按预设推断的标「未确认」。只作参考,不拦选择。 */
+    /** 模型的能力标签:(文字, 是否强调色)。接口没给、用户也没说、按预设推断的标「未确认」。只作参考,不拦选择。 */
     fun tags(o: ModelOption, forVision: Boolean = false): List<Pair<String, Boolean>> = buildList {
         val caps = o.capabilities
+        val visionKnown = o.visionKnown || o.visionByUser != null
+        if (o.typed) add(tr(R.string.cap_typed) to false)
         if (forVision) {
-            add((if (o.visionKnown) tr(R.string.cap_vision) else tr(R.string.cap_vision_unconfirmed)) to false)
+            add((if (visionKnown) tr(R.string.cap_vision) else tr(R.string.cap_vision_unconfirmed)) to false)
         } else {
             when {
                 !caps.toolCalls -> add(tr(R.string.cap_no_tools) to false)
                 o.toolCallsKnown -> add(tr(R.string.cap_tools) to true)
                 else -> add(tr(R.string.cap_tools_unconfirmed) to false)
             }
-            if (caps.vision && o.visionKnown) add(tr(R.string.cap_vision) to false)
+            if (caps.vision && visionKnown) add(tr(R.string.cap_vision) to false)
         }
         if (caps.reasoning) add(tr(R.string.cap_reasoning) to false)
         if (o.contextKnown) add(ModelOptions.contextLabel(caps.contextTokens) to false)

@@ -7,6 +7,8 @@ import com.wangzan101.mika.core.shell.BuiltinShellFailure
 import com.wangzan101.mika.core.shell.BuiltinShellStatus
 import com.wangzan101.mika.core.shell.PairingChannelHealth
 import com.wangzan101.mika.core.shell.PairingDiscovery
+import com.wangzan101.mika.core.shell.PairingScreen
+import com.wangzan101.mika.core.shell.PairingScreenReading
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -47,6 +49,33 @@ class PairingNoticeTest {
         )
     }
 
+    /** 配对失效:引导页让用户重新配对,找到配对窗口后和没配对时一样给输入框;还没找到时照旧请用户回 Mika。 */
+    @Test
+    fun revokedPairingGetsTheInputOnceThePairingWindowIsFound() {
+        val revoked = BuiltinShellStatus.Failed(BuiltinShellFailure.AuthorizationRevoked)
+        assertEquals(PairingNotice.EnterCode(37001), PairingNotice.of(revoked, PairingDiscovery.Found(37001)))
+        assertEquals(PairingNotice.Problem("配对失效了"), PairingNotice.of(revoked, PairingDiscovery.Searching))
+        assertEquals(PairingNotice.Problem("配对失效了"), PairingNotice.of(revoked, PairingDiscovery.Idle))
+        // 用 USB 启动命令起的助手停了要再运行一次命令,找到配对窗口也不给输入框
+        assertEquals(
+            PairingNotice.Problem("手机助手已停止"),
+            PairingNotice.of(BuiltinShellStatus.Failed(BuiltinShellFailure.UsbHelperStopped), PairingDiscovery.Found(37001)),
+        )
+    }
+
+    /** 找到配对窗口时,通知给不给输入框和无障碍读到码后试不试(PairingScreen.attempt)对每种状态都一致。 */
+    @Test
+    fun codeInputMatchesWhatAutoReadWouldTry() {
+        val reading = PairingScreenReading("123456", null)
+        val statuses = listOf(
+            BuiltinShellStatus.NotPaired, BuiltinShellStatus.WirelessDebuggingOff, BuiltinShellStatus.Connecting, BuiltinShellStatus.Running,
+        ) + BuiltinShellFailure.entries.map { BuiltinShellStatus.Failed(it) }
+        statuses.forEach { s ->
+            val input = PairingNotice.of(s, PairingDiscovery.Found(5)) is PairingNotice.EnterCode
+            assertEquals(s.toString(), PairingScreen.attempt(reading, portFound = true, s, emptySet()) != null, input)
+        }
+    }
+
     @Test
     fun codeEntryPopsAtOnceWithoutAccessibilityAndWaitsForAutoRead() {
         val enter = PairingNotice.EnterCode(5)
@@ -66,6 +95,23 @@ class PairingNoticeTest {
         // 填错后的提示也会再提醒;别的状态不提醒
         assertEquals(PairingNotice.REALERT_MS[0], PairingNotice.realertAfter(PairingNotice.EnterCode(5, "x"), 0))
         listOf(PairingNotice.Working, PairingNotice.Done, PairingNotice.Problem("x")).forEach { assertNull(PairingNotice.realertAfter(it, 0)) }
+    }
+
+    @Test
+    fun aSubmittedCodeShowsPairingUntilThePairingStarts() {
+        val revoked = BuiltinShellStatus.Failed(BuiltinShellFailure.AuthorizationRevoked)
+        // 填了码、配对还没开始:不按填码前的状态算,也不结束(助手原本在运行时也一样,配对开始后状态还会变)
+        assertEquals(PairingNotice.Working to false, PairingNotice.follow(revoked, PairingDiscovery.Searching, repairing = false, submitted = true))
+        assertEquals(PairingNotice.Working to false, PairingNotice.follow(BuiltinShellStatus.Running, PairingDiscovery.Searching, repairing = false, submitted = true))
+        // 没填码时照常按状态算
+        assertEquals(PairingNotice.Problem("配对失效了") to false, PairingNotice.follow(revoked, PairingDiscovery.Searching, repairing = false, submitted = false))
+    }
+
+    @Test
+    fun followingEndsOnlyWhenRunningOutsideARepair() {
+        // 重新配对时运行中的旧状态不算配好:不发、不结束
+        assertEquals(null to false, PairingNotice.follow(BuiltinShellStatus.Running, PairingDiscovery.Searching, repairing = true, submitted = false))
+        assertEquals(PairingNotice.Done to true, PairingNotice.follow(BuiltinShellStatus.Running, PairingDiscovery.Idle, repairing = false, submitted = false))
     }
 
     @Test

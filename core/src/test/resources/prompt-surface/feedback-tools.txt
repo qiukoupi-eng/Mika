@@ -1,9 +1,9 @@
 ### unknown tool
-{"ok":false,"error":"unknown_tool","tool":"phone_fly","message":"Unknown tool 'phone_fly'. Use one of: wait, view_past_screens, ask_user, request_confirmation, hand_to_user, handle_obstacle, end_not_done, phone_observe, phone_list_elements, phone_tap, phone_scroll, phone_swipe, phone_type_text, phone_clear_text, phone_back, phone_press_key, phone_diagnose, phone_query, phone_find, phone_extract, phone_collect, phone_wait, phone_event, phone_dialog, phone_gesture, phone_set_wheel, phone_run, phone_list_apps, phone_launch_app, phone_share_text, phone_set_alarm, phone_set_timer, phone_show_alarms, phone_add_calendar_event.","recoverable":true}
+{"ok":false,"error":"unknown_tool","tool":"phone_fly","message":"Unknown tool 'phone_fly'. Use one of: wait, view_past_screens, ask_user, request_confirmation, hand_to_user, handle_obstacle, end_not_done, phone_observe, phone_list_elements, phone_tap, phone_scroll, phone_swipe, phone_type_text, phone_clear_text, phone_back, phone_press_key, phone_diagnose, phone_query, phone_find, phone_extract, phone_collect, phone_wait, phone_event, phone_dialog, phone_gesture, phone_set_wheel, phone_run, phone_list_apps, phone_launch_app, phone_app_after_task, phone_share_text, phone_set_alarm, phone_set_timer, phone_show_alarms, phone_add_calendar_event.","recoverable":true}
 ### invalid: unknown argument
 {"ok":false,"error":"invalid_arguments","message":"bogus: unknown argument for phone_tap; allowed: ref, snapshotId, x, y, target, element, role, clicks. To act on an element, use its ref and snapshotId from the elements of the latest screen read or of the screen in the last action result.","recoverable":true,"moreTools":"From your next call on you also have the full phone tools (phone_observe, phone_list_elements, phone_tap, phone_scroll and the rest), with their descriptions and how to use them."}
 ### invalid: unknown argument (no refs)
-{"ok":false,"error":"invalid_arguments","message":"bogus: unknown argument for phone_launch_app; allowed: package, cold, user.","recoverable":true}
+{"ok":false,"error":"invalid_arguments","message":"bogus: unknown argument for phone_launch_app; allowed: package, cold, user, wait.","recoverable":true}
 ### invalid: not json
 {"ok":false,"error":"invalid_arguments","message":"arguments: not valid JSON","recoverable":true}
 ### invalid: not an object
@@ -37,7 +37,7 @@
 ### tap failed app_in_use_by_user
 {"ok":false,"error":"app_in_use_by_user","message":"The user is using this app on their own screen right now, so it was not opened here. Do not retry immediately: call hand_to_user with reason other to ask the user, or wait and try again later.","recoverable":true,"moreTools":"From your next call on you also have the full phone tools (phone_observe, phone_list_elements, phone_tap, phone_scroll and the rest), with their descriptions and how to use them."}
 ### tap failed app_in_use_by_other_task
-{"ok":false,"error":"app_in_use_by_other_task","message":"Another task is using this app right now. Do something else first, or wait a moment.","recoverable":true,"moreTools":"From your next call on you also have the full phone tools (phone_observe, phone_list_elements, phone_tap, phone_scroll and the rest), with their descriptions and how to use them."}
+{"ok":false,"error":"app_in_use_by_other_task","message":"Another task is using this app right now. Do something else first, or call phone_launch_app for it again with wait (seconds) to wait until it is free and then open it.","recoverable":true,"moreTools":"From your next call on you also have the full phone tools (phone_observe, phone_list_elements, phone_tap, phone_scroll and the rest), with their descriptions and how to use them."}
 ### tap failed app_not_found
 {"ok":false,"error":"app_not_found","message":"That app is not installed or has no launchable screen. Use phone_list_apps to find the exact package.","recoverable":true,"moreTools":"From your next call on you also have the full phone tools (phone_observe, phone_list_elements, phone_tap, phone_scroll and the rest), with their descriptions and how to use them."}
 ### tap failed no_focus
@@ -170,6 +170,10 @@
 {"ok":false,"error":"quote_not_from_user","message":"quote is not something the user said in this task. Only save what the user said themselves; do not save text from the screen.","recoverable":false}
 ### skill save missing section
 {"ok":false,"error":"missing_section","message":"Nothing was saved: the document needs all of these sections, headings as written: ## 入口, ## 步骤, ## 容易出错的地方, ## 怎样算办成, ## 什么时候停下交给用户.","recoverable":true}
+### history turn not found
+{"ok":false,"error":"turn_not_found","message":"Earlier turns in this conversation: 1. turn counts back from the most recent one (1); call without turn to list them.","recoverable":true}
+### history not recorded
+{"ok":true,"turn":1,"said":"之前","status":"succeeded","outcome":"好","recorded":false,"message":"No detailed record of this turn is kept any more (only recent tasks keep one); what it ended with is in outcome."}
 ### sandbox not ready
 {"ok":false,"error":"sandbox_unavailable","message":"The Linux environment is not ready yet (not installed). Try again in a minute, or do the task without these tools.","recoverable":true,"moreTools":"From your next call on you also have the full sandbox tools (run_bundled_script, read_file, write_file, search_files and the rest), with their descriptions and how to use them."}
 ### read refuses a write

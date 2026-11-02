@@ -37,6 +37,8 @@ import com.wangzan101.mika.settings.FeatureFlags
 import com.wangzan101.mika.settings.Prerequisites
 import com.wangzan101.mika.settings.Problem
 import com.wangzan101.mika.settings.ProviderStore
+import com.wangzan101.mika.settings.NetProxyStore
+import com.wangzan101.mika.cap.web.WebProxy
 import com.wangzan101.mika.settings.SystemStatus
 import com.wangzan101.mika.settings.notificationOverview
 import com.wangzan101.mika.task.ParallelCapability
@@ -64,7 +66,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /** 设置里能进入的子页面;[Home] 是设置首页。 */
-private enum class SettingsPage { Home, Usage, PhoneOps, DuringWork, Capsule, Language, Notifications, WebSites, Sandbox, Routes, Recovery, SelfCheck, ComputerAccess, Developer, RunStats }
+private enum class SettingsPage { Home, AppAccess, Usage, PhoneOps, DuringWork, Capsule, Language, Notifications, WebSites, Sandbox, Routes, Recovery, SelfCheck, ComputerAccess, Developer, RunStats }
 
 /**
  * 设置页:总状态卡 + 基本 / 隐私与数据 / 高级 / 关于四组。各子页面在这里切换(返回键先回首页),
@@ -104,6 +106,7 @@ fun SettingsScreen(
     var keepScreenOn by remember { mutableStateOf(flags.keepScreenOn()) }
     var muteTarget by remember { mutableStateOf(flags.muteTarget()) }
     var operatingPace by remember { mutableStateOf(flags.operatingPace()) }
+    var selfConfig by remember { mutableStateOf(flags.selfConfig()) }
     var capsuleMode by remember { mutableStateOf(flags.capsuleMode()) }
     // 换语言时界面会重建,这里每次进来读一次即可
     val language = remember { AppLanguage.current(context) }
@@ -114,6 +117,15 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) { routeCount = withContext(Dispatchers.IO) { runCatching { routeStore.count() }.getOrNull() } }
     val sandboxStatus by remember { SandboxState.get(context) }.status.collectAsState()
+    // 网络代理:只在这里改;读设置要解密、看浏览器支不支持要加载 WebView,都放到后台
+    val proxies = remember { NetProxyStore.get(context) }
+    var proxy by remember { mutableStateOf<String?>(null) }
+    var browserProxy by remember { mutableStateOf<WebProxy.Mode?>(null) }
+    var editingProxy by remember { mutableStateOf(false) }
+    LaunchedEffect(proxy) {
+        if (proxy == null) proxy = withContext(Dispatchers.IO) { proxies.get() }
+        browserProxy = withContext(Dispatchers.IO) { WebProxy.mode() }
+    }
     val mcp = remember { (context.applicationContext as com.wangzan101.mika.MikaApp).mcp }
     val mcpNetworkOn by mcp.settings.enabled.collectAsState()
     val mcpUsbOn by mcp.usb.enabled.collectAsState()
@@ -135,7 +147,7 @@ fun SettingsScreen(
         ),
     )
     // 开发者选项只在调试版和性能测试版里列出:发布版的各开关按评测结果统一定默认值
-    val showDeveloper = BuildConfig.DEBUG || BuildConfig.BUILD_TYPE == "perf"
+    val showDeveloper = com.wangzan101.mika.record.DetailedTraces.supportedBuild
     val toHome = { page = SettingsPage.Home }
     // 通知页可以从首页或手机操作页进,返回回到进来的那一页
     var notificationsFrom by rememberSaveable { mutableStateOf(SettingsPage.Home) }
@@ -150,13 +162,16 @@ fun SettingsScreen(
 
     if (page != SettingsPage.Home) BackHandler { back() }
 
-    when (page) {
+    val visiblePage = if (!showDeveloper && (page == SettingsPage.Developer || page == SettingsPage.RunStats)) SettingsPage.Home else page
+    when (visiblePage) {
         SettingsPage.Home -> SettingsContent(
             status = status, androidRelease = androidRelease,
             mainModel = roles.main?.let { id -> configs.firstOrNull { it.id == id } }?.let(ProviderConnection::displayName),
             onBack = onBack, onProblem = onProblem, onOpenModels = onOpenModels,
+            proxy = proxy, proxyNote = proxy?.let { NetProxyCopy.subtitle(it, browserProxy) }, onOpenProxy = { editingProxy = true },
             usageTokens = usageWeek, onOpenUsage = { page = SettingsPage.Usage },
             onOpenPhoneOps = { page = SettingsPage.PhoneOps },
+            onOpenAppAccess = { page = SettingsPage.AppAccess },
             onOpenDuringWork = { page = SettingsPage.DuringWork },
             capsuleMode = capsuleMode, onOpenCapsule = { page = SettingsPage.Capsule },
             onOpenNotifications = { notificationsFrom = SettingsPage.Home; page = SettingsPage.Notifications },
@@ -170,6 +185,7 @@ fun SettingsScreen(
             showDeveloper = showDeveloper, onOpenDeveloper = { page = SettingsPage.Developer },
             versionName = BuildConfig.VERSION_NAME, updateVersion = updateVersion, onOpenAbout = onOpenAbout,
         )
+        SettingsPage.AppAccess -> AppAccessScreen(onBack = toHome)
         SettingsPage.Usage -> UsageScreen(usage, store.providers, onBack = toHome)
         SettingsPage.PhoneOps -> PhoneOpsScreen(
             status, androidRelease, onProblem,
@@ -182,6 +198,7 @@ fun SettingsScreen(
             muteTarget, onMuteTarget = { flags.setMuteTarget(it); muteTarget = it },
             parallel, onParallelMax = { flags.setParallelMax(it); parallelMax = it }, onBack = toHome,
             operatingPace = operatingPace, onOperatingPace = { flags.setOperatingPace(it); operatingPace = it },
+            selfConfig = selfConfig, onSelfConfig = { flags.setSelfConfig(it); selfConfig = it },
         )
         SettingsPage.Language -> LanguageScreen(language, onLanguage = { AppLanguage.set(context, it) }, onBack = toHome)
         SettingsPage.Capsule -> CapsuleScreen(capsuleMode, onMode = { flags.setCapsuleMode(it); capsuleMode = it }, onBack = toHome)
@@ -221,6 +238,18 @@ fun SettingsScreen(
         SettingsPage.RunStats -> RunStatsScreen(remember { RunStore(context).metrics }, onBack = back)
     }
 
+    if (editingProxy) NetProxyDialog(
+        initial = proxy.orEmpty(),
+        onDismiss = { editingProxy = false },
+        onSave = { v ->
+            scope.launch {
+                withContext(Dispatchers.IO) { proxies.set(v) }
+                proxy = v.trim()
+                editingProxy = false
+            }
+        },
+    )
+
     explaining?.let { p ->
         val e = StatusCopy.explain(p, androidRelease)
         AlertDialog(
@@ -252,10 +281,16 @@ fun SettingsContent(
     onBack: () -> Unit,
     onProblem: (Problem) -> Unit,
     onOpenModels: () -> Unit,
+    /** 网络代理(空串表示不用);为空(还没读出来)时不显示这一行。 */
+    proxy: String? = null,
+    /** 网络代理那一行下面的说明。 */
+    proxyNote: String? = null,
+    onOpenProxy: () -> Unit = {},
     /** 近 7 天用了多少 token;为空(还没统计出来)时不显示这一行。 */
     usageTokens: Long? = null,
     onOpenUsage: () -> Unit = {},
     onOpenPhoneOps: () -> Unit = {},
+    onOpenAppAccess: () -> Unit = {},
     onOpenDuringWork: () -> Unit = {},
     /** 悬浮胶囊此刻的选择,写在「悬浮胶囊」一行的右边。 */
     capsuleMode: CapsuleMode = CapsuleMode.DEFAULT,
@@ -292,6 +327,13 @@ fun SettingsContent(
                 RowValue(mainModel ?: stringResource(R.string.settings_not_set))
                 RowChevron()
             }
+            // 调模型的连接要不要走代理,和模型放在一起找得到;容器、更新、内置浏览器也按这一处
+            proxy?.let {
+                ListRow(MikaIcons.Link, NetProxyCopy.TITLE, proxyNote, onClick = onOpenProxy) {
+                    RowValue(NetProxyCopy.value(it))
+                    RowChevron()
+                }
+            }
             usageTokens?.let {
                 ListRow(MikaIcons.Chart, UsageCopy.TITLE, onClick = onOpenUsage) {
                     RowValue(UsageCopy.settingsValue(it))
@@ -302,6 +344,7 @@ fun SettingsContent(
                 PhoneOpsPill(status)
                 RowChevron()
             }
+            ListRow(MikaIcons.Phone, stringResource(R.string.appaccess_title), stringResource(R.string.appaccess_row_sub), onClick = onOpenAppAccess) { RowChevron() }
             ListRow(MikaIcons.Moon, stringResource(R.string.settings_during_work), stringResource(R.string.settings_during_work_sub), onClick = onOpenDuringWork) { RowChevron() }
             ListRow(MikaIcons.Message, CapsuleSettingsCopy.TITLE, CapsuleSettingsCopy.SUBTITLE, onClick = onOpenCapsule) {
                 RowValue(CapsuleSettingsCopy.label(capsuleMode))

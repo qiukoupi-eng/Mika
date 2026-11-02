@@ -33,4 +33,4 @@
 
 ## 参与开发
 
-想贡献代码、补 App 和网站的使用知识，先读[贡献指南](../CONTRIBUTING.md)，再看[开发文档](dev/README.md)（架构、知识格式、路线图等）。
+想贡献代码、补 App 和网站的使用知识，先读[贡献指南](../.github/CONTRIBUTING.zh-CN.md)，再看[开发文档](dev/README.md)（架构、知识格式、路线图等）。

@@ -6,6 +6,7 @@ import android.app.ProgressDialog
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -73,8 +74,13 @@ object DebugUpdater {
         http.newCall(req).execute().use { r ->
             if (!r.isSuccessful) error("HTTP ${r.code}")
             val j = JSONObject(r.body!!.string())
-            return Info(j.getInt("versionCode"), j.getString("versionName"), j.getString("apkUrl"),
-                j.getString("sha256").lowercase(), j.optString("notes"))
+            // 可选 "apks": {"arm64-v8a": {"url","sha256"}, "universal": {...}};按本机 ABI 挑,没有就用 apkUrl
+            var url = j.getString("apkUrl"); var sha = j.getString("sha256")
+            j.optJSONObject("apks")?.let { apks ->
+                val pick = Build.SUPPORTED_ABIS.firstOrNull { apks.has(it) } ?: "universal".takeIf { apks.has(it) }
+                pick?.let { apks.getJSONObject(it).let { a -> url = a.getString("url"); sha = a.getString("sha256") } }
+            }
+            return Info(j.getInt("versionCode"), j.getString("versionName"), url, sha.lowercase(), j.optString("notes"))
         }
     }
 

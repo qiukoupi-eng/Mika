@@ -5,6 +5,8 @@
     <string name="phone_later">稍后再说</string>
     <string name="phone_bar_title">手机操作</string>
     <string name="phone_skip_note">也可以先跳过,只用上网、文件和聊天;第一次要操作 App 时会再提醒。</string>
+    <string name="phone_unavailable">这个环境不能操作手机里的 App;聊天、网页、文件和计算照常可用。</string>
+    <string name="phone_unavailable_reason">操作手机 App 要用到安卓的「开发者选项」和「无线调试」,这里两样都没有。</string>
     <string name="phone_step_dev">打开开发者选项</string>
     <string name="phone_step_dev_body">打开手机设置里的「关于手机」,连续点「版本号」7 次,看到「你已处于开发者模式」的提示就好。有的手机「版本号」在「软件信息」里面。</string>
     <string name="phone_step_dev_action">打开关于手机</string>
@@ -69,6 +71,8 @@
     <string name="fail_connect_body">找不到无线调试的端口。可以：关掉再打开「无线调试」后重试；换用手机热点或家里的 Wi-Fi；或在下面手动填端口。</string>
     <string name="fail_revoked">配对失效了</string>
     <string name="fail_revoked_body">可能很久没用被系统收回了,或者在系统里删掉了。重新配对一次就好。在开发者选项里打开「停用 adb 授权超时功能」,以后就不会再失效。</string>
+    <string name="fail_key_unreadable">配对用的密钥读不出来了</string>
+    <string name="fail_key_unreadable_body">Mika 读不出配对时用的那把密钥了，需要重新配对一次。重新配对会换一把新的，系统「已配对的设备」里旧的那条 mika@… 可以删掉。</string>
     <string name="fail_helper">连上了,但没能准备好</string>
     <string name="fail_helper_body">通常重试一次就好。</string>
     <string name="fail_unknown">出了点问题</string>

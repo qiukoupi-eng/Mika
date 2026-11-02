@@ -4,178 +4,184 @@
 
 # Mika
 
-**你手机上的 AI 助理：说一句话，它替你操作 App、上网，把事办成。**
+**An AI assistant on your phone: say what you need, and it works your apps and the web until it's done.**
 
-它在一块看不见的后台屏上干活，你照样刷你的手机。
+It works on a hidden background screen, so you can keep using your phone.
 
-<a href="https://github.com/wangzan101/Mika/releases/latest"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD%20APK-%E5%AE%89%E5%8D%93%2011%2B-2ea043?style=for-the-badge&logo=android&logoColor=white" alt="下载 APK" /></a>
+<a href="https://github.com/wangzan101/Mika/releases/latest"><img src="https://img.shields.io/badge/Download%20APK-Android%2011%2B-2ea043?style=for-the-badge&logo=android&logoColor=white" alt="Download APK" /></a>
 
 <a href="https://github.com/wangzan101/Mika/stargazers"><img src="https://img.shields.io/github/stars/wangzan101/Mika?style=flat&logo=github&label=Star&color=1f6feb" alt="stars" /></a>
-<a href="https://github.com/wangzan101/Mika/releases"><img src="https://img.shields.io/github/downloads/wangzan101/Mika/total?label=%E4%B8%8B%E8%BD%BD&color=2ea043" alt="downloads" /></a>
-<a href="https://github.com/wangzan101/Mika/releases/latest"><img src="https://img.shields.io/github/v/release/wangzan101/Mika?include_prereleases&label=%E7%89%88%E6%9C%AC" alt="version" /></a>
+<a href="https://github.com/wangzan101/Mika/releases"><img src="https://img.shields.io/github/downloads/wangzan101/Mika/total?label=downloads&color=2ea043" alt="downloads" /></a>
+<a href="https://github.com/wangzan101/Mika/releases/latest"><img src="https://img.shields.io/github/v/release/wangzan101/Mika?include_prereleases&label=version" alt="version" /></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-lightgrey" alt="license" /></a>
 
-简体中文 · [English](README.en.md) · [繁體中文](README.zh-Hant.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md)
+English · [简体中文](docs/readme/README.zh-CN.md) · [繁體中文](docs/readme/README.zh-Hant.md) · [日本語](docs/readme/README.ja.md) · [한국어](docs/readme/README.ko.md) · [Español](docs/readme/README.es.md)
 
 <br/>
 
-<img src="docs/media/wechat-send-side.gif" alt="一句话，Mika 在后台屏上打开微信、找到联系人、发出消息" width="640" />
+<img src="docs/media/wechat-send-side.gif" alt="From one sentence, Mika opens WeChat on its background screen, finds the contact and sends the message" width="640" />
 
-<sub>一句话「给文件传输助手发一条消息」：左边是 Mika 的对话，右边是它在后台屏上的每一步（加速 4 倍，聊天列表已打码）</sub>
+<sub>"Send a message to File Transfer": Mika's chat on the left, each step on its background screen on the right (4× speed; chat list blurred)</sub>
 
 </div>
 
-## 一句话，办成一件事
+## Get things done with one sentence
 
 <table>
 <tr>
-<td align="center" width="33%"><img src="docs/media/wechat-group.gif" width="230" alt="翻完微信群，总结今天聊了啥" /><br/><b>「总结一下群里今天聊了啥」</b><br/><sub>后台翻完聊天记录再总结</sub></td>
-<td align="center" width="33%"><img src="docs/media/amazon-cart.gif" width="230" alt="在购物网站挑充电器加进购物车" /><br/><b>「30 美元以内、4.5 星以上的充电器」</b><br/><sub>挑好加进购物车，停在结账前</sub></td>
-<td align="center" width="33%"><img src="docs/media/xhs-summary.gif" width="230" alt="总结一位博主最近发的内容" /><br/><b>「总结这个博主最近发了什么」</b><br/><sub>打开 App 逐条看完再整理</sub></td>
+<td align="center" width="33%"><img src="docs/media/wechat-group.gif" width="230" alt="Reads through a WeChat group and summarizes today's chat" /><br/><b>"What did the group talk about today?"</b><br/><sub>Scrolls through the chat in the background, then sums it up</sub></td>
+<td align="center" width="33%"><img src="docs/media/amazon-cart.gif" width="230" alt="Picks a charger on a shopping site and adds it to the cart" /><br/><b>"A charger under $30, rated 4.5 stars or more"</b><br/><sub>Adds the pick to the cart and stops before checkout</sub></td>
+<td align="center" width="33%"><img src="docs/media/xhs-summary.gif" width="230" alt="Summarizes a creator's recent posts" /><br/><b>"What has this creator posted lately?"</b><br/><sub>Opens the app, reads post by post, then sums it up</sub></td>
 </tr>
 </table>
 
 <details>
-<summary>更多演示</summary>
+<summary>More demos</summary>
 
 <table>
 <tr>
-<td align="center" width="33%"><img src="docs/media/boss-greet.gif" width="230" alt="在招聘网站上给 3 个岗位打招呼" /><br/>在招聘网站上给 3 个岗位打招呼</td>
-<td align="center" width="33%"><img src="docs/media/google-flights.gif" width="230" alt="找最便宜的直飞航班" /><br/>找旧金山到纽约最便宜的直飞</td>
-<td align="center" width="33%"><img src="docs/media/hacker-news.gif" width="230" alt="读出首页前 5 条和分数" /><br/>读出新闻站首页前 5 条</td>
+<td align="center" width="33%"><img src="docs/media/boss-greet.gif" width="230" alt="Greets recruiters for 3 jobs on a job site" /><br/>Greets recruiters for 3 jobs on a job site</td>
+<td align="center" width="33%"><img src="docs/media/google-flights.gif" width="230" alt="Finds the cheapest nonstop flight" /><br/>Finds the cheapest nonstop from San Francisco to New York</td>
+<td align="center" width="33%"><img src="docs/media/hacker-news.gif" width="230" alt="Reads out the top 5 stories and their points" /><br/>Reads out the top 5 stories on a news site</td>
 </tr>
 <tr>
-<td align="center"><img src="docs/media/job-greet.jpg" width="230" alt="找岗位、打招呼" /><br/>找岗位、打招呼</td>
-<td align="center"><img src="docs/media/music-vip.jpg" width="230" alt="看广告领听歌权益" /><br/>看广告领听歌权益</td>
-<td align="center"><img src="docs/media/food-order.jpg" width="230" alt="凑满减点外卖，付款前问你" /><br/>凑满减点外卖，付款前问你</td>
+<td align="center"><img src="docs/media/job-greet.jpg" width="230" alt="Finds jobs and greets recruiters" /><br/>Finds jobs and greets recruiters</td>
+<td align="center"><img src="docs/media/music-vip.jpg" width="230" alt="Watches ads to unlock music perks" /><br/>Watches ads to unlock music perks</td>
+<td align="center"><img src="docs/media/food-order.jpg" width="230" alt="Orders takeout with stacked discounts and asks you before paying" /><br/>Orders takeout with stacked discounts, asks before paying</td>
 </tr>
 </table>
 
 </details>
 
-## 为什么是 Mika
+<sub>Several demos use apps popular in China: WeChat is the main messaging app there, and Xiaohongshu (RED) is a lifestyle and social platform. Mika isn't tied to them; it works with any app or website on your phone.</sub>
+
+## Why Mika
 
 | | |
 |---|---|
-| 📱 **不占你的屏幕** | 在一块单独的后台屏上打开 App、点、打字、翻页，你照常用手机；想看就点开小画面 |
-| 🧩 **什么 App 都能用** | 像人一样看屏幕、找按钮，不需要 App 开放接口，也不用事先适配 |
-| 🌐 **网页上直接叫它** | 内置浏览器里，对着正在看的这一页说一句，它就在这一页上干活；你一碰页面它就停 |
-| 🧠 **越用越会** | 记住你说过的偏好；办成的事自动总结成技能，下次更快更稳 |
-| 🔒 **数据只在你手机上** | 没有 Mika 服务器；用你自己的模型 Key，或用 ChatGPT、xAI、OpenRouter 账号登录 |
-| 🆓 **开源、免费** | Apache-2.0，代码全部公开 |
+| 📱 **Leaves your screen alone** | Opens apps, taps, types and scrolls on a separate background screen while you use your phone as usual; tap the small live view whenever you want to watch |
+| 🧩 **Works with any app** | Looks at the screen and finds buttons the way a person does: no app APIs, no per-app integration |
+| 🌐 **Call it from any web page** | In the built-in browser, say what you want on the page you're reading and it works right there; touch the page and it stops |
+| 🧠 **Gets better with use** | Remembers the preferences you tell it, and turns tasks it finishes into skills so next time is faster and steadier |
+| 🔒 **Your data stays on your phone** | There is no Mika server; use your own model API key, or sign in with a ChatGPT, xAI or OpenRouter account |
+| 🆓 **Open source and free** | Apache-2.0, all code public |
 
-## 三步开始
+## Get started in three steps
 
-1. **下载安装**：从 [Releases](https://github.com/wangzan101/Mika/releases/latest) 下载 APK。
-2. **连上模型**：设置 › 模型，选一家服务商填 API Key，或者直接用账号登录（[模型与登录](docs/models.md)）。
-3. **要操作手机 App 时**：按设置里「设置手机操作」的向导，在手机上配对一次无线调试（[设置指南](docs/setup-guide.md)）。只聊天、上网、处理文件可以跳过这一步。
+1. **Install**: download the APK from [Releases](https://github.com/wangzan101/Mika/releases/latest).
+2. **Connect a model**: in Settings › Model, pick a provider and enter an API key, or just sign in with an account ([models and sign-in](docs/models.en.md)).
+3. **To operate phone apps**: follow the "Set up phone control" wizard in Settings and pair wireless debugging on the phone once ([setup guide](docs/setup-guide.en.md)). Skip this if you only want chat, web and files.
 
-然后说一句试试：「帮我订明天早上 9:40 和 10:00 的闹钟」「每天早上 8 点看看天气，下雨才告诉我」。
+Then try saying: "Set alarms for 9:40 and 10:00 tomorrow morning" or "Check the weather at 8 every morning and tell me only if it will rain".
 
-> 💡 手边有电脑？把这句话发给电脑上的 AI 助手，它会帮你装好：<br/>
-> `请按 https://github.com/wangzan101/Mika/blob/main/docs/install-with-agent.md 的步骤，帮我把 Mika 安装到通过 USB 连着的安卓手机上。`
+> 💡 Have a computer handy? Send this to the AI agent on it and it will set everything up for you:<br/>
+> `Follow https://github.com/wangzan101/Mika/blob/main/docs/install-with-agent.en.md to install Mika on the Android phone connected over USB.`
 
-## 能做什么
+## What it can do
 
 | | |
 |---|---|
-| **操作 App** | 读长列表和聊天记录、点击输入、分享文字进 App；登录、验证码、付款请你接管 |
-| **上网** | 内置电脑版浏览器，登录状态保留，能读页面、下载上传；翻页有节奏，遇到拦截交给你 |
-| **此刻的屏幕** | 双击悬浮胶囊，把你正在看的这一屏发给 Mika：「这个怎么回」「帮我记下来」 |
-| **定时与条件** | 「明早 9 点提醒我」「每周五做某件事」，到点在原对话里执行 |
-| **随时插话、随时停** | 任务进行中继续说话补充要求，还没处理的可以长按撤回或修改；停下后交代做到哪了，说「继续」接着做 |
-| **按住说话** | 输入框按住说话，字填进框里改了再发；悬浮胶囊长按说话，松开直接发出。用手机自带的语音识别，没有时可选服务商的语音模型 |
-| **文件与计算** | 每个对话一个 Linux 沙箱，跑 Python、Node 和 shell，处理你发来的文件（arm64） |
-| **电脑上也能用** | 电脑上的 AI 工具通过 CLI + Skill 或 MCP 给 Mika 派任务（[从电脑使用 Mika](docs/computer.md)） |
+| **Operate apps** | Reads long lists and chat histories, taps and types, shares text into apps; hands logins, verification codes and payments to you |
+| **Browse the web** | A built-in desktop-class browser that keeps you signed in, reads pages, downloads and uploads; paces itself and hands block pages to you |
+| **Your current screen** | Double-tap the floating capsule to send the screen you're looking at: "how should I reply?", "note this down" |
+| **Schedules and conditions** | "Remind me at 9 tomorrow", "do this every Friday"; runs on time in the original conversation |
+| **Jump in or stop anytime** | Keep talking while a task runs to add or correct things (long-press to withdraw or edit one Mika hasn't picked up yet); after a stop it reports where it got to, and "continue" picks up from there |
+| **Hold to talk** | Hold the chat input to speak and edit the words before sending; long-press the floating capsule to speak and release to send. Uses the phone’s built-in speech recognition, or a provider’s speech model if it has none |
+| **Files and computing** | A Linux sandbox per conversation runs Python, Node and shell on the files you send (arm64) |
+| **From your computer** | AI tools on your computer can hand Mika tasks through CLI + Skill or MCP ([use Mika from a computer](docs/computer.en.md)) |
 
-默认是**询问模式**：只有花钱（下单、付款）先问你，其他事直接做完；也可以换成**自主模式**。详见[询问与自主](docs/modes.md)。
+By default Mika runs in **Ask mode**: it checks with you only before spending money (placing orders, paying) and just does everything else. You can switch to **Autonomous mode** instead. See [Ask and Autonomous](docs/modes.en.md).
 
-每一项怎么用、有哪些细节，见[详细说明](docs/features.md)。
+For how each of these works and the finer details, see [features in detail](docs/features.en.md).
 
 <details>
-<summary>已经写了使用知识的 App 和网站（没写到的照样能用）</summary>
+<summary>Apps and websites with built-in usage knowledge (anything not listed still works)</summary>
+
+The names are shown as they appear in the knowledge files.
 
 <!-- generated:knowledge:start -->
-<!-- 这一段由 ./gradlew updateReadme 生成，不要手改 -->
-| 类别 | 内置 |
+<!-- Generated by ./gradlew updateReadme; do not edit by hand -->
+| Category | Built in |
 |---|---|
-| **App** | Android 设置、百家号、哔哩哔哩、BOSS直聘、Chrome、得到、抖音、飞书、Gmail、即刻、快手、领英、QQ邮箱、Telegram、今日头条、Uber、Uber Eats、微信、微博、WhatsApp、闲鱼、小红书、知乎 |
-| **网站** | Amazon、哔哩哔哩、Google Calendar、豆瓣、抖音、Instagram、Gmail、Google Maps、Telegram、百度贴吧、微博、搜狗微信、WhatsApp、小红书、小宇宙、YouTube、知乎、BOSS直聘 |
-| **通用做法**（技能） | 把内容整理成文字、处理 PDF 文档、查清一件事、消息与邮件、写技能 |
+| **Apps** | Android 设置, 百家号, 哔哩哔哩, BOSS直聘, Chrome, 得到, 抖音, 飞书, Gmail, 即刻, 快手, 领英, QQ邮箱, Telegram, 今日头条, Uber, Uber Eats, 微信, 微博, WhatsApp, 闲鱼, 小红书, 知乎 |
+| **Websites** | Amazon, 哔哩哔哩, Google Calendar, 豆瓣, 抖音, Instagram, Gmail, Google Maps, Telegram, 百度贴吧, 微博, 搜狗微信, WhatsApp, 小红书, 小宇宙, YouTube, 知乎, BOSS直聘 |
+| **How-to skills** | 改 Mika 自己的设置, 把内容整理成文字, 处理 PDF 文档, 查清一件事, 消息与邮件, 写技能 |
 <!-- generated:knowledge:end -->
 
 </details>
 
 <details>
-<summary>支持的模型服务商</summary>
+<summary>Supported model providers</summary>
 
 <!-- generated:providers:start -->
-<!-- 这一段由 ./gradlew updateReadme 生成，不要手改 -->
-内置 DeepSeek、通义千问、Kimi、智谱、硅基流动、火山方舟、MiniMax、阶跃星辰、腾讯混元、百度千帆、OpenRouter、OpenCode Go、Anthropic、Gemini、OpenAI、xAI、Mistral、Groq、Ollama、LM Studio 等服务商预设；其他服务商选「自定义」，OpenAI 兼容、Anthropic、Gemini、OpenAI Responses 接口都能接。
+<!-- Generated by ./gradlew updateReadme; do not edit by hand -->
+Presets for DeepSeek, 通义千问, Kimi, 智谱, 硅基流动, 火山方舟, MiniMax, 阶跃星辰, 腾讯混元, 百度千帆, OpenRouter, OpenCode Go, Anthropic, Gemini, OpenAI, xAI, Mistral, Groq, Ollama, LM Studio and more; for any other provider pick Custom (自定义), which takes any OpenAI-compatible, Anthropic, Gemini or OpenAI Responses endpoint.
 <!-- generated:providers:end -->
 
-也可以不填 Key：ChatGPT（Plus / Pro）、xAI / Grok、OpenRouter 账号登录。添加模型的步骤和各家登录的注意事项见[模型与登录](docs/models.md)。
+You can also skip the key and sign in with a ChatGPT (Plus / Pro), xAI / Grok or OpenRouter account. Steps for adding a model, and what to know about each sign-in, are in [models and sign-in](docs/models.en.md).
 
 </details>
 
-## 能在哪些手机上用
+## Which phones
 
-| | 要求 |
+| | Requirement |
 |---|---|
-| 聊天、上网、文件 | 安卓 11 及以上 |
-| 操作手机 App | 安卓 12 及以上；**推荐安卓 14+**（后台屏有自己的焦点，不影响你在主屏打字） |
-| Linux 沙箱 | arm64 设备 |
+| Chat, web, files | Android 11 or later |
+| Operating phone apps | Android 12 or later; **Android 14+ recommended** (the background screen has its own focus, so it doesn't get in the way of your typing on the main screen) |
+| Linux sandbox | arm64 devices |
 
-不确定自己的手机行不行？设置 › 恢复与修复 › **兼容性自检**，一分钟跑完 12 项，结果可以一键[反馈给我们](https://github.com/wangzan101/Mika/issues/new?template=device-report.yml)。
+Not sure your phone is up to it? Run Settings › Recovery & repair › **Compatibility self-check**: 12 checks in about a minute, and you can [send us the results](https://github.com/wangzan101/Mika/issues/new?template=device-report.yml) in one tap.
 
-## 隐私与安全
+## Privacy & safety
 
-- **没有 Mika 服务器**：你的话、屏幕内容只发给你自己配置的模型服务商。
-- API Key、记忆加密保存在手机上；对话、运行记录只存在本机；检查更新只访问 GitHub。
-- 自动操作第三方 App 和网站可能违反它们的用户协议，请自行判断。重要的事用询问模式，并检查结果。详见[免责声明](docs/disclaimer.md)。
+- **There is no Mika server**: what you say and what's on your screen go only to the model provider you set up.
+- API keys and memories are stored encrypted on the phone; conversations and run records stay on the device; update checks only contact GitHub.
+- Operating third-party apps and websites automatically may break their terms of service, so use your own judgment. For anything important, use Ask mode and check the results. See the [disclaimer](docs/disclaimer.en.md).
 
 <details>
-<summary><b>常见问题</b></summary>
+<summary><b>FAQ</b></summary>
 
-**无线调试自己关掉了？** 安卓在换 Wi-Fi、重启后会关掉它。Mika 会在你允许的前提下自己打开；连不上就回到「设置手机操作」重新配对。
+**Wireless debugging turned itself off?** Android turns it off when you change Wi-Fi or restart. With your permission, Mika turns it back on by itself; if it still can't connect, go back to "Set up phone control" and pair again.
 
-**系统里找不到无线调试？** 有的手机系统去掉了这一项，可以用电脑经 USB 启动手机助手，见[设置指南](docs/setup-guide.md)。
+**Can't find wireless debugging on my phone?** Some phone systems leave it out. You can start the phone helper from a computer over USB instead; see the [setup guide](docs/setup-guide.en.md).
 
-**有的页面读不到、截不到？** 付款、输密码这类页面禁止截屏，Mika 会请你接管。
+**Some screens can't be read or captured?** Pages like payments and password entry block screenshots, so Mika asks you to take over there.
 
-**能用自己电脑上跑的模型吗？** 可以，服务商选「自定义」，填局域网地址即可。
+**Can I use a model running on my own computer?** Yes: pick "Custom" as the provider and enter its address on your local network.
 
-**更新从哪来？** 只从本仓库的 [Releases](https://github.com/wangzan101/Mika/releases) 发布；App 里「关于 › 检查更新」也能直接升级。
+**Is the app in English?** Yes. The app UI comes in English, Simplified Chinese, Traditional Chinese, Japanese, Korean, Spanish, Portuguese, Russian and Indonesian, follows your system language, and can be switched in Settings › Language. The built-in app and website knowledge is written in Chinese, but that doesn't limit you: the model reads it fine, and you can talk to Mika in English.
 
-更多问答见[常见问题](docs/faq.md)。
+**Where do updates come from?** Only from this repository's [Releases](https://github.com/wangzan101/Mika/releases); you can also upgrade in the app from About › Check for updates.
+
+More answers are in the [FAQ](docs/faq.en.md).
 
 </details>
 
-## 社区与贡献
+## Community & contributing
 
-- **文档**：全部文档和阅读顺序见[文档目录](docs/README.md)
-- **交流**：App 里「关于 › 联系作者」扫码加作者微信（请备注 Mika）；不用微信可以加入 [X 群聊](https://x.com/i/chat/group_join/g2116500883139862983/xP74Qyff3X)
-- **关注作者**：X [@wangzan101](https://x.com/wangzan101)
-- **反馈问题**：[提 Issue](https://github.com/wangzan101/Mika/issues/new/choose)，App 里「关于 › 反馈问题」可以附上诊断信息
-- **参与贡献**：给某个 App、网站补一份使用知识（纯文本，不用写代码），或者贡献代码，见[贡献指南](CONTRIBUTING.md)
+- **Docs**: all docs and a suggested reading order are in the [docs index](docs/README.en.md)
+- **Community**: join the [X group chat](https://x.com/i/chat/group_join/g2116926829198246025/48B52j5svL); to reach the author on WeChat, scan the QR code in the app under About › Contact the author (mention Mika in your request)
+- **Follow the author**: X [@wangzan101](https://x.com/wangzan101)
+- **Report a problem**: [open an issue](https://github.com/wangzan101/Mika/issues/new/choose); About › Send feedback in the app can attach diagnostics
+- **Contribute**: add usage knowledge for an app or website (plain text, no code needed), or contribute code; see the [contributing guide](.github/CONTRIBUTING.md)
 
 ## Star History
 
 <a href="https://star-history.com/#wangzan101/Mika&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&theme=dark&v=20261101-0434" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&v=20261101-0434" width="600" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&theme=dark&v=20261101-1623" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=wangzan101/Mika&type=Date&v=20261101-1623" width="600" />
   </picture>
 </a>
 
-## 贡献者
+## Contributors
 
-感谢每一位参与 Mika 的人：
+Thanks to everyone who has helped build Mika:
 
 <a href="https://github.com/wangzan101/Mika/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=wangzan101/Mika&max=100&columns=12" alt="Contributors" />
 </a>
 
-## 许可证
+## License
 
-[Apache-2.0](LICENSE) · [NOTICE](NOTICE) · [第三方组件](THIRD_PARTY_NOTICES.md)
+[Apache-2.0](LICENSE) · [NOTICE](NOTICE) · [Third-party components](licenses/THIRD_PARTY_NOTICES.md)

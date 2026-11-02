@@ -1,5 +1,6 @@
 package com.wangzan101.mika
 
+import com.wangzan101.mika.record.DetailedTraces
 import com.wangzan101.mika.i18n.ResourceTexts
 import com.wangzan101.mika.i18n.UiText
 import com.wangzan101.mika.i18n.AppLanguage
@@ -82,6 +83,8 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
     val resources = ResourceScheduler()
     /** MCP HTTP JSON-RPC(fork 远程中转);开关见 [FeatureFlags]。 */
     val mcpHttp by lazy { McpHttpRuntime(this) }
+    val detailedTraces by lazy { DetailedTraces(this) }
+
     val remoteTasks by lazy { RemoteTaskHub(this) }
 
     /**
@@ -95,7 +98,8 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
             com.wangzan101.mika.settings.McpUsbSettings(settingsDir,
                 bootId = { android.provider.Settings.Global.getString(contentResolver, android.provider.Settings.Global.BOOT_COUNT) ?: "null" },
                 infoFile = { getExternalFilesDir(null)?.let { java.io.File(it, com.wangzan101.mika.core.mcp.McpUsb.INFO_FILE) } }),
-            remoteTasks, com.wangzan101.mika.device.AndroidDeviceAccess(this) { phone.hub.shell.value })
+            remoteTasks, com.wangzan101.mika.device.AndroidDeviceAccess(this) { phone.hub.shell.value },
+            com.wangzan101.mika.settings.RelaySettings(settingsDir, com.wangzan101.mika.settings.KeystoreKeyCipher("mika-remote-relay")))
     }
     val childRuns by lazy { FileChildRunStore(java.io.File(filesDir, "children-v3.json")) }
     override val tabBudget get() = resources.tabBudget
@@ -196,6 +200,10 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
     /** 全局的询问 / 自主:整个进程一份,设置页和各任务共用。 */
     val approvals: ApprovalStore by lazy { ApprovalStore(java.io.File(filesDir, "approvals.json")) }
 
+    val appAccess: com.wangzan101.mika.settings.AppAccessStore by lazy {
+        com.wangzan101.mika.settings.AppAccessStore(java.io.File(filesDir, "app-access.json"))
+    }
+
     /** 全局的询问 / 自主和各任务自己的那一份;开发者选项里的「自主模式」经它改。 */
     val approvalControl: ApprovalControl by lazy { ApprovalControl(approvals) }
 
@@ -207,7 +215,8 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
 
     /** 检查更新:查到的新版本跟进程走,侧栏、设置首页、关于页的红点看同一份。 */
     val updates: com.wangzan101.mika.about.UpdateChecker by lazy {
-        com.wangzan101.mika.about.UpdateChecker(java.io.File(filesDir, "update-v1.json"), BuildConfig.VERSION_NAME)
+        com.wangzan101.mika.about.UpdateChecker(java.io.File(filesDir, "update-v1.json"), BuildConfig.VERSION_NAME,
+            deviceAbis = android.os.Build.SUPPORTED_ABIS.toList())
     }
 
     /** 浮在别的 App 上的悬浮胶囊。 */
@@ -250,10 +259,12 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
             conversations,
             taskState.busy,
             appLabel = { ConfirmationNotifier.appLabel(app, it) },
-            // 手机的虚拟屏建好了,或在用内置浏览器:画中画都有画面可看
-            screenOpen = combine(tasks.agentDisplayId, tasks.webScreenOpen) { d, w -> d >= 0 || w }
-                .stateIn(scope, SharingStarted.Eagerly, tasks.agentDisplayId.value >= 0 || tasks.webScreenOpen.value),
+            // 虚拟屏上打开过 App,或在用内置浏览器:画中画才有画面可看(只建了空屏的不算)
+            screenOpen = tasks.previewOpen
+                .stateIn(scope, SharingStarted.Eagerly, tasks.agentAppShown.value || tasks.webScreenOpen.value),
             endedRunId = taskState.endedRunId,
+            // 按对话取它自己的任务,不用服务对外那一份(并行时那是显示中的别的任务)
+            liveRunId = { taskState.run(it)?.runId?.value },
             endedRunIds = taskState.endedRunIds,
             parallelFlag = { FeatureFlags.get(app).speedFlags().parallelTasks },
             shownTask = taskState.shownTask,
@@ -289,6 +300,11 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
         AppLanguage.applyDefaultLocale(this)
         UiText.source = ResourceTexts { AppLanguage.resources(this) }
         registerActivityLifecycleCallbacks(foreground)
+        // 设置 › 网络代理:Mika 自己的连接从第一个请求起就按它走;SOCKS 代理的账号密码经全进程的认证器给
+        com.wangzan101.mika.settings.NetProxyStore.get(this)
+        com.wangzan101.mika.core.net.NetProxy.shared.installSocksAuth()
+        // 内置浏览器:设了代理才给 WebView 设上(读设置要解密,放到后台;没设代理不为此加载 WebView)
+        scope.launch(Dispatchers.IO) { runCatching { com.wangzan101.mika.cap.web.WebProxy.apply(this@MikaApp) } }
         capsule.start()
         // 内置助手的真实现,并开始看着助手(Mika 进程起来后,还活着的助手会自己交接 Binder)
         phone.shellManager.start()

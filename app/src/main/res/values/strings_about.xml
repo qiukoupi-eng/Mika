@@ -63,7 +63,7 @@
     <string name="about_released_under">Released under %1$s</string>
     <string name="issue_body">- Device: %1$s\n- Android version: %2$s (SDK %3$d)\n- Mika version: %4$s (build %5$s)\n\n### What went wrong\n\n\n### Steps you took\n\n\n### What you expected\n\n\n### Diagnostics\n(Optional) In Mika, open About › Send feedback › Copy diagnostics, then paste it here\n\n</string>
     <string name="licenses_third_party">Third-party components · %1$d</string>
-    <string name="licenses_footer">Full license texts and copyright notices are in LICENSE, THIRD_PARTY_NOTICES.md and the licenses/ folder of the source repository.</string>
+    <string name="licenses_footer">Full license texts and copyright notices are in LICENSE and the licenses/ folder (including THIRD_PARTY_NOTICES.md) of the source repository.</string>
     <string name="diagnostics_copy">Copy diagnostics</string>
     <string name="diagnostics_copy_sub">Version, device and setup state — paste it to the author</string>
     <string name="diagnostics_title">Diagnostics</string>

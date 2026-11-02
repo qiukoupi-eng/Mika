@@ -5,6 +5,8 @@
     <string name="phone_later">Not now</string>
     <string name="phone_bar_title">Phone control</string>
     <string name="phone_skip_note">You can skip this for now and just use web, files and chat; Mika will remind you the first time it needs an app.</string>
+    <string name="phone_unavailable">This environment can’t operate the apps on your phone; chat, web, files and calculations work as usual.</string>
+    <string name="phone_unavailable_reason">Phone control needs Android’s Developer options and Wireless debugging, and neither is available here.</string>
     <string name="phone_step_dev">Turn on Developer options</string>
     <string name="phone_step_dev_body">Open “About phone” in Settings and tap “Build number” 7 times until you see “You are now a developer”. On some phones “Build number” is under “Software information”.</string>
     <string name="phone_step_dev_action">Open About phone</string>
@@ -69,6 +71,8 @@
     <string name="fail_connect_body">Couldn’t find the Wireless debugging port. You can: turn “Wireless debugging” off and on again, then retry; switch to a phone hotspot or your home Wi-Fi; or enter the port below.</string>
     <string name="fail_revoked">Pairing expired</string>
     <string name="fail_revoked_body">The system may have revoked it after a long time unused, or it was removed. Just pair again. Turn on “Disable adb authorization timeout” in Developer options so it won’t expire again.</string>
+    <string name="fail_key_unreadable">Pairing key can’t be read</string>
+    <string name="fail_key_unreadable_body">Mika can no longer read the key it used for pairing. Pair again once; Mika will make a new key and the old “mika@…” entry in Paired devices can be removed.</string>
     <string name="fail_helper">Connected, but couldn’t get ready</string>
     <string name="fail_helper_body">Retrying usually fixes it.</string>
     <string name="fail_unknown">Something went wrong</string>

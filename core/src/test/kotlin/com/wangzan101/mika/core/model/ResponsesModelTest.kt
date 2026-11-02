@@ -100,6 +100,11 @@ class ResponsesModelTest {
         assertEquals(Usage(12, 4, 8), reply.usage)
     }
 
+    @Test fun readsReasoningTokensDetails() = runTest {
+        server.enqueue(stream(completed("""{"input_tokens":12,"output_tokens":40,"output_tokens_details":{"reasoning_tokens":32}}""")))
+        assertEquals(Usage(12, 40, 0, reasoningTokens = 32), model().complete("s", user, listOf(tool)).usage)
+    }
+
     @Test fun replaysReasoningBeforeTheCallAndSendsToolResultsAsOutputs() = runTest {
         server.enqueue(stream(completed()))
         val reasoning = """[{"type":"reasoning","summary":[],"encrypted_content":"ENC"}]"""
@@ -160,6 +165,14 @@ class ResponsesModelTest {
         assertFalse(RetryPolicy.transient(e))
         server.enqueue(MockResponse().setResponseCode(403).setBody("{}"))
         expect<ModelError.Auth> { model().complete("s", user, emptyList()) }
+    }
+
+    /** 找不到模型时带上服务端的原话:按错误代码认出的、只看状态码 404 的都带。 */
+    @Test fun modelNotFoundCarriesTheServerMessage() = runTest {
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":{"code":"model_not_found","message":"The model `x` does not exist\n"}}"""))
+        assertEquals("The model `x` does not exist", expect<ModelError.ModelNotFound> { model().complete("s", user, emptyList()) }.detail)
+        server.enqueue(MockResponse().setResponseCode(404).setBody("""{"error":{"message":"none of group/rpa's models is ready"}}"""))
+        assertEquals("none of group/rpa's models is ready", expect<ModelError.ModelNotFound> { model().complete("s", user, emptyList()) }.detail)
     }
 
     @Test fun planHttpErrorsAreNotRetryable() = runTest {

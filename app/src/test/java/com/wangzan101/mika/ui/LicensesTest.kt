@@ -7,7 +7,7 @@ import java.io.File
 
 class LicensesTest {
     /** 单元测试的工作目录是 app/;仓库根目录在上一级。 */
-    private val notices = File("../THIRD_PARTY_NOTICES.md").takeIf { it.isFile } ?: File("THIRD_PARTY_NOTICES.md")
+    private val notices = File("../licenses/THIRD_PARTY_NOTICES.md").takeIf { it.isFile } ?: File("licenses/THIRD_PARTY_NOTICES.md")
 
     @Test
     fun everyNoticeEntryShown() {

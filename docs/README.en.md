@@ -33,4 +33,4 @@ Start with [Use Mika from a computer](computer.en.md): pick CLI + Skill or MCP, 
 
 ## Developing Mika
 
-To contribute code or add usage knowledge for apps and websites, read the [contributing guide](../CONTRIBUTING.en.md) first, then the [developer docs](dev/README.en.md) (architecture, knowledge format, roadmap and more).
+To contribute code or add usage knowledge for apps and websites, read the [contributing guide](../.github/CONTRIBUTING.md) first, then the [developer docs](dev/README.en.md) (architecture, knowledge format, roadmap and more).
