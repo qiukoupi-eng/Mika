@@ -23,10 +23,10 @@ object ModelHttp {
 
     /** OpenAI 兼容接口(对话、转写同一套)的错误映射。[model] 是请求的模型名。 */
     fun openAiError(status: Int, retryAfter: String?, body: String, model: String): ModelError =
-        ModelAccessErrors.of(status, body, model) ?: when {
+        ModelAccessErrors.of(status, body, model) ?: reasoningEffortRejected(status, body) ?: when {
             status == 401 -> ModelError.Auth()
             status == 402 || body.contains("insufficient_quota") -> ModelError.QuotaExceeded()
-            status == 429 -> ModelError.RateLimited(HttpSupport.retryAfterMs(retryAfter))
+            status == 429 -> ModelError.RateLimited(HttpSupport.retryAfterMs(retryAfter, body))
             contextTooLong(status, body) -> ModelError.ContextTooLong()
             status == 404 -> ModelError.ModelNotFound(model, ModelAccessErrors.jsonDetail(body))
             status in 500..599 -> ModelError.Server(status)
@@ -36,6 +36,19 @@ object ModelHttp {
 
     /** HTTP 400 的报错说请求超出了模型的上下文(见 [saysContextTooLong])。OpenAI 兼容、Responses、Anthropic 三种接口共用;本机跑的服务三种接口都可能开。 */
     fun contextTooLong(status: Int, body: String): Boolean = status == 400 && saysContextTooLong(body)
+
+    /** HTTP 400 明确指出思考强度参数无效。只认参数名或完整的协议字段,不从任意“unsupported”文字猜。 */
+    fun reasoningEffortRejected(status: Int, body: String): ModelError.ReasoningEffortRejected? {
+        if (status != 400) return null
+        val root = runCatching { json.parseToJsonElement(body) as? JsonObject }.getOrNull()
+        val error = root?.get("error") as? JsonObject
+        val param = (error?.get("param") as? JsonPrimitive)?.contentOrNull ?: (root?.get("param") as? JsonPrimitive)?.contentOrNull
+        val lower = body.lowercase()
+        val namesParameter = param in setOf("reasoning.effort", "reasoning_effort") ||
+            (param == null && ("reasoning.effort" in lower || "reasoning_effort" in lower))
+        val rejected = listOf("invalid", "unsupported", "not supported", "unknown").any { it in lower }
+        return if (namesParameter && rejected) ModelError.ReasoningEffortRejected(ModelAccessErrors.detail(body)) else null
+    }
 
     /**
      * 报错内容说请求超出了模型的上下文。各家原话不同(`context_length_exceeded`、「maximum context length」、
@@ -64,7 +77,7 @@ object ModelHttp {
         return when {
             status == 401 || status == 403 -> ModelError.Auth()
             // 这个模型额度为零的 429 上面已认成用不了;其余 429 按可重试限流处理(其限流与额度文案混用,无法可靠区分)
-            status == 429 || st == "RESOURCE_EXHAUSTED" -> ModelError.RateLimited(HttpSupport.retryAfterMs(retryAfter))
+            status == 429 || st == "RESOURCE_EXHAUSTED" -> ModelError.RateLimited(HttpSupport.retryAfterMs(retryAfter, msg))
             status == 404 -> ModelError.ModelNotFound(model, ModelAccessErrors.jsonDetail(body))
             status == 413 || (status == 400 && lower.contains("token") &&
                 (lower.contains("exceed") || lower.contains("too long") || lower.contains("maximum"))) -> ModelError.ContextTooLong()

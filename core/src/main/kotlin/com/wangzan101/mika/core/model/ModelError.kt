@@ -5,6 +5,16 @@ import com.wangzan101.mika.core.net.ProxyFailure
 sealed class ModelError(message: String, cause: Throwable? = null) : Exception(message, cause) {
     class Auth : ModelError("API Key 无效或没有权限")
     class QuotaExceeded : ModelError("额度已用完")
+    /** 本任务的已报告用量达到预算；不再发起任何收尾或重试请求。 */
+    class TaskBudgetExceeded(val limit: Long, val used: Long) : ModelError("本任务的 Token 预算已用完")
+    /** 这家服务商今天在本地已报告的用量达到预算；[providerName] 只用于给用户说明是哪一家。 */
+    class DailyBudgetExceeded(val providerName: String, val limit: Long, val used: Long) : ModelError("服务商今日的 Token 预算已用完")
+    /**
+     * 主动能力今天(本地日历日,各服务商合计)的已报告用量达到它自己的预算;不发请求。
+     * [byCalls] 为真时到的是请求次数的上限,[limit]、[used] 是次数;否则是 Token。
+     * 只会出现在主动能力的后台调用里,调用方应安静停下,不当作用户任务的失败去提示。见 [com.wangzan101.mika.core.usage.ProactiveBudget]。
+     */
+    class ProactiveBudgetExceeded(val limit: Long, val used: Long, val byCalls: Boolean = false) : ModelError("主动能力今日的预算已用完")
     class RateLimited(val retryAfterMs: Long?) : ModelError("请求太频繁,请稍后再试")
     class ContextTooLong : ModelError("对话内容超出模型上下文长度")
     /**
@@ -41,6 +51,8 @@ sealed class ModelError(message: String, cause: Throwable? = null) : Exception(m
     class StreamCut : ModelError("回复还没传完,连接就被断开了")
     class Server(val status: Int) : ModelError("模型服务出错(HTTP $status)")
     class ContentRefused : ModelError("模型拒绝处理该内容")
+    /** 服务端明确拒绝思考强度参数:保留服务端原话,引导改档位,不能误报成地址或接口错误。 */
+    class ReasoningEffortRejected(val detail: String) : ModelError("模型不接受所选的思考强度")
     /** ChatGPT 套餐给其他 App 用的额度到了上限:不重试,等额度恢复或换模型。 */
     class ChatGptLimitReached : ModelError("ChatGPT 额度用完了")
     /** 这个 ChatGPT 账号不能在其他 App 里用套餐额度(套餐不符、地区或账号策略不允许):不重试。 */

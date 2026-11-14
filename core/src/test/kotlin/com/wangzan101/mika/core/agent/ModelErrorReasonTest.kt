@@ -7,6 +7,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModelErrorReasonTest {
+    @Test fun rateLimitHasStableFailureCode() {
+        val failure = StopRules.modelFailed(ModelError.RateLimited(null))
+        assertEquals(FailKind.Model, failure.kind)
+        assertEquals(FailureCode.ModelRateLimited, failure.code)
+        assertEquals(null, StopRules.modelFailed(ModelError.Network()).code)
+    }
+
     /** 找不到模型:知道模型名时说清是哪个、去哪改、模型名大概长什么样;不知道时退回一般的说法。 */
     @Test fun modelNotFoundNamesTheModel() {
         assertEquals(
@@ -56,6 +63,16 @@ class ModelErrorReasonTest {
             "模型「gemma」不支持调用工具,Mika 干活要靠工具。去设置 › 模型换一个会调用工具的模型。",
             StopRules.modelFailed(ModelError.ToolsUnsupported("gemma")).reason,
         )
+    }
+
+    /** 思考强度被服务端拒绝时保留参数错误并指向档位设置,不再误报 Base URL 或接口类型。 */
+    @Test fun rejectedReasoningEffortPointsToTheActualSetting() {
+        val detail = "Invalid value: 'ultra'. Supported values are: 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', and 'max'."
+        val reason = StopRules.modelFailed(ModelError.ReasoningEffortRejected(detail)).reason
+        assertTrue(reason.contains(detail.dropLast(1)))
+        assertTrue(reason.contains("思考强度改为默认"))
+        assertFalse(reason.contains("Base URL"))
+        assertFalse(reason.contains("接口类型"))
     }
 
     /** 断流有自己的说法、不提 Base URL;真的解析不了(格式对不上)才提示检查 Base URL 和接口类型。 */
