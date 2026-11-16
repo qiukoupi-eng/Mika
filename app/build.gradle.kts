@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    // 插件 manifest/注册表用 kotlinx.serialization(依赖已经在 libs 里,core 也在用)
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -18,8 +19,8 @@ android {
         applicationId = "com.wangzan101.mika"
         minSdk = 29
         targetSdk = 35
-        versionCode = 44
-        versionName = "0.1.42-fork"
+        versionCode = 45
+        versionName = "0.1.44-fork"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GIT_HASH", "\"$gitHash\"")
         // 关于页版本号后的 Beta 标记;出正式版时改成 false
@@ -45,7 +46,7 @@ android {
         }
     }
     // 自带的运行环境(assets/runtime/rootfs.tar.xz,tools/sandbox/build-runtime.py 生成)已是 xz,不再压一遍
-    androidResources { noCompress += "xz" }
+    androidResources { noCompress += listOf("xz", "onnx") }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -93,6 +94,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(files("libs/sherpa-onnx-2.0.1.aar"))
     implementation(project(":core"))
     implementation(libs.protobuf.lite)
     implementation(platform(libs.compose.bom))

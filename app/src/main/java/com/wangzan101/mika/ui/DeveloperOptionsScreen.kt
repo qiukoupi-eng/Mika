@@ -57,7 +57,7 @@ object GroundingCopy {
 }
 
 /**
- * 设置 › 高级与其他 › 开发者选项:最上面是「主动能力(实验)」的入口([onOpenProactive]);然后是速度和实验两组开关;
+ * 设置 › 高级与其他 › 开发者选项:速度和实验两组开关;
  * 有看图模型时另有它的「看图定位已验证」([grounding] 为 null 时不显示);最后是「运行统计」的入口([onOpenRunStats] 为 null 时不显示)。
  */
 @Composable
@@ -73,18 +73,22 @@ fun DeveloperOptionsScreen(
     onCopyMcpToken: () -> Unit = {},
     /** 非 null 时显示「检查更新」(仅 debug)。 */
     onCheckUpdate: (() -> Unit)? = null,
-    onOpenProactive: (() -> Unit)? = null,
+    deviceFiles: Boolean = false,
+    onDeviceFiles: (Boolean) -> Unit = {},
+    onDeviceDirectories: (() -> Unit)? = null,
 ) {
     PageScaffold(tr(R.string.settings_developer), onBack) {
-        if (onOpenProactive != null) {
-            GroupCard {
-                ListRow(null, tr(R.string.proactive_title), tr(R.string.proactive_entry_sub), first = true, onClick = onOpenProactive) { RowChevron() }
-            }
-        }
         GroupLabel(tr(R.string.dev_speed))
         SwitchGroup(DeveloperSwitches.speed(speed), onSpeed)
         GroupLabel(tr(R.string.dev_experiments))
-        SwitchGroup(DeveloperSwitches.experimental(speed), onSpeed)
+        SwitchGroup(DeveloperSwitches.experimental(speed), onSpeed) {
+            ListRow(null, tr(R.string.dev_device_files), tr(R.string.dev_device_files_sub), onClick = { onDeviceFiles(!deviceFiles) }) {
+                MikaSwitch(deviceFiles, onDeviceFiles, Modifier.testTag("dev-device-files"))
+            }
+            if (onDeviceDirectories != null) {
+                ListRow(null, tr(R.string.device_dirs_entry), tr(R.string.device_dirs_entry_sub), onClick = onDeviceDirectories) { RowChevron() }
+            }
+        }
         if (grounding != null) {
             GroupLabel(GroundingCopy.GROUP)
             GroupCard {
@@ -117,7 +121,7 @@ fun DeveloperOptionsScreen(
 }
 
 @Composable
-private fun SwitchGroup(switches: List<DevSwitch>, onSpeed: (SpeedFlags) -> Unit) {
+private fun SwitchGroup(switches: List<DevSwitch>, onSpeed: (SpeedFlags) -> Unit, extra: @Composable () -> Unit = {}) {
     GroupCard {
         switches.forEachIndexed { i, s ->
             // 整行都能点:开关小,行大
@@ -125,5 +129,6 @@ private fun SwitchGroup(switches: List<DevSwitch>, onSpeed: (SpeedFlags) -> Unit
                 MikaSwitch(s.checked, { onSpeed(s.change(it)) }, Modifier.testTag("dev-${s.id}"))
             }
         }
+        extra()
     }
 }
