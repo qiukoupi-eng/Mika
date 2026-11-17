@@ -19,8 +19,8 @@ android {
         applicationId = "com.wangzan101.mika"
         minSdk = 29
         targetSdk = 35
-        versionCode = 45
-        versionName = "0.1.44-fork"
+        versionCode = 46
+        versionName = "0.1.45-fork"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "GIT_HASH", "\"$gitHash\"")
         // 关于页版本号后的 Beta 标记;出正式版时改成 false
@@ -46,7 +46,7 @@ android {
         }
     }
     // 自带的运行环境(assets/runtime/rootfs.tar.xz,tools/sandbox/build-runtime.py 生成)已是 xz,不再压一遍
-    androidResources { noCompress += listOf("xz", "onnx") }
+    androidResources { noCompress += "xz" }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -68,6 +68,11 @@ android {
             signingConfig = signingConfigs.getByName("debug")
             isProfileable = true
             matchingFallbacks += "release"
+            // 真机比较滑动手感也用优化包,仍覆盖 .dev 测试版并保留它的数据。
+            if (providers.gradleProperty("devInstall").isPresent) {
+                applicationIdSuffix = ".dev"
+                resValue("string", "app_name", "Mika Dev")
+            }
         }
         // 本地日志检查包：并排安装，允许 adb run-as，首次启动即记录详细 Trace。
         create("logs") {
@@ -94,7 +99,6 @@ kotlin {
 }
 
 dependencies {
-    implementation(files("libs/sherpa-onnx-2.0.1.aar"))
     implementation(project(":core"))
     implementation(libs.protobuf.lite)
     implementation(platform(libs.compose.bom))
@@ -124,6 +128,8 @@ dependencies {
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
+    // Older transitive Espresso reflects on InputManager.getInstance(), removed on newer devices.
+    androidTestImplementation(libs.androidx.test.espresso)
     debugImplementation(libs.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
