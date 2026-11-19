@@ -94,6 +94,18 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
     val detailedTraces by lazy { DetailedTraces(this) }
 
     val remoteTasks by lazy { RemoteTaskHub(this) }
+    internal fun workflowInterrupted(attemptId: String) {
+        scope.launch(Dispatchers.IO) { workflows.complete(attemptId, false, "", "interrupted") }
+    }
+    val workflows by lazy {
+        com.wangzan101.mika.workflow.WorkflowRuntime(
+            com.wangzan101.mika.workflow.WorkflowStore(
+                java.io.File(filesDir, com.wangzan101.mika.workflow.WorkflowStore.FILE),
+                com.wangzan101.mika.settings.KeystoreKeyCipher("mika-workflows"),
+            ),
+        ) { dispatch -> TaskService.startWorkflow(this, dispatch.attemptId) }
+    }
+
 
     /** 通话功能：设置页负责开关与凭证；CallRuntime 是本地状态与实时语音的宿主，AndroidPhoneCallPort 是交给模型的工具入口。 */
     val calls by lazy { com.wangzan101.mika.calls.CallRuntime(this) }
@@ -150,6 +162,9 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
         com.wangzan101.mika.plugin.PluginRegistry(filesDir, scope,
             log = { msg, e -> Log.w("MikaPlugin", msg, e) })
     }
+
+    /** 人格:命名的自定义提示词层,存在 settings 目录;不加密,不含密钥。 */
+    val personas by lazy { com.wangzan101.mika.settings.PersonaStore(java.io.File(filesDir, "settings")) }
     override val tabBudget get() = resources.tabBudget
 
     /** 任务结束后留在后台接着运行的那一页;关掉时在来源对话那一轮记下原因(对话页那一轮下面显示「后台网页已关闭」)。 */
@@ -298,6 +313,13 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
         com.wangzan101.mika.settings.RecommendedTaskStore(java.io.File(filesDir, com.wangzan101.mika.settings.RecommendedTaskStore.FILE))
     }
 
+    val savedChecklists by lazy {
+        com.wangzan101.mika.chat.SavedChecklistStore(
+            java.io.File(filesDir, com.wangzan101.mika.chat.SavedChecklistStore.FILE),
+            com.wangzan101.mika.settings.KeystoreKeyCipher("mika-saved-checklists"),
+        )
+    }
+
     /** 全局的询问 / 自主和各任务自己的那一份;开发者选项里的「自主模式」经它改。 */
     val approvalControl: ApprovalControl by lazy { ApprovalControl(approvals) }
 
@@ -313,17 +335,64 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
     /** 自身操作的进程内 UI 请求(开 Mika 的页/文件);任务服务发,MainActivity 处理。 */
     val selfUi = com.wangzan101.mika.self.SelfUi()
 
+    /** 更新镜像:用户可增删改排序;检查更新和下载都按它走,官方 GitHub 始终兜底。 */
+    val updateMirrors: com.wangzan101.mika.about.UpdateMirrorStore by lazy {
+        com.wangzan101.mika.about.UpdateMirrorStore(java.io.File(filesDir, com.wangzan101.mika.about.UpdateMirrorStore.FILE))
+    }
+
     /** 检查更新:查到的新版本跟进程走,侧栏、设置首页、关于页的红点看同一份。 */
     val updates: com.wangzan101.mika.about.UpdateChecker by lazy {
         com.wangzan101.mika.about.UpdateChecker(java.io.File(filesDir, "update-v1.json"), BuildConfig.VERSION_NAME,
+            mirrorSettings = updateMirrors::snapshot,
             deviceAbis = android.os.Build.SUPPORTED_ABIS.toList())
     }
 
-    internal val apkUpdater by lazy { com.wangzan101.mika.about.ApkUpdater(this) }
+    internal val apkUpdater by lazy {
+        com.wangzan101.mika.about.ApkUpdater(this, mirrorSettings = updateMirrors::snapshot)
+    }
     internal val automaticUpdates by lazy { com.wangzan101.mika.about.AutomaticUpdates(this, apkUpdater) }
 
     /** 浮在别的 App 上的悬浮胶囊。 */
     val capsule: CapsuleController by lazy { CapsuleController(this, taskState, foreground, resources.takeoverQueue) }
+
+    /** Mika 自己的朗读播放器:全进程一个,聊天里的「朗读」和设置页的测试共用。 */
+    val voicePlayer by lazy { com.wangzan101.mika.voice.VoicePlayer(this) }
+    private val voiceSettings by lazy { com.wangzan101.mika.settings.VoiceSettings.get(this) }
+
+    /** 播放工作区里的一段音频(生成结果);读不到时什么都不做。 */
+    private suspend fun playWorkspaceAudio(conversationId: String, path: String) {
+        val prefix = com.wangzan101.mika.core.workspace.SandboxPaths.WORKSPACE + "/"
+        if (!path.startsWith(prefix)) return
+        val rel = path.removePrefix(prefix)
+        if (rel.isEmpty() || rel.split('/').any { it.isEmpty() || it == "." || it == ".." }) return
+        val dirs = com.wangzan101.mika.cap.sandbox.SandboxDirs(this)
+        val bytes = dirs.tree.shared {
+            dirs.gate.openRead(dirs.workspace(conversationId), rel).use { g ->
+                if (g.size > 20L * 1024 * 1024) null else g.read(0, g.size.toInt())
+            }
+        } ?: return
+        val mime = android.webkit.MimeTypeMap.getSingleton()
+            .getMimeTypeFromExtension(path.substringAfterLast('.', "").lowercase())
+            ?.takeIf { it.startsWith("audio/") } ?: "audio/wav"
+        voicePlayer.play(bytes, mime)
+    }
+
+    /** 合成一句话并在本机播放;没配置声音模型或合成失败时什么都不做。 */
+    private suspend fun speak(text: String) {
+        val state = voiceSettings.state.value
+        val choice = state.choice ?: return
+        val caps = voiceSettings.capabilities() ?: return
+        val tts = ProviderStore.get(this).ttsModel(choice, caps) ?: return
+        val response = tts.synthesize(
+            com.wangzan101.mika.core.model.TtsRequest(
+                text.take(state.maxCharsPerSpeak),
+                choice.voice.ifBlank { null },
+                choice.speed,
+                "wav",
+            ),
+        )
+        voicePlayer.play(response.bytes, response.mime)
+    }
 
     /** 人工示范。onCreate 里建好；在那之前的无障碍事件不采集。 */
     lateinit var teach: TeachRuntime
@@ -393,6 +462,8 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
             sandboxReady = SandboxState.get(app).status.map { it !is SandboxStatus.Unsupported }
                 .stateIn(scope, SharingStarted.Eagerly, SandboxState.get(app).status.value !is SandboxStatus.Unsupported),
             sharedFiles = taskState.sharedFiles,
+            generatedAudios = taskState.audios,
+            playAudio = { id, path -> playWorkspaceAudio(id, path) },
             activities = taskState.activities,
             steers = taskState.steers,
             summarizing = taskState.summarizing,
@@ -419,6 +490,14 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
             onTeachingBlocked = {
                 android.widget.Toast.makeText(app, tr(R.string.teach_blocked_task), android.widget.Toast.LENGTH_LONG).show()
             },
+            voiceReady = voiceSettings.state.map { it.enabled && it.choice != null }
+                .stateIn(scope, SharingStarted.Eagerly, voiceSettings.state.value.enabled && voiceSettings.state.value.choice != null),
+            autoRead = voiceSettings.state.map { it.autoRead }
+                .stateIn(scope, SharingStarted.Eagerly, voiceSettings.state.value.autoRead),
+            voicePlayback = voicePlayer.state,
+            speakText = { text -> speak(text) },
+            stopVoice = { voicePlayer.stop() },
+            personaStore = if (FeatureFlags.get(this).persona()) personas else null,
         )
     }
 
@@ -427,6 +506,7 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
         // 上次进程在复制或绑定分享草稿途中退出时留下的临时文件;目录至多保留一份有效草稿。
         runCatching { sharedDrafts.cleanup() }
         scope.launch(Dispatchers.IO) {
+            runCatching { updateMirrors.ensureLoaded() }
             runCatching { com.wangzan101.mika.task.AndroidDeviceFiles.cleanupStaging(SandboxDirs(this@MikaApp)) }
                 .onFailure { Log.w("MikaImport", "Could not clean device import staging", it) }
         }
@@ -470,6 +550,9 @@ class MikaApp : Application(), WebOwner, SandboxOwner, TaskEnvironment.Owner, Ph
         scope.launch(Dispatchers.IO) { runCatching { mcp.writeUsbScript() }.onFailure { Log.w("MikaMcp", "cannot write USB script", it) } }
         // 上次导出写到一半被杀留下的空壳条目
         scope.launch { runCatching { ShareExporter(this@MikaApp).cleanPending() } }
+        // 上次存音乐库写到一半被杀留下的空壳条目
+        scope.launch { runCatching { com.wangzan101.mika.cap.audio.AudioExporter(this@MikaApp).cleanPending() } }
+        scope.launch { runCatching { com.wangzan101.mika.media.AudioShareExporter(this@MikaApp).cleanPending() } }
         // 上次进程留下的网页上传副本
         scope.launch { runCatching { WebFiles.clearStale(this@MikaApp, SandboxDirs(this@MikaApp).gate) } }
         // 更新已经装上后,关于页下好的安装包

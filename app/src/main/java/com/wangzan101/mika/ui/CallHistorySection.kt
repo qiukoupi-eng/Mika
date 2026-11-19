@@ -287,8 +287,8 @@ private fun CallHistoryItem(
                         }
                     }
                 }
-                record.summary?.followUpDraft?.let { draft ->
-                    CallFollowUpDraft(record.id, draft, onSaveDraft)
+                if (record.summaryStatus == SummaryStatus.READY && record.summary != null) {
+                    CallFollowUpDraft(record.id, record.summary.followUpDraft, onSaveDraft)
                 }
                 if (record.summaryStatus == SummaryStatus.PENDING) {
                     Text(stringResource(R.string.calls_summary_generating), color = MikaTheme.colors.ink3)
@@ -372,8 +372,16 @@ private fun CallHistoryItem(
 @Composable
 internal fun CallTranscriptText(line: CallTranscriptLine) {
     Column {
-        Text(stringResource(if (line.role == "assistant") R.string.app_name else R.string.calls_caller),
+        Text(stringResource(callTranscriptSpeakerLabel(line.role)),
             style = MaterialTheme.typography.labelMedium, color = MikaTheme.colors.ink3)
         Text(line.text, style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+/** One role mapping for the full transcript and the compact latest-line preview. */
+@StringRes
+internal fun callTranscriptSpeakerLabel(role: String): Int = when (role) {
+    "assistant" -> R.string.app_name
+    "system" -> R.string.calls_dtmf_status_label
+    else -> R.string.calls_caller
 }

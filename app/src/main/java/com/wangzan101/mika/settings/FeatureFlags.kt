@@ -3,6 +3,7 @@ package com.wangzan101.mika.settings
 import android.content.Context
 import android.content.SharedPreferences
 import com.wangzan101.mika.capsule.CapsuleCardScale
+import com.wangzan101.mika.BuildConfig
 import com.wangzan101.mika.capsule.CapsuleDock
 import com.wangzan101.mika.capsule.CardDocking
 import com.wangzan101.mika.capsule.CapsuleIdleOpacity
@@ -10,6 +11,7 @@ import com.wangzan101.mika.capsule.CapsuleMode
 import com.wangzan101.mika.capsule.DockSide
 import com.wangzan101.mika.core.agent.SpeedFlags
 import com.wangzan101.mika.core.cap.phone.OperatingPace
+import com.wangzan101.mika.core.knowledge.GuideCatalog
 import com.wangzan101.mika.chat.AutoArchive
 import com.wangzan101.mika.core.usage.ProactiveBudget
 import com.wangzan101.mika.core.usage.TokenBudgetLimits
@@ -131,6 +133,39 @@ class FeatureFlags(private val prefs: SharedPreferences) {
     fun setOperatingPace(pace: OperatingPace) {
         prefs.edit().putString(OPERATING_PACE, pace.name).commit()
     }
+
+    /**
+     * 按应用的操作节奏覆盖(包名 → 档位)。列表还没初始化过时先把内置 App 知识标 careful 的 App 预置为「像人」
+     * (见 [GuideCatalog.carefulApps]);之后运行时只看这份列表,App 知识的 pace 不再参与。
+     * 解析失败按没初始化处理(下次读取重新预置)。
+     */
+    fun appPaceOverrides(): Map<String, OperatingPace> {
+        val stored = prefs.getString(APP_PACE_OVERRIDES, null)
+        if (stored != null) {
+            val parsed = runCatching { parseAppPaceOverrides(stored) }.getOrNull()
+            if (parsed != null) return parsed
+        }
+        val seeded = GuideCatalog.loadBundled().carefulApps().associateWith { OperatingPace.HUMAN }
+        setAppPaceOverrides(seeded)
+        return seeded
+    }
+
+    /** 整表写回(设置页增删改后调用);空表也落盘(用户删光 = 明确不再按应用区分,别再重新预置)。 */
+    fun setAppPaceOverrides(overrides: Map<String, OperatingPace>) {
+        val json = overrides.toSortedMap().entries.joinToString(prefix = "{", postfix = "}") { (pkg, pace) ->
+            "\"${pkg.replace("\\", "\\\\").replace("\"", "\\\"")}\":\"${pace.name}\""
+        }
+        prefs.edit().putString(APP_PACE_OVERRIDES, json).commit()
+    }
+
+    private fun parseAppPaceOverrides(json: String): Map<String, OperatingPace> =
+        kotlinx.serialization.json.Json.parseToJsonElement(json).let { o ->
+            buildMap {
+                for ((k, v) in (o as kotlinx.serialization.json.JsonObject)) {
+                    OperatingPace.parse((v as kotlinx.serialization.json.JsonPrimitive).content)?.let { pace -> put(k, pace) }
+                }
+            }
+        }
 
     /** 界面配色:跟随系统、一直浅色、一直深色(见 [ThemeMode])。界面跟着 [themeModeChanges] 当场换,不用重建。 */
     fun themeMode(): ThemeMode = ThemeMode.parse(prefs.getString(THEME_MODE, null))
@@ -267,6 +302,12 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }.distinctUntilChanged()
 
+    /** 人格:调试版默认可见,发布版默认关;合并前再决定默认值。 */
+    fun persona(): Boolean = prefs.getBoolean(PERSONA, BuildConfig.DEBUG)
+
+    fun setPersona(on: Boolean) {
+        prefs.edit().putBoolean(PERSONA, on).commit()
+    }
     /** 悬浮胶囊:关闭、有任务时显示(默认)、一直显示。 */
     fun capsuleMode(): CapsuleMode = CapsuleMode.parse(prefs.getString(CAPSULE_MODE, null))
 
@@ -433,11 +474,12 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         private const val SPEED_FLAGS = "speed_flags"
         /**
          * 提速开关默认值的升级,按先后各做一次(键记下做过没有):v2 打开分级读屏、连续操作、按需看图;
-         * v3 打开经验回放(学习改看结局判定之后路线才记得下来)。
+         * v3 打开经验回放(学习改看结局判定之后路线才记得下来);v4 打开大小模型分工(没配轻量模型时空转,配了就省钱)。
          */
         private val SPEED_UPGRADES: List<Pair<String, (SpeedFlags) -> SpeedFlags>> = listOf(
             "speed_defaults_applied_v2" to { f -> f.copy(inlineScreen = true, batchSteps = true, adaptiveVision = true) },
             "speed_defaults_applied_v3" to { f -> f.copy(replay = true) },
+            "speed_defaults_applied_v4" to { f -> f.copy(lightSteps = true) },
         )
         private const val PARALLEL_MAX = "parallel_max"
         private const val TASK_STEP_LIMIT = "task_step_limit"
@@ -448,6 +490,7 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         private const val SHOW_TASK_COST = "show_task_cost"
         private const val MUTE_TARGET = "mute_target"
         private const val OPERATING_PACE = "operating_pace"
+        private const val APP_PACE_OVERRIDES = "app_pace_overrides"
         private const val AUTO_ARCHIVE_DAYS = "auto_archive_days"
         private const val SELF_CONFIG = "self_config"
         private const val SELF_OPERATE = "self_operate"
@@ -455,6 +498,7 @@ class FeatureFlags(private val prefs: SharedPreferences) {
         private const val PIP_OPERATE = "pip_operate"
         private const val EXTERNAL_SCHEDULE = "external_schedule"
         private const val PROACTIVE = "proactive"
+        private const val PERSONA = "persona"
         private const val THEME_MODE = "theme_mode"
         private const val PERSONAL_START = "personal_start"
         private const val THEME_ACCENT = "theme_accent"
