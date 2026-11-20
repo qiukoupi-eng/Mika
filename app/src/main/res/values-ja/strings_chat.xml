@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_confirmed_goals">確認済みの目標 %1$d/%2$d</string>
+    <string name="chat_last_confirmed_goals">前回の確認 %1$d/%2$d</string>
     <string name="chat_greeting_morning">おはようございます</string>
     <string name="chat_greeting_noon">こんにちは</string>
     <string name="chat_greeting_afternoon">こんにちは</string>
@@ -214,6 +216,9 @@
     <string name="zoom_in">拡大</string>
     <string name="chat_message_actions">メッセージのオプション</string>
     <string name="chat_copy">コピー</string>
+    <string name="share_card_question">質問</string>
+    <string name="share_card_answer">回答</string>
+    <string name="share_card_made_by">Mika が完了</string>
     <string name="chat_quote">引用</string>
     <string name="chat_select_text">テキストを選択</string>
     <string name="chat_copied">コピーしました</string>

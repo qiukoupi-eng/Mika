@@ -27,6 +27,8 @@ import com.wangzan101.mika.confirm.ConfirmationNotifier
 import com.wangzan101.mika.core.agent.AttachmentLines
 import com.wangzan101.mika.core.agent.Conversation
 import com.wangzan101.mika.core.agent.QuoteMessage
+import com.wangzan101.mika.core.agent.GoalChecklist
+import com.wangzan101.mika.core.agent.RunProgress
 import com.wangzan101.mika.core.agent.TaskState
 import com.wangzan101.mika.task.TaskGate
 import com.wangzan101.mika.core.agent.NoticeTurn
@@ -210,6 +212,7 @@ data class Exchange(
     val keptPageClosed: String? = null,
     /** 每一步实际做的动作(按步号):标题是汇总,点开一步时看这里的明细。 */
     val stepActions: Map<Int, List<StepAction>> = emptyMap(),
+    val goals: GoalChecklist? = null,
 )
 
 /**
@@ -246,10 +249,6 @@ fun steerLabel(state: SteerState, paused: Boolean = false): String? = when (stat
  * `[[screen:…]]` 那一行或几行页面说明原文,删掉就丢了屏幕和页面,改坏就认不出页面,这两种不给编辑。
  */
 internal fun editableSteer(text: String): Boolean = !UserScreenMessage.has(text) && AttachedPage.parse(text).page == null
-
-/** 结束后收起的那一行:「做了 12 步 · 1 分 20 秒」;不知道用时就只说步数。 */
-fun stepsSummary(ex: Exchange): String =
-    trPlural(R.plurals.chat_steps_done, ex.steps.size) + ex.elapsedMs?.let { " · " + RunTimelineViewModel.duration(it) }.orEmpty()
 
 /** 结果卡片上记忆与技能提示的按钮;真机上由记忆存储与个人技能实现(读写在后台线程),测试里换成记录调用。 */
 interface LearningActions {
@@ -492,6 +491,7 @@ class ChatViewModel(
     private val autoRead: StateFlow<Boolean> = MutableStateFlow(false),
     /** 播放工作区里的一段音频(对话编号, 路径);默认不做。 */
     private val playAudio: suspend (String, String) -> Unit = { _, _ -> },
+    private val voiceFailed: (String) -> Unit = {},
 ) {
     /** 用户在对话页上关掉留在后台的那一页。 */
     fun closeKeptPage() = closeKept()
@@ -502,7 +502,15 @@ class ChatViewModel(
     val canSpeak: StateFlow<Boolean> get() = voiceReady
 
     fun speak(text: String) {
-        scope.launch { speakText(text) }
+        scope.launch {
+            try {
+                speakText(text)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                voiceFailed(tr(R.string.task_error, e.message ?: e.javaClass.simpleName))
+            }
+        }
     }
 
     fun stopSpeaking() = stopVoice()
@@ -1493,8 +1501,7 @@ class ChatViewModel(
         follow(conversationId, unpark(conversationId))
     }
 
-    /** 个人助手打开其委派任务：只切换展示，不启动另一项工作。 */
-    /** Open a workflow-owned step, including a running step, while preserving the user's draft. */
+    /** 打开个人助手或工作流拥有的对话:只切换展示,不启动另一项工作,并保留用户草稿。 */
     fun openWorkflowConversation(conversationId: String) {
         if (conversationId == _ui.value.conversationId) { refresh(); return }
         refreshParallel()
@@ -1511,16 +1518,7 @@ class ChatViewModel(
     }
 
     fun openPersonalTask(conversationId: String) {
-        refreshParallel()
-        lingerJob?.cancel()
-        if (conversationId != _ui.value.conversationId) parkLive()
-        val past = saved(conversationId)
-        liveIndex = -1
-        // 没有任务的对话不带别的任务的接管进度
-        _ui.update { ChatUi(conversationId = conversationId, exchanges = past, takeoverStage = Takeover.Stage.None, personaId = personaFor(conversationId)) }
-        markCurrent(CurrentChat.Open(conversationId))
-        if (conversationId !in activeConversations.value) { unpark(conversationId); return }
-        follow(conversationId, unpark(conversationId))
+        openWorkflowConversation(conversationId)
     }
 
     /**
@@ -2285,12 +2283,13 @@ class ChatViewModel(
         private fun state(ex: Exchange, s: TaskState, appLabel: (String) -> String): Exchange = when (s) {
             TaskState.Idle -> ex
             is TaskState.Running -> {
-                val progress = s.progress?.let(StatusCopy::progress)
+                val goals = (s.progress as? RunProgress.Task)?.goals
+                val progress = s.progress?.takeIf { goals == null }?.let(StatusCopy::progress)
                 // 「在做什么」先用模型随调用写的话,没有再用调用里的用意
                 val said = (s.narration ?: s.reason)?.takeIf(String::isNotBlank)
                 val waiting = progress == null && s.tool == null && said == null
                 ex.copy(
-                    status = ExchangeStatus.Working, waitingForModel = waiting, draft = s.preview,
+                    status = ExchangeStatus.Working, waitingForModel = waiting, draft = s.preview, goals = goals ?: ex.goals,
                     line = if (waiting) "" else progress ?: said.orEmpty(),
                     notes = if (s.step > 0 && said != null) ex.notes + (s.step to said) else ex.notes,
                 )

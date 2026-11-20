@@ -44,8 +44,6 @@ import com.wangzan101.mika.settings.Prerequisites
 import com.wangzan101.mika.settings.Problem
 import com.wangzan101.mika.settings.ProviderStore
 import com.wangzan101.mika.settings.NetProxyStore
-import com.wangzan101.mika.settings.WebFetchConfig
-import com.wangzan101.mika.settings.WebFetchSettings
 import com.wangzan101.mika.settings.WebSearchConfig
 import com.wangzan101.mika.settings.WebSearchSettings
 import com.wangzan101.mika.cap.web.WebProxy
@@ -74,8 +72,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+private const val SHIZUKU_SETUP_GUIDE_URL = "https://shizuku.rikka.app/guide/setup/"
+
 /** 设置里能进入的子页面;[Home] 是设置首页,[Advanced] 集中放置连接、维护和工程能力。 */
-private enum class SettingsPage { Home, Advanced, AppAccess, SmsLogin, PhoneOps, Calls, Wechat, DuringWork, AppPace, Capsule, Language, Notifications, Recommendations, Checklists, Workflows, Sandbox, Plugins, EnvVars, Recovery, SelfCheck, ComputerAccess, McpServers, Root, Developer, DeviceDirectories, RunStats, Proactive }
+private enum class SettingsPage { Home, Advanced, AppAccess, SmsLogin, PhoneOps, Calls, Wechat, DuringWork, AppPace, Capsule, Language, Notifications, Recommendations, Checklists, Workflows, Sandbox, Plugins, EnvVars, Recovery, SelfCheck, ComputerAccess, McpServers, Root, Developer, DeviceDirectories, RunStats, Proactive, Backup }
 
 /**
  * 设置页:总状态卡 + 常用 / 我的数据 / 其他。高级与其他只增加一层,各子页返回来时的页面。
@@ -105,17 +105,30 @@ fun SettingsScreen(
     mcpServers: com.wangzan101.mika.settings.McpServerStore? = null,
     /** 人格设置;为空时不显示入口。 */
     onOpenPersonas: (() -> Unit)? = null,
+    openPhoneOps: Boolean = false,
+    onPhoneOpsOpened: () -> Unit = {},
 ) {
     val configs by store.configs.collectAsState()
     val roles by store.roles.collectAsState()
     // 开发者选项里的「看图定位已验证」跟着看图模型(看图用主模型时是主模型那条配置)
     val visionConfig = remember(configs, roles) { store.configFor(ModelRole.Vision) }
-    var page by rememberSaveable { mutableStateOf(SettingsPage.Home) }
+    var page by rememberSaveable { mutableStateOf(if (openPhoneOps) SettingsPage.PhoneOps else SettingsPage.Home) }
     var explaining by remember { mutableStateOf<Problem?>(null) }
     // 「完全退出」先问一句:任务、胶囊和通知都会停
     var confirmingQuit by remember { mutableStateOf(false) }
 
-    fun fix(f: Fix) = if (f == Fix.AddModel) onOpenModels() else onFix(f)
+    LaunchedEffect(openPhoneOps) {
+        if (openPhoneOps) {
+            page = SettingsPage.PhoneOps
+            onPhoneOpsOpened()
+        }
+    }
+
+    fun fix(f: Fix) = when (f) {
+        Fix.AddModel -> onOpenModels()
+        Fix.OpenPhoneOps -> page = SettingsPage.PhoneOps
+        else -> onFix(f)
+    }
     val onProblem: (Problem) -> Unit = { p -> StatusCopy.directFix(p)?.let(::fix) ?: run { explaining = p } }
 
     // 并行任务的上限只在实验开关 parallelTasks 打开时出现;设备能力按此刻算,第二块屏建失败过就按失败算
@@ -123,7 +136,8 @@ fun SettingsScreen(
     val recommendedTasks = remember { (context.applicationContext as com.wangzan101.mika.MikaApp).recommendedTasks }
     val savedChecklists = remember { (context.applicationContext as com.wangzan101.mika.MikaApp).savedChecklists }
     val workflows = remember { (context.applicationContext as com.wangzan101.mika.MikaApp).workflows }
-    val root = remember { com.wangzan101.mika.cap.phone.PhoneServices.of(context).shellManager.root }
+    val shellManager = remember { com.wangzan101.mika.cap.phone.PhoneServices.of(context).shellManager }
+    val root = remember { shellManager.root }
     val rootState by root.state.collectAsState()
     LaunchedEffect(Unit) { root.refresh() }
     val wechat = remember { (context.applicationContext as com.wangzan101.mika.MikaApp).wechat }
@@ -170,10 +184,6 @@ fun SettingsScreen(
     var webSearch by remember { mutableStateOf<WebSearchConfig?>(null) }
     var editingSearch by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { webSearch = withContext(Dispatchers.IO) { searchSettings.get() } }
-    val fetchSettings = remember { WebFetchSettings.get(context) }
-    var webFetch by remember { mutableStateOf<WebFetchConfig?>(null) }
-    var editingFetch by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { webFetch = withContext(Dispatchers.IO) { fetchSettings.get() } }
     val mcp = remember { (context.applicationContext as com.wangzan101.mika.MikaApp).mcp }
     val mcpNetworkOn by mcp.settings.enabled.collectAsState()
     val mcpUsbOn by mcp.usb.enabled.collectAsState()
@@ -231,6 +241,7 @@ fun SettingsScreen(
             autoArchiveDays = autoArchiveDays,
             onOpenAutoArchive = { editingAutoArchive = true },
             onOpenMemory = onOpenMemory,
+            onOpenBackup = { page = SettingsPage.Backup },
             onOpenRecommendations = { page = SettingsPage.Recommendations },
             onOpenPersonas = onOpenPersonas,
             onOpenAdvanced = { page = SettingsPage.Advanced },
@@ -243,7 +254,6 @@ fun SettingsScreen(
         SettingsPage.Advanced -> AdvancedSettingsContent(
             proxy = proxy, proxyNote = proxy?.let { NetProxyCopy.subtitle(it, browserProxy) }, onOpenProxy = { editingProxy = true },
             webSearch = webSearch, onOpenWebSearch = { editingSearch = true },
-            webFetch = webFetch, onOpenWebFetch = { editingFetch = true },
             sandbox = sandboxStatus, onOpenSandbox = { page = SettingsPage.Sandbox },
             pluginsCount = pluginRecords.size, onOpenPlugins = { page = SettingsPage.Plugins },
             onOpenEnvVars = { page = SettingsPage.EnvVars },
@@ -261,6 +271,14 @@ fun SettingsScreen(
         SettingsPage.PhoneOps -> PhoneOpsScreen(
             status, androidRelease, onProblem,
             onRepair = { onFix(Fix.RepairPhoneHelper) }, onUnpair = { onFix(Fix.UnpairPhoneHelper) }, onBack = toHome,
+            onSelectTransport = { shellManager.engine.selectTransport(it) },
+            onGrantShizuku = {
+                if (!shellManager.shizuku.openGrantPermissionOrApp(context)) {
+                    openInBrowser(context, SHIZUKU_SETUP_GUIDE_URL)
+                }
+            },
+            onOpenShizukuGuide = { openInBrowser(context, SHIZUKU_SETUP_GUIDE_URL) },
+            onRefreshShizuku = { shellManager.refreshShizukuAsync() },
         )
         SettingsPage.Calls -> CallSettingsScreen((context.applicationContext as com.wangzan101.mika.MikaApp).calls, onBack = toHome)
         SettingsPage.Notifications -> NotificationsScreen(status, onFix = ::fix, onBack = back)
@@ -337,6 +355,7 @@ fun SettingsScreen(
         )
         SettingsPage.RunStats -> RunStatsScreen(remember { RunStore(context).metrics }, onBack = back)
         SettingsPage.Proactive -> com.wangzan101.mika.proactive.ProactiveScreen(onBack = back)
+        SettingsPage.Backup -> BackupScreen(onBack = toHome)
     }
 
     if (editingProxy) NetProxyDialog(
@@ -359,18 +378,6 @@ fun SettingsScreen(
                 withContext(Dispatchers.IO) { searchSettings.set(config) }
                 webSearch = searchSettings.get()
                 editingSearch = false
-            }
-        },
-    )
-
-    if (editingFetch) WebFetchDialog(
-        initial = webFetch ?: WebFetchConfig(),
-        onDismiss = { editingFetch = false },
-        onSave = { config ->
-            scope.launch {
-                withContext(Dispatchers.IO) { fetchSettings.set(config) }
-                webFetch = fetchSettings.get()
-                editingFetch = false
             }
         },
     )
@@ -459,6 +466,7 @@ fun SettingsContent(
     language: AppLanguage = AppLanguage.System,
     onOpenLanguage: () -> Unit = {},
     onOpenMemory: (() -> Unit)? = null,
+    onOpenBackup: (() -> Unit)? = null,
     onOpenRecommendations: () -> Unit = {},
     onOpenPersonas: (() -> Unit)? = null,
     onOpenAdvanced: () -> Unit = {},
@@ -539,11 +547,14 @@ fun SettingsContent(
             onOpenPersonas?.let {
                 ListRow(MikaIcons.Spark, stringResource(R.string.persona_title), stringResource(R.string.persona_sub), first = onOpenMemory == null, onClick = it) { RowChevron() }
             }
+            onOpenBackup?.let {
+                ListRow(MikaIcons.Archive, stringResource(R.string.backup_title), stringResource(R.string.backup_sub), first = onOpenMemory == null && onOpenPersonas == null, onClick = it) { RowChevron() }
+            }
             ListRow(
                 MikaIcons.Archive,
                 stringResource(R.string.settings_auto_archive),
                 stringResource(R.string.settings_auto_archive_sub),
-                first = onOpenMemory == null && onOpenPersonas == null,
+                first = onOpenMemory == null && onOpenPersonas == null && onOpenBackup == null,
                 onClick = onOpenAutoArchive,
             ) {
                 RowValue(
@@ -584,8 +595,6 @@ fun AdvancedSettingsContent(
     onOpenProxy: () -> Unit = {},
     webSearch: WebSearchConfig? = null,
     onOpenWebSearch: () -> Unit = {},
-    webFetch: WebFetchConfig? = null,
-    onOpenWebFetch: () -> Unit = {},
     sandbox: SandboxStatus? = null,
     onOpenSandbox: () -> Unit = {},
     pluginsCount: Int? = null,
@@ -636,7 +645,7 @@ fun AdvancedSettingsContent(
         GroupCard {
             ListRow(MikaIcons.Code, stringResource(R.string.env_vars_title), first = true, onClick = onOpenEnvVars) { RowChevron() }
         }
-        if (proxy != null || webSearch != null || webFetch != null) {
+        if (proxy != null || webSearch != null) {
             GroupLabel(stringResource(R.string.settings_network))
             GroupCard {
                 var first = true
@@ -650,11 +659,6 @@ fun AdvancedSettingsContent(
                 webSearch?.let { config ->
                     ListRow(MikaIcons.Globe, stringResource(R.string.web_search_title), stringResource(R.string.web_search_row_sub), first = take(), onClick = onOpenWebSearch) {
                         RowValue(WebSearchCopy.value(config)); RowChevron()
-                    }
-                }
-                webFetch?.let { config ->
-                    ListRow(MikaIcons.Doc, stringResource(R.string.web_fetch_title), stringResource(R.string.web_fetch_row_sub), first = take(), onClick = onOpenWebFetch) {
-                        RowValue(WebFetchCopy.value(config)); RowChevron()
                     }
                 }
             }

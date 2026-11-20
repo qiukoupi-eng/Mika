@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_confirmed_goals">الأهداف المؤكدة: %1$d/%2$d</string>
+    <string name="chat_last_confirmed_goals">آخر تأكيد: %1$d/%2$d</string>
     <string name="chat_greeting_morning">صباح الخير</string>
     <string name="chat_greeting_noon">نهارك سعيد</string>
     <string name="chat_greeting_afternoon">مساء الخير</string>
@@ -274,6 +276,9 @@
     <string name="zoom_in">تكبير</string>
     <string name="chat_message_actions">خيارات الرسالة</string>
     <string name="chat_copy">نسخ</string>
+    <string name="share_card_question">سؤال</string>
+    <string name="share_card_answer">الإجابة</string>
+    <string name="share_card_made_by">أنجزها Mika</string>
     <string name="chat_quote">اقتباس</string>
     <string name="chat_select_text">تحديد النص</string>
     <string name="chat_copied">تم النسخ</string>

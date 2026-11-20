@@ -61,6 +61,33 @@ class ChatViewModelTest {
 
     @get:Rule val tmp = TemporaryFolder()
 
+    @Test fun readAloudReportsFailureAndAllowsRetry() = runTest {
+        val errors = mutableListOf<String>()
+        var attempts = 0
+        val app = com.wangzan101.mika.MikaApp()
+        val vm = ChatViewModel(backgroundScope, state, stage, actions, ConversationStore(tmp.newFolder()),
+            speakText = { text -> app.speak(text) { if (++attempts == 1) throw java.io.IOException("offline") } },
+            voiceFailed = errors::add)
+        vm.speak("你好")
+        runCurrent()
+        assertEquals(1, errors.size)
+        assertTrue(errors.single().contains("offline"))
+        vm.speak("再试一次")
+        runCurrent()
+        assertEquals(2, attempts)
+        assertEquals(1, errors.size)
+    }
+
+    @Test fun readAloudCancellationDoesNotBecomeAPlaybackError() = runTest {
+        val errors = mutableListOf<String>()
+        val vm = ChatViewModel(backgroundScope, state, stage, actions, ConversationStore(tmp.newFolder()),
+            speakText = { throw kotlinx.coroutines.CancellationException("stopped") },
+            voiceFailed = errors::add)
+        vm.speak("你好")
+        runCurrent()
+        assertTrue(errors.isEmpty())
+    }
+
     private val state = MutableStateFlow<TaskState>(TaskState.Idle)
     private val stage = MutableStateFlow(Takeover.Stage.None)
     private val calls = mutableListOf<String>()
@@ -865,7 +892,7 @@ class ChatViewModelTest {
         assertNull((vm.ui.value.exchanges.last().status as ExchangeStatus.Done).unverifiedLine)
     }
 
-    @Test fun liveLineUsesTheModelsReasonAndCollapsesToASummary() = runTest {
+    @Test fun liveLineUsesTheModelsReason() = runTest {
         var now = 1_000L
         val screen = MutableStateFlow(false)
         val vm = ChatViewModel(backgroundScope, state, stage, actions, ConversationStore(tmp.newFolder()), screenOpen = screen, clock = { now },
@@ -900,10 +927,7 @@ class ChatViewModelTest {
         emit(TaskState.Succeeded("有 3 趟\n依据:12306 查询结果页"))
         ex = vm.ui.value.exchanges.single()
         assertEquals(80_000L, ex.elapsedMs)
-        assertEquals("做了 3 步 · 1 分 20 秒", stepsSummary(ex))
         assertFalse(vm.ui.value.operatingPhone)
-        // 不知道用时就只说步数
-        assertEquals("做了 3 步", stepsSummary(ex.copy(elapsedMs = null)))
     }
 
     /** 顶栏副标题「正在操作 …」:最近一件有对象的事所在的 App(包名换成 App 名)。 */

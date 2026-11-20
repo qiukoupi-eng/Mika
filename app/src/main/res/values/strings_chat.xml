@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="chat_confirmed_goals">Confirmed goals: %1$d/%2$d</string>
+    <string name="chat_last_confirmed_goals">Last confirmed: %1$d/%2$d</string>
     <string name="chat_greeting_morning">Good morning</string>
     <string name="chat_greeting_noon">Good afternoon</string>
     <string name="chat_greeting_afternoon">Good afternoon</string>
@@ -226,6 +228,9 @@
     <string name="zoom_in">Zoom in</string>
     <string name="chat_message_actions">Message options</string>
     <string name="chat_copy">Copy</string>
+    <string name="share_card_question">Q</string>
+    <string name="share_card_answer">A</string>
+    <string name="share_card_made_by">Completed by Mika</string>
     <string name="chat_quote">Quote</string>
     <string name="chat_select_text">Select text</string>
     <string name="chat_copied">Copied</string>
