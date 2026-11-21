@@ -204,6 +204,35 @@ class BackupEngineTest {
         assertTrue(dstPrefs.listFiles().isNullOrEmpty())
     }
 
+    @Test fun aFailedImportLeavesExistingFilesUntouched() {
+        val srcFiles = tmp.newFolder("src-files")
+        val srcPrefs = tmp.newFolder("src-prefs")
+        buildSource(srcFiles, srcPrefs)
+        val entries = readZip(exportBytes(srcFiles, srcPrefs)).toMutableMap()
+        // Valid ZIP, valid manifest entry list, but the payload cannot be imported.
+        entries["files/settings/provider-keys.json"] = "not-json".toByteArray(Charsets.UTF_8)
+        val broken = writeZip(entries)
+
+        val dstFiles = tmp.newFolder("dst-files")
+        val dstPrefs = tmp.newFolder("dst-prefs")
+        dstFiles.write("settings/mcp.json", "OLD")
+        dstFiles.write("conversations/local-only.json", "OLD CHAT")
+        dstPrefs.write("local-only.xml", "<map/>")
+        try {
+            engine(dstFiles, dstPrefs, importCipher).import(ByteArrayInputStream(broken), replace = true)
+            fail("a corrupt payload must fail the import")
+        } catch (_: BackupException) {
+            // expected
+        }
+
+        assertEquals("OLD", File(dstFiles, "settings/mcp.json").readText())
+        assertEquals("OLD CHAT", File(dstFiles, "conversations/local-only.json").readText())
+        assertEquals("<map/>", File(dstPrefs, "local-only.xml").readText())
+        assertTrue(
+            (dstFiles.walkTopDown().filter { it.isFile && it.name.endsWith(".import-tmp") }.toList()).isEmpty(),
+        )
+    }
+
     @Test fun unknownFutureFormatVersionIsRefused() {
         val srcFiles = tmp.newFolder("src-files")
         val srcPrefs = tmp.newFolder("src-prefs")
@@ -248,6 +277,29 @@ class BackupEngineTest {
         val manifest = engine(dstFiles, dstPrefs, importCipher).import(ByteArrayInputStream(zip), replace = true)
         assertEquals(1, manifest.formatVersion)
         assertEquals("""{"messages":[]}""", File(dstFiles, "conversations/abc.json").readText())
+        assertFalse(File(dstFiles, "conversations/old.json").exists())
+    }
+
+    @Test fun replacingRemovesStaleSettingsButPreservesExcludedData() {
+        val srcFiles = tmp.newFolder("replacement-source")
+        val srcPrefs = tmp.newFolder("replacement-source-prefs")
+        buildSource(srcFiles, srcPrefs)
+        val zip = exportBytes(srcFiles, srcPrefs)
+        val dstFiles = tmp.newFolder("replacement-target")
+        val dstPrefs = tmp.newFolder("replacement-target-prefs")
+        dstFiles.write("settings/stale.json", "old")
+        dstFiles.write("conversations/old.json.title", "old title")
+        dstFiles.write("sandbox/work/keep.txt", "workspace")
+        dstFiles.write("library-attachments/keep.txt", "attachment")
+        dstPrefs.write("stale.xml", "<map/>")
+
+        engine(dstFiles, dstPrefs, importCipher).import(ByteArrayInputStream(zip), replace = true)
+
+        assertFalse(File(dstFiles, "settings/stale.json").exists())
+        assertFalse(File(dstFiles, "conversations/old.json.title").exists())
+        assertFalse(File(dstPrefs, "stale.xml").exists())
+        assertEquals("workspace", File(dstFiles, "sandbox/work/keep.txt").readText())
+        assertEquals("attachment", File(dstFiles, "library-attachments/keep.txt").readText())
     }
 
     @Test fun undecryptableFileFailsExportLoudly() {

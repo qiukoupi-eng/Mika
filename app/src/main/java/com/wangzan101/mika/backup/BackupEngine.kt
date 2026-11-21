@@ -226,35 +226,66 @@ class BackupEngine(
             throw BackupException("This install already has chats and providers; import needs Replace all")
         }
         val byPath = payloads.toMap()
-        manifest.entries.forEach { info ->
-            val bytes = byPath[info.path]
-                ?: throw BackupException("Backup is missing ${info.path}")
-            val target = targetFile(info.path)
-            val out: ByteArray = when {
-                info.path.removePrefix("files/") == PROVIDER_KEYS_PATH -> {
-                    val alias = info.alias ?: PROVIDER_KEYS_ALIAS
-                    encryptProviderKeys(bytes, alias)
-                }
-                // Prefs files go before the generic encrypted branch: their entries carry
-                // no single alias (each decrypted key has its own, in manifest.decryptedPrefs).
-                info.path.startsWith("shared_prefs/") -> {
-                    val fileName = info.path.removePrefix("shared_prefs/")
-                    val aliases = manifest.decryptedPrefs[fileName].orEmpty()
-                    if (aliases.isEmpty()) bytes
-                    else BackupPrefs.transformForImport(bytes, fileName, aliases, cipherFor)
-                }
-                info.encrypted -> {
-                    val alias = info.alias
-                        ?: throw BackupException("Backup entry ${info.path} has no KeyStore alias")
-                    try {
-                        cipherFor(alias).encrypt(bytes)
-                    } catch (e: Exception) {
-                        throw BackupException("Could not encrypt ${info.path}: ${e.message}")
+        // Validate all destination paths before staging, and snapshot obsolete files
+        // before temporary imports appear in the tree. Excluded data stays outside
+        // the replacement scope, just as it is outside the export scope.
+        val targets = manifest.entries.associate { it.path to targetFile(it.path) }
+        val obsolete = if (replace) {
+            val retained = targets.values.toSet()
+            val prefs = sharedPrefsDir.listFiles()?.filter { it.isFile && it.name.endsWith(".xml") }.orEmpty()
+            (collectFiles().map { it.second } + prefs).filter { it.canonicalFile !in retained }
+        } else emptyList()
+        // Stage every entry before replacing anything: a corrupt payload or a full
+        // disk then fails with the install's existing data untouched.
+        val staged = mutableListOf<Pair<File, File>>()
+        try {
+            manifest.entries.forEach { info ->
+                val bytes = byPath[info.path]
+                    ?: throw BackupException("Backup is missing ${info.path}")
+                val target = targets.getValue(info.path)
+                val out: ByteArray = when {
+                    info.path.removePrefix("files/") == PROVIDER_KEYS_PATH -> {
+                        val alias = info.alias ?: PROVIDER_KEYS_ALIAS
+                        encryptProviderKeys(bytes, alias)
                     }
+                    // Prefs files go before the generic encrypted branch: their entries carry
+                    // no single alias (each decrypted key has its own, in manifest.decryptedPrefs).
+                    info.path.startsWith("shared_prefs/") -> {
+                        val fileName = info.path.removePrefix("shared_prefs/")
+                        val aliases = manifest.decryptedPrefs[fileName].orEmpty()
+                        if (aliases.isEmpty()) bytes
+                        else BackupPrefs.transformForImport(bytes, fileName, aliases, cipherFor)
+                    }
+                    info.encrypted -> {
+                        val alias = info.alias
+                            ?: throw BackupException("Backup entry ${info.path} has no KeyStore alias")
+                        try {
+                            cipherFor(alias).encrypt(bytes)
+                        } catch (e: Exception) {
+                            throw BackupException("Could not encrypt ${info.path}: ${e.message}")
+                        }
+                    }
+                    else -> bytes
                 }
-                else -> bytes
+                target.parentFile?.mkdirs()
+                val tmp = File(target.parentFile, "${target.name}.import-tmp")
+                tmp.writeBytes(out)
+                staged += tmp to target
             }
-            writeAtomically(target, out)
+            staged.forEach { (tmp, target) ->
+                if (target.exists() && !target.delete()) {
+                    throw BackupException("Could not replace ${target.name}")
+                }
+                if (!tmp.renameTo(target)) throw BackupException("Could not write ${target.name}")
+            }
+            // Do not delete old-only data if validation, encryption or staging fails.
+            obsolete.forEach { old ->
+                if (old.exists() && !old.delete()) throw BackupException("Could not remove ${old.name}")
+            }
+        } catch (e: Exception) {
+            staged.forEach { (tmp, _) -> tmp.delete() }
+            if (e is BackupException) throw e
+            throw BackupException("Import failed: ${e.message}")
         }
         return manifest
     }
